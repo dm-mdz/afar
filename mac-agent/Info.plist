@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key><string>com.afar.agent</string>
+  <key>CFBundleName</key><string>Afar</string>
+  <key>NSAppleEventsUsageDescription</key><string>从 iPad 重启这台 Mac 时，要通过"系统事件"重启（和苹果菜单里的"重新启动"一样，各程序正常退出）。</string>
+  <key>NSBluetoothAlwaysUsageDescription</key><string>用随航时，Afar 会把你选的蓝牙键盘或触控板接到这台 Mac 上，用完再还给 iPad。</string>
+</dict>
+</plist>

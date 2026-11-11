@@ -1,0 +1,29 @@
+[package]
+name = "afar-agent"
+version = "0.4.8"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "Afar Mac 端常驻程序：虚拟屏、防休眠、随航自动连接、给 iPad App 的控制接口"
+publish = false
+
+# 只支持 macOS 27 + Apple 芯片。控制接口部分（server.rs）与平台无关，可在任何系统上跑测试。
+[dependencies]
+afar-proto = { path = "../proto" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+libc = "0.2"
+rand = "0.8"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rcgen = { version = "0.13", default-features = false, features = ["ring", "crypto"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = "0.3"
+block2 = "0.6"
+core-foundation = "0.10"
+core-foundation-sys = "0.8"
+security-framework = "3"
+objc2-app-kit = "0.3"
+objc2-web-kit = "0.3"
+objc2-user-notifications = { version = "0.3", features = ["block2"] }

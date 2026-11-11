@@ -1,0 +1,12 @@
+target/
+.DS_Store
+# 签名、公证用的证书和凭据永远不进仓库（只在打包时用环境变量传入）
+*.p12
+*.p8
+*.cer
+*.certSigningRequest
+*.mobileprovision
+*.provisionprofile
+AuthKey_*
+.env
+.env.*

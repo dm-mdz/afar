@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>设置 Afar</title>
+<!-- AFAR-008 "设置 Afar"窗口（界面稿 v3）。状态由 Mac 端推过来（afar.update），按钮发指令给 Mac 端（send）。 -->
+<style>
+  /* 线稿风（2026-11-11 定稿，和 iPad App 同一套）：白底、黑色线条、只用一种黄色点缀；不分深浅色模式 */
+  :root {
+    color-scheme: light;
+    --win: #ffffff; --card: #ffffff; --text: #111111; --sub: #6b6b6b; --line: #d9d9d4; --fill: #f4f4f1;
+    --ink: #111111; --yellow: #ffe45c; --red: #d6331c;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--win); color: var(--text); font: 14px/1.55 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; -webkit-font-smoothing: antialiased; -webkit-user-select: none; user-select: none; cursor: default; }
+  button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; padding: 0; }
+  button:focus-visible { outline: 3px solid var(--yellow); outline-offset: 3px; }
+  [hidden] { display: none !important; }
+  .wiz { padding: 18px 30px 22px; min-height: 100%; display: flex; flex-direction: column; }
+  .wiz h2 { margin: 4px 0 4px; font-size: 22px; font-weight: 900; letter-spacing: .01em; }
+  .wiz > p { margin: 0 0 16px; color: var(--sub); font-size: 13.5px; }
+  .grow { flex: 1; }
+  .rows { background: var(--card); border: 2px solid var(--ink); border-radius: 12px; overflow: hidden; }
+  .row { display: grid; grid-template-columns: 22px 1fr auto; gap: 11px; align-items: center; padding: 11px 13px; border-bottom: 1px solid var(--line); }
+  .row:last-child { border-bottom: 0; }
+  .row .d { color: var(--sub); font-size: 12.5px; margin-top: 1px; }
+  .mark { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: #fff; }
+  .mark.ok { background: var(--ink); } .mark.todo { border: 2px solid var(--ink); }
+  .mark.busy { border: 2px solid var(--ink); border-top-color: transparent; animation: sp 1s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .mark.busy { animation: none; } }
+  .act { background: #fff; color: var(--ink); border: 1.8px solid var(--ink); border-radius: 8px; padding: 3px 11px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .act:active { background: var(--yellow); }
+  .done { color: var(--ink); font-weight: 600; font-size: 12.5px; white-space: nowrap; }
+  .sub { grid-column: 2 / 4; margin-top: 2px; padding: 8px 10px; background: var(--fill); border-radius: 9px; font-size: 12.5px; display: grid; gap: 5px; }
+  .sub div { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+  .sub button { color: var(--ink); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+  .big { width: 100%; margin-top: 14px; background: var(--yellow); color: var(--ink); border: 2px solid var(--ink); border-radius: 10px; box-shadow: 3px 4px 0 var(--ink); padding: 8px 0; font-weight: 700; font-size: 14px; }
+  .big:active { transform: translate(2px, 2px); box-shadow: 1px 2px 0 var(--ink); }
+  .big[disabled] { opacity: .45; cursor: default; }
+  .tip { margin-top: 8px; color: var(--sub); font-size: 12px; text-align: center; }
+  .err { margin-top: 10px; padding: 7px 12px; border-radius: 9px; border: 1.8px solid var(--red); color: var(--red); font-size: 12.5px; }
+  .nav { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; }
+  .dots { display: flex; gap: 6px; }
+  .dots i { width: 6px; height: 6px; border-radius: 50%; background: #cfcfcf; }
+  .dots i.on { width: 18px; border-radius: 3px; background: var(--ink); }
+  .next { background: var(--yellow); color: var(--ink); border: 2px solid var(--ink); border-radius: 9px; box-shadow: 2px 3px 0 var(--ink); padding: 5px 22px; font-weight: 700; }
+  .next[disabled] { background: #fff; color: var(--sub); border-color: #bdbdb8; box-shadow: none; cursor: default; }
+  .later, .back { color: var(--sub); font-size: 13px; margin-right: 14px; }
+  .bigcode { font-size: 46px; font-weight: 700; letter-spacing: 6px; font-variant-numeric: tabular-nums; text-align: center; padding: 26px 0 8px; -webkit-user-select: text; user-select: text; }
+  .waiting { text-align: center; color: var(--sub); font-size: 13.5px; display: flex; gap: 8px; align-items: center; justify-content: center; }
+  .opt { display: block; width: 100%; text-align: left; background: var(--card); border: 2px solid var(--ink); border-radius: 12px; padding: 11px 14px; margin-bottom: 10px; }
+  .opt[aria-pressed="true"] { background: var(--yellow); box-shadow: 3px 4px 0 var(--ink); }
+  .opt[aria-pressed="true"] span { color: var(--ink); }
+  .opt b { font-size: 14.5px; } .opt span { display: block; color: var(--sub); font-size: 12.5px; margin-top: 2px; }
+  .center { text-align: center; align-items: center; }
+  .link { display: flex; align-items: center; justify-content: center; margin: 40px 0 22px; }
+  .link .dev { width: 70px; height: 52px; border-radius: 12px; background: var(--card); border: 2.5px solid var(--ink); display: grid; place-items: center; font-size: 13px; color: var(--ink); font-weight: 700; }
+  .link .dev.pad { width: 56px; height: 72px; background: var(--yellow); box-shadow: 3px 4px 0 var(--ink); }
+  .link .wire { width: 70px; border-top: 3px solid var(--ink); margin: 0 8px; }
+  .head { display: flex; justify-content: space-between; align-items: baseline; margin: 6px 0 12px; }
+  .head h2 { margin: 0; font-size: 21px; font-weight: 900; }
+  .code { font-variant-numeric: tabular-nums; font-weight: 700; letter-spacing: 2px; -webkit-user-select: text; user-select: text; }
+  .sum { display: grid; grid-template-columns: 22px 1fr auto; gap: 11px; align-items: center; padding: 11px 13px; background: var(--card); border: 2px solid var(--ink); border-radius: 12px; margin-top: 10px; width: 100%; text-align: left; }
+  .sum.open { border-radius: 12px 12px 0 0; }
+  .sum .v { color: var(--sub); font-size: 12.5px; }
+  .sum + .rows { border-radius: 0 0 12px 12px; border-top-width: 0; }
+  .foot { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; color: var(--sub); font-size: 12px; }
+  .foot button { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+  .timer { text-align: center; font-size: 13px; color: var(--sub); margin: 2px 0 14px; }
+  .timer b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .bigcode.off { color: #bdbdb8; }
+  .ghost { background: #fff; color: var(--ink); border: 2px solid var(--ink); border-radius: 9px; padding: 4px 18px; font-weight: 700; }
+  .sub small { color: var(--sub); font-size: 12px; }
+  .sub .un { color: var(--red); }
+  .dim { position: fixed; inset: 0; background: rgba(0,0,0,.18); display: grid; place-items: center; }
+  .dlg { width: 300px; background: #fff; border: 2px solid var(--ink); border-radius: 14px; box-shadow: 4px 5px 0 var(--ink); padding: 18px 18px 14px; text-align: center; }
+  .dlg b { display: block; font-size: 14.5px; margin-bottom: 6px; }
+  .dlg p { margin: 0 0 14px; color: var(--sub); font-size: 12.5px; }
+  .dlg .bt { display: grid; gap: 8px; }
+  .dlg .bt button { border: 2px solid var(--ink); border-radius: 9px; padding: 5px 0; font-weight: 700; }
+  .dlg .bt .red { background: var(--red); border-color: var(--red); color: #fff; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+'use strict';
+// 状态（Mac 端推过来）和本页自己的状态
+let V = null;
+const P = { screen: null, open: {}, confirm: null };
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function send(cmd, extra) {
+  try { window.webkit.messageHandlers.afar.postMessage(JSON.stringify(Object.assign({ cmd }, extra || {}))); } catch (_) { /* 在浏览器里预览时没有 Mac 端 */ }
+}
+const mark = (v) => `<span class="mark ${v === 'busy' ? 'busy' : v ? 'ok' : 'todo'}">${v === true ? '✓' : ''}</span>`;
+const dots = (n) => `<div class="dots">${[1, 2, 3, 4].map((i) => `<i class="${i === n ? 'on' : ''}"></i>`).join('')}</div>`;
+// 一行：状态圈、标题、说明、右边（"好了"或按钮）
+function row(ok, title, okText, todoText, btn, busy) {
+  const v = busy ? 'busy' : ok;
+  return `<div class="row">${mark(v)}<div><div>${esc(title)}</div><div class="d">${esc(busy ? '正在处理…' : ok ? okText : todoText)}</div></div>
+    <span>${ok ? '<span class="done">好了</span>' : busy ? '' : btn || ''}</span></div>`;
+}
+const openBtn = (what, text) => `<button class="act" data-open="${what}">${esc(text || '打开设置')}</button>`;
+const oneDone = () => V.agent && V.fw && V.power && V.helper;
+// 断电恢复：所选方案要做的几行、还差几项
+function recRows() {
+  if (V.plan === 'fv') {
+    return row(V.remote_login, '远程登录', '已打开', 'iPad 靠它远程解锁磁盘', '<button class="act" data-cmd="ssh">打开</button>', V.busy === 'ssh');
+  }
+  return row(!V.filevault, '关闭文件保险箱', '已关闭', '开着时系统不允许自动登录', openBtn('filevault'))
+    + row(V.auto_login, '自动登录', '已打开', V.filevault ? '关掉文件保险箱后才有这个选项' : '在"用户与群组"里选"自动以此身份登录"', openBtn('users'));
+}
+const recLeft = () => (V.plan === 'fv' ? [V.remote_login] : [!V.filevault, V.auto_login]).filter((x) => !x).length;
+const errBox = () => (V.error && V.error !== '取消了' ? `<div class="err">${esc(V.error)}</div>` : '');
+const ipadRow = () => (V.ipad
+  ? row(true, '找到你的 iPad', '已找到：' + V.ipad, '')
+  : `<div class="row">${mark(false)}<div><div>找到你的 iPad</div><div class="d">附近没找到。Mac 和 iPad 上都确认下面几项：</div></div><span></span>
+      <div class="sub">
+        <div><span>蓝牙打开</span>${openBtn('bluetooth')}</div>
+        <div><span>无线局域网打开，连同一个网络</span>${openBtn('wifi')}</div>
+        <div><span>接力打开（隔空投送与连续互通）</span>${openBtn('handoff')}</div>
+        <div><span>两台登的是同一个 Apple 账户</span><span>对照两台"设置"最上方</span></div>
+        <div><span>iPad 已解锁、离 Mac 不远</span><span></span></div>
+      </div></div>`);
+
+// 配对页（向导第 2 屏和菜单栏"配对新 iPad…"共用）。只有这一页开着的 10 分钟里 Mac 才接受配对（v0.4.8）。
+const mmss = (s) => Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+function pairBody() {
+  if (V.pair_done) {
+    return `<div class="bigcode">✓</div>
+      <div class="waiting">"${esc(V.pair_done)}"已配对</div>
+      <p style="text-align:center;color:var(--sub);font-size:12.5px;margin-top:14px">iPad 上还要输一次这台 Mac 的登录密码，在 iPad 上完成。</p>`;
+  }
+  if (!V.pair_left) {
+    return `<div class="bigcode off">——</div>
+      <div class="timer">配对已停止</div>
+      <div style="text-align:center"><button class="ghost" data-cmd="pair_open">重新开始配对</button></div>`;
+  }
+  const code = V.code ? V.code.slice(0, 3) + ' ' + V.code.slice(3) : '——';
+  return `<div class="bigcode${V.pair_lock ? ' off' : ''}">${esc(code)}</div>
+      <div class="timer">${V.pair_lock
+        ? `试错次数太多，暂停配对 <b>${mmss(V.pair_lock)}</b>，到时间后用上面这个新配对码`
+        : `配对还开着 <b>${mmss(V.pair_left)}</b>，到时间自动停止`}</div>
+      <div class="waiting">${mark('busy')} 正在等 iPad…</div>
+      <p style="text-align:center;color:var(--sub);font-size:12.5px;margin-top:14px">配对码用过就换。iPad 上还要输一次这台 Mac 的登录密码，在 iPad 上完成。</p>`;
+}
+// 状态页：已配对的 iPad，每台都能取消配对
+function devRow() {
+  if (!V.paired) return row(false, '已配对的 iPad', '', '还没配对', '<button class="act" data-go="pair">配对</button>');
+  const list = V.devices.map((d) => `<div><span><b>${esc(d.name)}</b> <small>· ${esc(d.date)}配对${d.showing ? ' · 正在显示' : ''}</small></span>
+      <button class="un" data-unpair="${esc(d.id)}">取消配对</button></div>`).join('');
+  return `<div class="row">${mark(true)}<div><div>已配对的 iPad</div><div class="d">${V.paired} 台</div></div><span></span>
+      <div class="sub">${list}<div><button data-go="pair">配对新 iPad…</button><span></span></div></div></div>`;
+}
+function confirmBox() {
+  const c = P.confirm;
+  if (!c) return '';
+  return `<div class="dim"><div class="dlg" role="alertdialog"><b>取消配对"${esc(c.name)}"？</b>
+      <p>这台 iPad 上的 Afar 之后要重新输配对码才能再连这台 Mac。正在显示的话会先断开。</p>
+      <div class="bt"><button class="red" data-unpair-yes>取消配对</button><button data-unpair-no>不了</button></div></div></div>`;
+}
+
+const SCREENS = {
+  w1: () => `<div class="wiz">
+      <h2>先让这台 Mac 准备好</h2><p>下面 4 项点一次按钮、输一次这台 Mac 的登录密码就全部做好。</p>
+      <div class="rows">
+        ${row(V.agent, '开机自动启动 Afar', '已安装，正在运行', '还没安装：请从"应用程序"里打开 Afar')}
+        ${row(V.fw, '允许 iPad 连进来', '防火墙已放行 Afar', '防火墙会拦住 iPad', '', V.busy === 'one' && !V.fw)}
+        ${row(V.power, '断电后自动开机', '已打开', '来电后要有人按电源键', '', V.busy === 'one' && !V.power)}
+        ${row(V.helper, '从 iPad 重启 Mac', '已装好重启助手，不会再弹授权', '装一个小助手，以后重启不再弹"控制 System Events"', '', V.busy === 'one' && !V.helper)}
+      </div>
+      ${oneDone() ? '' : `<button class="big" data-cmd="one" ${V.busy ? 'disabled' : ''}>${V.busy === 'one' ? '正在配置…' : '一键配置'}</button>
+        <div class="tip">会弹出系统的密码框，输入这台 Mac 的登录密码（Afar 拿不到这个密码）</div>`}
+      ${errBox()}
+      <div class="rows" style="margin-top:14px">${ipadRow()}</div>
+      <div class="grow"></div>
+      <div class="nav">${dots(1)}<span><button class="next" data-go="w2" ${oneDone() && V.ipad ? '' : 'disabled'}>下一步</button></span></div>
+    </div>`,
+  w2: () => `<div class="wiz">
+      <h2>在 iPad 上输入配对码</h2><p>在 iPad 上打开 Afar，选"${esc(V.name)}"，输入下面的数字。</p>
+      ${pairBody()}
+      <div class="grow"></div>
+      <div class="nav">${dots(2)}<span><button class="back" data-go="w1">上一步</button><button class="next" data-go="w3" ${V.paired ? '' : 'disabled'}>下一步</button></span></div>
+    </div>`,
+  pair: () => `<div class="wiz">
+      <h2>配对新 iPad</h2><p>在 iPad 上打开 Afar，选"${esc(V.name)}"，输入下面的数字。</p>
+      ${pairBody()}
+      <div class="grow"></div>
+      <div class="nav"><span></span>${V.pair_done
+        ? `<button class="next" data-go="${V.done ? 'status' : 'w1'}">好</button>`
+        : V.pair_left
+          ? `<button class="ghost" data-go="${V.done ? 'status' : 'w1'}">停止配对</button>`
+          : `<span><button class="back" data-go="${V.done ? 'status' : 'w1'}">返回</button></span>`}</div>
+    </div>`,
+  w3: () => `<div class="wiz">
+      <h2>断电后怎么恢复？</h2><p>选一种。现在不想弄可以先跳过，不影响使用。</p>
+      <button class="opt" aria-pressed="${V.plan === 'auto'}" data-plan="auto"><b>来电后自己进桌面（推荐放在家里的 Mac）</b><span>不用碰 Mac，iPad 自动连上。代价：Mac 被拿走时硬盘数据不加密。</span></button>
+      <button class="opt" aria-pressed="${V.plan === 'fv'}" data-plan="fv"><b>保持文件保险箱</b><span>来电后在 iPad 上点一下解锁磁盘，再到 Mac 前登录一次。</span></button>
+      <div class="rows">${recRows()}</div>
+      ${V.plan === 'fv' ? '' : '<div class="tip">文件保险箱、自动登录是安全设置，按钮只带你到那一页，由你本人点。</div>'}
+      ${V.busy ? '' : errBox()}
+      <div class="grow"></div>
+      <div class="nav">${dots(3)}<span><button class="later" data-go="w4">以后再说</button><button class="next" data-go="w4" ${recLeft() ? 'disabled' : ''}>完成</button></span></div>
+    </div>`,
+  w4: () => `<div class="wiz center">
+      <div class="link"><div class="dev">Mac</div><div class="wire"></div><div class="dev pad">iPad</div></div>
+      <h2>可以用了</h2><p style="max-width:340px">在 iPad 上点一下卡片，就显示这台 Mac 的桌面。${recLeft() ? `<br>断电恢复还差 ${recLeft()} 项，随时从菜单栏"检查并配置…"补上。` : V.plan === 'fv' ? '<br>断电来电后：在 iPad 上点一下解锁磁盘，再到 Mac 前登录一次。' : '<br>断电来电后会自己进桌面，iPad 自动连上。'}</p>
+      <div class="grow"></div>
+      <div class="nav" style="width:100%">${dots(4)}<button class="next" data-cmd="done">好</button></div>
+    </div>`,
+  status: () => {
+    const rec = recLeft();
+    const conn = [V.agent, V.fw, V.power, V.helper, !!V.ipad, V.paired > 0];
+    const connLeft = conn.filter((x) => !x).length;
+    const openConn = P.open.conn || connLeft > 0;
+    const openRec = P.open.rec || rec > 0;
+    return `<div class="wiz">
+      <div class="head"><h2>${connLeft ? '还有 ' + connLeft + ' 项没好' : rec ? '可以用，断电恢复还差 ' + rec + ' 项' : '一切正常'}</h2></div>
+      <button class="sum ${openConn ? 'open' : ''}" data-toggle="conn">${mark(!connLeft)}<b>连上 iPad</b><span class="v">${connLeft ? '还差 ' + connLeft + ' 项' : V.showing ? '正在显示到 ' + esc(V.showing) : '都好了'} ${openConn ? '⌃' : '⌄'}</span></button>
+      ${openConn ? `<div class="rows">
+        ${row(V.agent, '开机自动启动 Afar', '正在运行', '请从"应用程序"里打开 Afar')}
+        ${row(V.fw, '允许 iPad 连进来', '防火墙已放行', '防火墙会拦住 iPad', '<button class="act" data-cmd="one">修好</button>', V.busy === 'one' && !V.fw)}
+        ${row(V.power, '断电后自动开机', '已打开', '来电后要有人按电源键', '<button class="act" data-cmd="one">修好</button>', V.busy === 'one' && !V.power)}
+        ${row(V.helper, '重启助手', '已装好', '从 iPad 重启时会弹授权', '<button class="act" data-cmd="one">修好</button>', V.busy === 'one' && !V.helper)}
+        ${ipadRow()}
+        ${devRow()}
+      </div>` : ''}
+      <button class="sum ${openRec ? 'open' : ''}" data-toggle="rec">${mark(!rec)}<b>断电后自己恢复</b><span class="v">${rec ? '还差 ' + rec + ' 项' : V.plan === 'fv' ? '来电后 iPad 解锁 + Mac 前登录' : '来电后自动进桌面'} ${openRec ? '⌃' : '⌄'}</span></button>
+      ${openRec ? `<div class="rows">${recRows()}</div><div class="tip"><button style="text-decoration:underline" data-go="w3">换一种方案</button></div>` : ''}
+      ${errBox()}
+      <div class="grow"></div>
+      <div class="foot"><span>Afar ${esc(V.version)}</span><button data-cmd="again">重新走一遍向导</button></div>
+    </div>`;
+  },
+};
+
+function render() {
+  if (!V) return;
+  if (!P.screen) P.screen = V.done ? 'status' : 'w1';
+  document.getElementById('root').innerHTML = SCREENS[P.screen]() + confirmBox();
+}
+document.addEventListener('click', (e) => {
+  const q = (a) => e.target.closest(`[${a}]`);
+  let b;
+  if ((b = q('data-unpair'))) P.confirm = { id: b.dataset.unpair, name: (V.devices.find((d) => d.id === b.dataset.unpair) || {}).name || 'iPad' };
+  else if (q('data-unpair-yes')) { send('unpair', { id: P.confirm.id }); P.confirm = null; }
+  else if (q('data-unpair-no')) P.confirm = null;
+  else if ((b = q('data-go')) && !b.disabled) {
+    const from = P.screen, to = b.dataset.go;
+    const isPair = (s) => s === 'w2' || s === 'pair';
+    if (isPair(from) && !isPair(to)) send('pair_close');
+    if (isPair(to) && !isPair(from)) send('pair_open');
+    P.screen = to;
+  }
+  else if ((b = q('data-toggle'))) P.open[b.dataset.toggle] = !P.open[b.dataset.toggle];
+  else if ((b = q('data-open'))) return send('open', { what: b.dataset.open });
+  else if ((b = q('data-plan'))) { V.plan = b.dataset.plan; send('plan', { plan: V.plan }); }
+  else if ((b = q('data-cmd')) && !b.disabled) {
+    const c = b.dataset.cmd;
+    send(c);
+    if (c === 'done') { V.done = true; P.screen = 'status'; }
+    if (c === 'again') P.screen = 'w1';
+    if (c === 'one' || c === 'ssh') V.busy = c;
+  } else return;
+  render();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (P.confirm) { P.confirm = null; render(); } else send('close');
+});
+window.afar = {
+  update(v) {
+    V = v;
+    // Mac 端要求跳页（菜单栏"配对新 iPad…"、点了新配对的通知）：跳过去后回 went
+    if (V.go) {
+      // 从配对页被带走（点了新配对的通知）：配对跟着停
+      if (V.go !== 'pair' && (P.screen === 'w2' || P.screen === 'pair')) send('pair_close');
+      if (V.go === 'pair') P.screen = 'pair';
+      if (V.go === 'status') P.screen = V.done ? 'status' : 'w1';
+      if (V.go === 'devices') { P.screen = 'status'; P.open.conn = true; }
+      P.confirm = null;
+      send('went');
+    }
+    render();
+  },
+};
+send('ready');
+</script>
+</body>
+</html>
