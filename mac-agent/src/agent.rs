@@ -6,7 +6,7 @@ use crate::menubar::{self, MenuBar};
 use crate::persist::Saved;
 use crate::private::sidecar;
 use crate::private::virtual_display::{self, VirtualDisplay};
-use crate::reconnect::{Front, FrontAct, Keep, FRONT_TIMEOUT};
+use crate::reconnect::{self, Front, FrontAct, Keep, FRONT_TIMEOUT};
 use crate::screens::{self, Kind, VdAct, VdPlan};
 use crate::server::{self, Command, Kb};
 use crate::{bt, bt_pair, config, display, dnssd, keepalive, notify, runloop, scale, setup};
@@ -737,7 +737,14 @@ pub fn run() -> i32 {
             let todo = setup_view(&st).todo();
             let s = st.status.lock().unwrap().clone();
             objc2::rc::autoreleasepool(|_| {
-                b.update(&menubar::View { name: s.name, state: s.state, showing: s.showing, todo })
+                b.update(&menubar::View {
+                    name: s.name,
+                    state: s.state,
+                    showing: s.showing,
+                    todo,
+                    // 只在真的会自动连回时显示"已暂停"（关了自动连接、刚插显示器时不显示）
+                    paused: st.keep.paused() && cfg.auto_connect && !plug_held(&st),
+                })
             });
         }
         // 每秒：认显示器、按需建 / 关虚拟屏、纠正镜像（插回显示器时系统可能套用旧的镜像排列）
@@ -1396,12 +1403,12 @@ fn tick(cfg: &config::Config, st: &mut State) {
     if let Some(d) = connected.first() {
         st.was_available = true;
         st.last_connected = Some(Instant::now());
-        // 连上稳定 10 秒才清零重试计数：锁屏期间的连接尝试可能"连上一下又断"，不能每次都从头按 10 秒试
+        // 连稳 2 分钟才清零重试计数：无线不稳时会"连上 20～40 秒又断"，每次失败 / 断开系统都弹框（v0.4.9）
         let since = *st.connected_since.get_or_insert_with(Instant::now);
-        if since.elapsed() >= Duration::from_secs(10) {
+        if since.elapsed() >= reconnect::STABLE {
             st.keep.shown(&d.name);
         } else {
-            st.keep.target = Some(d.name.clone());
+            st.keep.unstable(&d.name, Instant::now());
         }
         return;
     }
@@ -1413,16 +1420,25 @@ fn tick(cfg: &config::Config, st: &mut State) {
     // 保持显示：不是从 Afar 断开的（锁屏、信号不好、开机超时、侧边栏断开）都连回去
     if let Some(name) = st.keep.target.clone() {
         let dev = available.iter().find(|d| d.name == name);
+        let was_paused = st.keep.paused();
+        st.keep.presence(dev.is_some(), Instant::now());
+        if was_paused && !st.keep.paused() {
+            info!("iPad「{name}」重新出现在附近，恢复自动连回");
+        }
         if st.keep.due(dev.is_some(), Instant::now()) {
             st.keep.tried(Instant::now());
-            // 前几次都记；之后每 10 次记一次（iPad 长时间锁屏时日志不刷屏）
-            if st.keep.tries <= 3 || st.keep.tries.is_multiple_of(10) {
-                info!("随航没在显示，自动连回「{name}」（第 {} 次）", st.keep.tries);
-            }
+            info!("随航没在显示，自动连回「{name}」（第 {}/{} 次）", st.keep.tries, reconnect::MAX_TRIES);
             if let Some(dev) = dev {
                 if let Err(e) = sidecar::connect(dev) {
                     warn!("{e}");
                 }
+            }
+            if st.keep.paused() {
+                warn!(
+                    "这是第 {} 次自动连回：这次再连不上、或 2 分钟内又断，就暂停自动连回，\
+                     到时在 iPad 上点卡片或菜单栏点「立即连接 iPad」恢复（无线信号不好？）",
+                    reconnect::MAX_TRIES
+                );
             }
         }
         st.was_available = true;

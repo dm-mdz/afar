@@ -1,6 +1,6 @@
 [package]
 name = "afar-proto"
-version = "0.4.8"
+version = "0.4.9"
 edition = "2021"
 license = "MIT"
 description = "Afar 通信协议：Mac 端和 iPad App 共用（数据结构、配对、HTTP 收发、客户端）"

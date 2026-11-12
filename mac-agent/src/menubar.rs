@@ -89,6 +89,8 @@ pub struct View {
     pub showing: Option<String>,
     /// "设置 Afar"里还差几项。
     pub todo: usize,
+    /// 随航反复连不稳，已暂停自动连回（reconnect::Keep::paused）。
+    pub paused: bool,
 }
 
 pub struct MenuBar {
@@ -131,7 +133,7 @@ impl MenuBar {
 
     /// 内容有变化才重建菜单。
     pub fn update(&mut self, v: &View) {
-        let key = format!("{}|{}|{:?}|{}", v.name, v.state, v.showing, v.todo);
+        let key = format!("{}|{}|{:?}|{}|{}", v.name, v.state, v.showing, v.todo, v.paused);
         if key == self.last_key {
             return;
         }
@@ -140,6 +142,7 @@ impl MenuBar {
         let (icon, line) = match v.state.as_str() {
             "showing" => ("▣", format!("● 正在显示到 {}", v.showing.clone().unwrap_or_default())),
             "connecting" => ("▣", "◌ 正在连接…".to_string()),
+            _ if v.paused => ("⚠︎", "⚠︎ 随航不稳定，已暂停自动连接".to_string()),
             _ => ("▢", "○ 等待 iPad".to_string()),
         };
         let icon = if v.todo > 0 { "⚠︎" } else { icon };

@@ -1,6 +1,6 @@
 [package]
 name = "afar-agent"
-version = "0.4.8"
+version = "0.4.9"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "Afar Mac 端常驻程序：虚拟屏、防休眠、随航自动连接、给 iPad App 的控制接口"
