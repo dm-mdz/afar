@@ -14,7 +14,7 @@
 
 ### 能做什么
 - **没接显示器也能用**：建一块虚拟屏、防休眠，Mac mini 不接显示器也有桌面。
-- **随航自动连接、保持显示**：iPad 锁屏、信号不好、开机超时等原因断开后自动连回；从 Afar 主动断开的不会被连回。
+- **随航自动连接**：开机、点卡片时自动连，没连上会再试 2 次；随航中途断了（iPad 锁屏、信号不好），iPad 回到 Afar 时自动连回（Mac 不对着睡着的 iPad 反复重连，不会没完没了地弹"无法连接"）；从 Afar 主动断开后不会被自动连回，直到你再点连接。
 - **显示大小三档**：更大文字 / 默认 / 更多空间，按每台 iPad 的屏幕计算。
 - **菜单栏**：状态、立即连接 / 断开 iPad、配对新 iPad。
 - **"设置 Afar"向导和状态页**：防火墙放行、断电后自动开机、重启助手、文件保险箱和自动登录的引导；列出已配对的 iPad，可逐台取消配对。
@@ -103,7 +103,7 @@ This repository contains Afar's **Mac agent** and the **protocol** spoken betwee
 
 ### Features
 - **Works without a monitor**: creates a virtual display and keeps the Mac awake.
-- **Sidecar auto-connect and keep-alive**: reconnects automatically after the iPad locks, the signal drops or the first connection at boot times out; a disconnect you start from Afar is respected.
+- **Sidecar auto-connect**: connects at startup and when you tap a card, retrying twice if it fails; if Sidecar drops (iPad locked, weak signal) the iPad reconnects when you return to the Afar app, so the Mac never keeps calling a sleeping iPad and you don't get endless "couldn't connect" alerts; a disconnect you start from Afar is respected until you connect again.
 - **Three display sizes** (larger text / default / more space), computed per iPad model.
 - **Menu bar item**: status, connect / disconnect, pair a new iPad.
 - **"Set up Afar" assistant and status page**: firewall, automatic start after power loss, restart helper, guidance for FileVault and automatic login; lists paired iPads and lets you unpair each one.

@@ -1,103 +1,77 @@
-//! "保持显示"：Afar 让哪台 iPad 显示了，就一直保持，直到从 Afar（App 或菜单栏）断开。
-//! 中途不管因为什么断了（iPad 锁屏、无线信号不好、开机第一次连接超时、在 iPad 侧边栏点了断开），都自动连回去：
-//! 前 3 次每 10 秒一次，之后 30 秒、1 分钟、2 分钟；6 次都没连稳就暂停，iPad 不在附近时不试。
-//! 纯逻辑（时间由调用方传入），可在任何电脑上测试。
+//! "连接请求"：用户发起了连接（iPad 上点卡片 / App 回到前台自动连、菜单栏、回到 Mac 桌面），没连上就再试 2 次；
+//! Mac 自己发起的（开机 / iPad 出现时自动连接）只连一次；用户从 Afar 断开过就不自己发起，等用户点连接（或 Afar 重启）。
+//! 连上以后中途断了（iPad 锁屏 / 自己休眠、信号不好、在 iPad 侧边栏点了断开）Mac **不**自己连回：
+//! 由 iPad App 回到前台时（解锁后回到 Afar、打开 Afar）自动发起连接。纯逻辑（时间由调用方传入），可在任何电脑上测试。
 //!
-//! v0.4.9：原来每 15 秒一直试、连上一下就清零。无线不稳时随航"连上 20～40 秒又断"，每次失败 / 断开系统都弹一个
-//! "无法连接…"的框（系统的随航程序弹的，Afar 关不掉），Mac 上越积越多。改为：连稳 2 分钟（`STABLE`）才清零，
-//! 间隔逐步拉长，第 6 次还不稳就暂停（`paused`），等用户在 iPad 上点卡片 / 菜单栏"立即连接"（`want`）、
-//! 或 iPad 离开附近又回来（`presence`）再恢复。
-//!
-//! 设计决定（v0.3.6 测试后）：Afar 分不出"锁屏断开"和"侧边栏断开"，按"不是从 Afar 断开的都连回"处理；
-//! 想断开请用 App 里的"断开显示"（侧边栏已隐藏）。
+//! v0.4.10 改动的根源：原来（v0.3.6 起）"不是从 Afar 断开的都一直连回"。iPad 锁屏 / 休眠后 Mac 照样去连，
+//! 连上会把 iPad 叫醒一下，iPad 20～40 秒后又睡、随航断开（系统日志 RTCP Timeout），Mac 再连……
+//! 每次失败 / 断开系统的随航程序都弹一个"无法连接…"的框，没完没了（v0.4.9 只是 6 次后暂停，治标）。
+//! Mac 分不出"iPad 睡了"和"信号断了"，iPad App 却知道自己什么时候醒着，所以连回改由 iPad 发起。
 
 use std::time::{Duration, Instant};
 
-/// 断开后第 1～6 次自动连回前各等多久（秒）。
-const GAPS: [u64; MAX_TRIES as usize] = [10, 10, 10, 30, 60, 120];
-/// 连续这么多次都没连稳：暂停自动连回。
-pub const MAX_TRIES: u32 = 6;
-/// 连上这么久没断才算稳，清零计数。
-pub const STABLE: Duration = Duration::from_secs(120);
-/// 目标 iPad 不在附近这么久才算"真的离开"（无线不稳时它可能在附近列表里闪一下，不能每次都清零）。
-const AWAY: Duration = Duration::from_secs(60);
+/// 连接请求没连上时，再试前等多久；试几次。超时后的下一次常被 iPad 秒拒（-101），所以至少要再试 2 次。
+/// 15 秒：一次连接超时要 10 秒左右才报失败（结果是异步回来的），间隔太短会和还没结束的那次撞上。
+const GAP: Duration = Duration::from_secs(15);
+pub const RETRIES: u32 = 2;
 
 #[derive(Debug, Default)]
 pub struct Keep {
-    /// 要保持显示的 iPad（随航名称）。None = 用户从 Afar 断开了，或从没连过。
+    /// 最近一次要显示到哪台 iPad（随航名称）。None = 用户从 Afar 断开了，或从没连过。
     pub target: Option<String>,
-    /// 这次断开后已经试了几次。
+    /// 这次连接请求已经补试了几次。
     pub tries: u32,
     last_try: Option<Instant>,
-    /// 目标 iPad 从什么时候起不在附近。
-    away_since: Option<Instant>,
+    /// 有连接请求还没连上。
+    pending: bool,
 }
 
 impl Keep {
-    /// Afar 发起了连接（App、菜单栏、自动连接），或者看到正在显示：之后就保持这台。
+    /// Afar 发起了连接（App、菜单栏、开机自动连接、回到 Mac 桌面）：没连上就补试。
     pub fn want(&mut self, name: &str, now: Instant) {
-        self.retarget(name);
+        self.target = Some(name.to_string());
         self.tries = 0;
         self.last_try = Some(now);
+        self.pending = true;
     }
 
-    /// 正在显示（连稳了）：清零计数。
+    /// Mac 自己发起的连接（开机 / iPad 出现时自动连接）：只连这一次，不补试。
+    pub fn once(&mut self, name: &str) {
+        self.shown(name);
+    }
+
+    /// 正在显示：请求完成；之后断了不自己连回。
     pub fn shown(&mut self, name: &str) {
-        self.retarget(name);
+        self.target = Some(name.to_string());
         self.tries = 0;
         self.last_try = None;
+        self.pending = false;
     }
 
-    /// 连着但还没连稳（不到 `STABLE`）：不清零；下次间隔从断开那一刻算。
-    pub fn unstable(&mut self, name: &str, now: Instant) {
-        self.retarget(name);
-        self.last_try = Some(now);
-    }
-
-    /// 换了一台 iPad：上一台的计数、"不在附近"都不带过来。
-    fn retarget(&mut self, name: &str) {
-        if self.target.as_deref() != Some(name) {
-            self.target = Some(name.to_string());
-            self.tries = 0;
-            self.away_since = None;
-        }
-    }
-
-    /// 用户从 Afar 断开：不再保持。
+    /// 用户从 Afar 断开：清空。
     pub fn stop(&mut self) {
         *self = Keep::default();
     }
 
-    /// 连续 `MAX_TRIES` 次没连稳：暂停自动连回。
-    pub fn paused(&self) -> bool {
-        self.target.is_some() && self.tries >= MAX_TRIES
-    }
-
-    /// 没在显示时每轮调用：目标 iPad 离开附近至少 `AWAY` 又回来 = 换了环境（关机、关蓝牙后再开等），从头试。
-    pub fn presence(&mut self, available: bool, now: Instant) {
-        if !available {
-            self.away_since.get_or_insert(now);
-        } else if let Some(t) = self.away_since.take() {
-            if now.saturating_duration_since(t) >= AWAY {
-                self.tries = 0;
-                self.last_try = None;
-            }
-        }
-    }
-
-    /// 没在显示时每轮调用：`available` = 目标 iPad 在附近。返回 true = 现在去连一次（调用方连完调用 `tried`）。
+    /// 没在显示时每轮调用：`available` = 目标 iPad 在附近。返回 true = 现在去补试一次（调用方连完调用 `tried`）。
     pub fn due(&self, available: bool, now: Instant) -> bool {
-        if self.target.is_none() || !available || self.paused() {
-            return false;
-        }
-        let gap = Duration::from_secs(GAPS.get(self.tries as usize).copied().unwrap_or(GAPS[GAPS.len() - 1]));
-        self.last_try.is_none_or(|t| now.saturating_duration_since(t) >= gap)
+        self.pending
+            && self.target.is_some()
+            && available
+            && self.tries < RETRIES
+            && self.last_try.is_none_or(|t| now.saturating_duration_since(t) >= GAP)
     }
 
     pub fn tried(&mut self, now: Instant) {
         self.tries += 1;
         self.last_try = Some(now);
     }
+}
+
+/// Mac 自己发起的自动连接（iPad 新出现：之前不在附近、现在在了）这一轮要不要连。
+/// 用户从 Afar 断开过（`user_off`）就不连：iPad 睡一觉醒来会被当成"新出现"，连了等于断开不算数。
+pub fn auto_on_appear(was_available: bool, user_off: bool) -> bool {
+    !was_available && !user_off
 }
 
 /// "回到 Mac 桌面"（POST /front）：随航已连在这台 iPad 上时，先断开、再连回，iPad 收到 Mac 发起的连接会切到随航画面。

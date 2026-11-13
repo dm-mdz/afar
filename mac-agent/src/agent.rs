@@ -25,6 +25,8 @@ const TICK: Duration = Duration::from_secs(3);
 const DISPLAY_RETRY: Duration = Duration::from_secs(10);
 /// 刚断开随航后这段时间内 iPad 重新"出现"不算新出现（从 iPad 那头断开时不会被立刻连回去）。
 const COOLDOWN: Duration = Duration::from_secs(30);
+/// 随航意外断开后这么久内，iPad App 回到前台的自动连接不接（用户在随航里自己断开、或一连上就掉）。
+const AUTO_AFTER_DROP: Duration = Duration::from_secs(10);
 /// iPad App 点"连接"后，最多显示"连接中"多久。
 const CONNECTING_FOR: Duration = Duration::from_secs(15);
 /// 设置窗口关掉多久后释放网页（马上再打开时不用重建）。
@@ -60,6 +62,10 @@ struct State {
     vd_plan: VdPlan,
     /// 上一轮正在显示的 iPad（随航里的名称，只用来记"断开了"的日志）。
     prev_showing: Option<String>,
+    /// 用户从 Afar 断开了（菜单栏、命令行、App），之后用户自己点连接才清掉：iPad App 回到前台时的自动连接不接。
+    user_off: bool,
+    /// 随航上次意外断开的时间：之后 `AUTO_AFTER_DROP` 内 iPad App 的自动连接不接。
+    dropped_at: Option<Instant>,
     /// 保持显示：不是从 Afar 断开的都自动连回（见 reconnect.rs）。
     keep: Keep,
     /// "回到 Mac 桌面"进行中（断开 → 连回 → 稳定），见 reconnect::Front。
@@ -67,8 +73,6 @@ struct State {
     /// 刚从 Afar 断开（菜单栏、App、命令行）：断开是异步的，这几秒里还看到"已连接"不能当成又连上了
     /// （v0.4.3 测试：菜单栏断开后 3 秒被当成意外断开自动连回，2/2 复现）。
     dropping: Option<Instant>,
-    /// 这次随航从什么时候开始连着（tick 里看，稳定 10 秒才算真连上）。
-    connected_since: Option<Instant>,
     /// 随航屏从什么时候开始在线（每秒看；接着实体显示器时，稳定 2 秒才为它建虚拟屏）。
     sidecar_since: Option<Instant>,
     /// 重建虚拟屏后读不到它的模式时，已经多等了几轮。
@@ -546,10 +550,11 @@ pub fn run() -> i32 {
         mirror: cfg.mirror,
         vd_plan: VdPlan::default(),
         prev_showing: None,
+        user_off: false,
+        dropped_at: None,
         keep: Keep::default(),
         front: None,
         dropping: None,
-        connected_since: None,
         sidecar_since: None,
         scale_wait: 0,
         vd_serial: 1,
@@ -716,7 +721,7 @@ pub fn run() -> i32 {
                     // 只记日志，不发任何指令（发"断开"会触发 30 秒冷却）
                     warn!("附近没有可用的 iPad（iPad 要解锁、和 Mac 用同一个 Apple 账户、打开蓝牙和 Wi-Fi）");
                 }
-                target.map(|d| Command::Connect { sidecar_name: d.name.clone(), keyboard: false })
+                target.map(|d| Command::Connect { sidecar_name: d.name.clone(), keyboard: false, auto: false })
             };
             if let Some(cmd) = cmd {
                 run_command(cmd, &mut st);
@@ -737,14 +742,7 @@ pub fn run() -> i32 {
             let todo = setup_view(&st).todo();
             let s = st.status.lock().unwrap().clone();
             objc2::rc::autoreleasepool(|_| {
-                b.update(&menubar::View {
-                    name: s.name,
-                    state: s.state,
-                    showing: s.showing,
-                    todo,
-                    // 只在真的会自动连回时显示"已暂停"（关了自动连接、刚插显示器时不显示）
-                    paused: st.keep.paused() && cfg.auto_connect && !plug_held(&st),
-                })
+                b.update(&menubar::View { name: s.name, state: s.state, showing: s.showing, todo })
             });
         }
         // 每秒：认显示器、按需建 / 关虚拟屏、纠正镜像（插回显示器时系统可能套用旧的镜像排列）
@@ -874,7 +872,19 @@ fn handle_commands(rx: &Receiver<Command>, st: &mut State) {
 fn run_command(cmd: Command, st: &mut State) {
     info!("收到指令：{cmd:?}");
     match cmd {
-        Command::Connect { sidecar_name, keyboard } => {
+        Command::Connect { sidecar_name, keyboard, auto } => {
+            // iPad App 回到前台自动连（v0.4.10）：用户刚从 Afar 断开（菜单栏、命令行、App）、或随航刚断开不到 10 秒
+            // （在随航里从控制中心断开、一连上就掉），都不接：等用户自己点卡片
+            if auto && (st.user_off || st.dropped_at.is_some_and(|t| t.elapsed() < AUTO_AFTER_DROP)) {
+                info!(
+                    "iPad App 自动连接「{sidecar_name}」：{}，不连（等用户点卡片）",
+                    if st.user_off { "刚从 Afar 断开" } else { "随航刚断开" }
+                );
+                return;
+            }
+            if !auto {
+                st.user_off = false;
+            }
             st.front = None; // 用户换了操作：回到桌面作废（否则会把这次连接挤掉）
             st.dropping = None;
             use_ipad(st, &sidecar_name);
@@ -910,6 +920,7 @@ fn run_command(cmd: Command, st: &mut State) {
             st.kb.on_disconnect(!connected.is_empty(), Instant::now());
             st.last_connected = Some(Instant::now()); // 冷却期内不会被自动连回去
             st.keep.stop(); // 用户从 Afar 断开：不再自动连回
+            st.user_off = true; // iPad App 回到前台也不自动连，等用户点卡片
             st.dropping = (!connected.is_empty()).then(Instant::now);
         }
         Command::Front { sidecar_name } => {
@@ -1403,49 +1414,31 @@ fn tick(cfg: &config::Config, st: &mut State) {
     if let Some(d) = connected.first() {
         st.was_available = true;
         st.last_connected = Some(Instant::now());
-        // 连稳 2 分钟才清零重试计数：无线不稳时会"连上 20～40 秒又断"，每次失败 / 断开系统都弹框（v0.4.9）
-        let since = *st.connected_since.get_or_insert_with(Instant::now);
-        if since.elapsed() >= reconnect::STABLE {
-            st.keep.shown(&d.name);
-        } else {
-            st.keep.unstable(&d.name, Instant::now());
-        }
+        st.keep.shown(&d.name);
+        st.user_off = false; // 在显示了（也可能是用户从系统控制中心连的）：不再算"从 Afar 断开"
         return;
     }
-    st.connected_since = None;
     // 刚插上实体显示器：自动连回随航也等系统读完它再做（用户自己点连接不拦）
     if !cfg.auto_connect || plug_held(st) {
         return;
     }
-    // 保持显示：不是从 Afar 断开的（锁屏、信号不好、开机超时、侧边栏断开）都连回去
+    // 连接请求没连上：补试（最多 reconnect::RETRIES 次）。显示过以后断了不自己连回，等 iPad App 回到前台发起（v0.4.10）
     if let Some(name) = st.keep.target.clone() {
         let dev = available.iter().find(|d| d.name == name);
-        let was_paused = st.keep.paused();
-        st.keep.presence(dev.is_some(), Instant::now());
-        if was_paused && !st.keep.paused() {
-            info!("iPad「{name}」重新出现在附近，恢复自动连回");
-        }
         if st.keep.due(dev.is_some(), Instant::now()) {
             st.keep.tried(Instant::now());
-            info!("随航没在显示，自动连回「{name}」（第 {}/{} 次）", st.keep.tries, reconnect::MAX_TRIES);
+            info!("还没连上「{name}」，再试一次（第 {}/{} 次）", st.keep.tries, reconnect::RETRIES);
             if let Some(dev) = dev {
                 if let Err(e) = sidecar::connect(dev) {
                     warn!("{e}");
                 }
-            }
-            if st.keep.paused() {
-                warn!(
-                    "这是第 {} 次自动连回：这次再连不上、或 2 分钟内又断，就暂停自动连回，\
-                     到时在 iPad 上点卡片或菜单栏点「立即连接 iPad」恢复（无线信号不好？）",
-                    reconnect::MAX_TRIES
-                );
             }
         }
         st.was_available = true;
         return;
     }
 
-    // 从没连过、或用户从 Afar 断开后：iPad 新出现时自动连一次（之后由"保持显示"负责重试）
+    // 这次启动后还没连过：iPad 新出现时自动连一次（不补试）。用户从 Afar 断开过就不连，等用户点连接或 Afar 重启（v0.4.10）
     // 只连：配置里指定的 iPad → 上次用 iPad App 连过的 → 都没有就第一台
     let wanted =
         if !cfg.ipad_name.is_empty() { cfg.ipad_name.clone() } else { st.saved.last_ipad.clone().unwrap_or_default() };
@@ -1455,12 +1448,13 @@ fn tick(cfg: &config::Config, st: &mut State) {
     if st.last_connected.is_some_and(|t| t.elapsed() < COOLDOWN) {
         st.was_available = true;
     }
-    if let Some(dev) = target.filter(|_| !st.was_available) {
+    if let Some(dev) = target.filter(|_| reconnect::auto_on_appear(st.was_available, st.user_off)) {
         info!("iPad「{}」可用，自动连接", dev.name);
         if let Err(e) = sidecar::connect(dev) {
             warn!("{e}");
         }
-        st.keep.want(&dev.name, Instant::now());
+        st.keep.once(&dev.name); // Mac 自己发起的不补试：iPad 可能睡着（补试只会多弹框），醒来后 App 会连
+        st.connecting_until = Some(Instant::now() + CONNECTING_FOR); // 卡片报"连接中"，App 这时不会再来连
     }
     st.was_available = now_available;
 }
@@ -1872,7 +1866,7 @@ fn front_step(st: &mut State, available: &[sidecar::Device], connected: &[sideca
             st.front = None;
         }
         FrontAct::GiveUp => {
-            warn!("回到 Mac 桌面：「{name}」没能断开再连回，交给保持显示");
+            warn!("回到 Mac 桌面：「{name}」没能断开再连回，放弃");
             st.front = None;
         }
     }
@@ -1883,8 +1877,11 @@ fn note_drop(st: &mut State, connected: &[sidecar::Device], auto: bool) {
     if let (None, Some(prev)) = (&now_name, &st.prev_showing) {
         if st.front.is_some() {
             info!("回到 Mac 桌面：「{prev}」已断开，稍后连回");
-        } else if auto && st.keep.target.is_some() {
-            info!("随航断开了（不是从 Afar 断开的）：{prev}，会自动连回");
+        } else {
+            st.dropped_at = Some(Instant::now());
+            if auto && st.keep.target.is_some() {
+                info!("随航断开了（不是从 Afar 断开的）：{prev}；Mac 不自己连回，iPad 回到 Afar 时会连");
+            }
         }
     }
     st.prev_showing = now_name;

@@ -52,6 +52,8 @@ pub enum Command {
     Connect {
         sidecar_name: String,
         keyboard: bool,
+        /// iPad App 回到前台时自动发起的（见 ConnectReq::auto）。
+        auto: bool,
     },
     Disconnect,
     /// "回到 Mac 桌面"：随航已经连在这台 iPad 上、但 iPad 上 Afar 在前台时，让 Mac 把随航断开再连回，
@@ -661,7 +663,7 @@ fn authed(sh: &Shared, m: &Message, method: &str, path: &str, dev: Device) -> Re
             if let Some(px) = req.screen.and_then(afar_proto::normalize_screen) {
                 let _ = sh.backend.command(Command::IpadScreen { name: target.clone(), px });
             }
-            run(sh, Command::Connect { sidecar_name: target, keyboard: req.keyboard })
+            run(sh, Command::Connect { sidecar_name: target, keyboard: req.keyboard, auto: req.auto })
         }
         ("POST", "/disconnect") => run(sh, Command::Disconnect),
         ("POST", "/front") => match dev.sidecar_name.clone() {

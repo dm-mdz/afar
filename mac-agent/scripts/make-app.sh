@@ -1,9 +1,10 @@
 #!/bin/sh
 # 在 Mac 上打包 Afar.app 和 Afar-<版本>.dmg（AFAR-008）。在仓库根目录或任意位置运行：sh mac-agent/scripts/make-app.sh
 # 没有开发者账号时用"临时签名"（ad-hoc）：第一次打开要在 系统设置 › 隐私与安全性 里点"仍要打开"；
-# 每次重新打包签名都会变，蓝牙等授权要重新允许一次。开发者账号生效后：
-#   AFAR_SIGN_ID="Developer ID Application: 你的名字 (TEAMID)" sh mac-agent/scripts/make-app.sh
-# 再按 README 的说明公证（notarytool）。
+# 每次重新打包签名都会变，蓝牙等授权要重新允许一次。有开发者账号后（签名 + 公证，用户打开不再被拦）：
+#   AFAR_SIGN_ID="Developer ID Application: 你的名字 (TEAMID)" AFAR_NOTARY_PROFILE=afar-notary sh mac-agent/scripts/make-app.sh
+# AFAR_NOTARY_PROFILE 是 `xcrun notarytool store-credentials` 存进钥匙串的配置名（不设就只签名不公证）。
+# 证书名、Team ID、Apple ID、密码都只从环境变量 / 钥匙串来，不写进任何仓库文件。
 set -e
 cd "$(dirname "$0")/../.."
 VER=$(sed -n 's/^version = "\(.*\)"/\1/p' mac-agent/Cargo.toml | head -1)
@@ -36,8 +37,8 @@ done
 iconutil -c icns "$SET" -o "$APP/Contents/Resources/AppIcon.icns"
 rm -rf "$SET"
 
-if [ -n "$AFAR_SIGN_ID" ]; then
-  codesign --force --options runtime --timestamp -s "$AFAR_SIGN_ID" "$APP"
+if [ -n "${AFAR_SIGN_ID:-}" ]; then
+  codesign --force --options runtime --timestamp --entitlements mac-agent/app/Afar.entitlements -s "$AFAR_SIGN_ID" "$APP"
 else
   codesign --force -s - "$APP"
 fi
@@ -50,5 +51,16 @@ cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/应用程序"
 hdiutil create -volname "Afar" -srcfolder "$STAGE" -ov -format UDZO "$OUT/Afar-$VER.dmg" >/dev/null
 rm -rf "$STAGE"
+DMG="$OUT/Afar-$VER.dmg"
+if [ -n "${AFAR_SIGN_ID:-}" ]; then
+  codesign --force --timestamp -s "$AFAR_SIGN_ID" "$DMG"
+fi
+# 公证：交给苹果检查（几分钟），通过后把公证票据钉进磁盘映像，离线打开也认
+if [ -n "${AFAR_SIGN_ID:-}" ] && [ -n "${AFAR_NOTARY_PROFILE:-}" ]; then
+  xcrun notarytool submit "$DMG" --keychain-profile "$AFAR_NOTARY_PROFILE" --wait | tee "$OUT/notary.log"
+  grep -q "status: Accepted" "$OUT/notary.log" || { echo "公证没通过，详情：xcrun notarytool log <上面的 id> --keychain-profile $AFAR_NOTARY_PROFILE" >&2; exit 1; }
+  xcrun stapler staple "$DMG"
+  spctl -a -t open --context context:primary-signature -v "$DMG"
+fi
 echo "已生成：$APP"
 echo "已生成：$OUT/Afar-$VER.dmg"

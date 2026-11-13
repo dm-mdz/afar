@@ -70,6 +70,10 @@ pub struct ConnectReq {
     /// iPad 屏幕的物理像素（横屏：长边、短边），Mac 按它算三档显示大小。v0.4.2 起；旧版 iPad App 不带。
     #[serde(default)]
     pub screen: Option<[u32; 2]>,
+    /// v0.4.10：iPad App 回到前台时自动发起的（不是用户点的）。用户刚从 Afar 断开、或随航刚断开不到 10 秒时
+    /// Mac 不接（那是用户自己断的 / 一连就掉），免得 App 和用户抢、或"连上就掉又连"。旧版 App 不带 = 用户点的。
+    #[serde(default)]
+    pub auto: bool,
 }
 
 /// POST /restart 的请求体。旧版 iPad App 发 `{}`：按不重新打开窗口处理。
