@@ -75,6 +75,20 @@ pub fn vd_modes(presets: &[Preset], want: Preset, style: u8) -> Vec<(u32, u32)> 
     v
 }
 
+/// 在虚拟屏模式列表末尾加上配置里的额外尺寸（`extra` 是像素），每个尺寸连同它的一半一起加，已有的不重复加。
+/// 实测（2026-11-13，虚拟屏模式列表）：清晰模式 W×H（像素 2W×2H）只有在列表里同时有 1 倍的 2W×2H 和 W×H 时
+/// 系统才标"能当桌面用"；只加 2560×1600 时，1280×800 清晰模式在"显示器"里选不了（切换返回 1001）。
+pub fn with_extra(mut modes: Vec<(u32, u32)>, extra: &[[u32; 2]]) -> Vec<(u32, u32)> {
+    for s in extra {
+        for m in [(s[0], s[1]), (s[0] / 2, s[1] / 2)] {
+            if !modes.contains(&m) {
+                modes.push(m);
+            }
+        }
+    }
+    modes
+}
+
 /// 虚拟屏的最大像素：各档像素尺寸里最大的（两种写法一样）。
 pub fn vd_max(presets: &[Preset]) -> (u32, u32) {
     (presets.iter().map(|p| p.w * 2).max().unwrap_or(0), presets.iter().map(|p| p.h * 2).max().unwrap_or(0))

@@ -1,5 +1,5 @@
 //! "连接请求"：用户发起了连接（iPad 上点卡片 / App 回到前台自动连、菜单栏、回到 Mac 桌面），没连上就再试 2 次；
-//! Mac 自己发起的（开机 / iPad 出现时自动连接）只连一次；用户从 Afar 断开过就不自己发起，等用户点连接（或 Afar 重启）。
+//! Mac 自己发起的（开机 / iPad 出现时自动连接）只连一次；菜单栏"开机自动连接 iPad"关了、或用户从 Afar 断开过（存盘，重启后仍算）就不自己发起，等用户点连接。
 //! 连上以后中途断了（iPad 锁屏 / 自己休眠、信号不好、在 iPad 侧边栏点了断开）Mac **不**自己连回：
 //! 由 iPad App 回到前台时（解锁后回到 Afar、打开 Afar）自动发起连接。纯逻辑（时间由调用方传入），可在任何电脑上测试。
 //!
@@ -69,9 +69,10 @@ impl Keep {
 }
 
 /// Mac 自己发起的自动连接（iPad 新出现：之前不在附近、现在在了）这一轮要不要连。
-/// 用户从 Afar 断开过（`user_off`）就不连：iPad 睡一觉醒来会被当成"新出现"，连了等于断开不算数。
-pub fn auto_on_appear(was_available: bool, user_off: bool) -> bool {
-    !was_available && !user_off
+/// 用户从 Afar 断开过（`user_off`，重启后仍算）就不连：iPad 睡一觉醒来、Mac 重启都会被当成"新出现"，连了等于断开不算数。
+/// `boot_on`：菜单栏"开机自动连接 iPad"开着。
+pub fn auto_on_appear(was_available: bool, user_off: bool, boot_on: bool) -> bool {
+    boot_on && !was_available && !user_off
 }
 
 /// "回到 Mac 桌面"（POST /front）：随航已连在这台 iPad 上时，先断开、再连回，iPad 收到 Mac 发起的连接会切到随航画面。

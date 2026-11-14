@@ -62,8 +62,6 @@ struct State {
     vd_plan: VdPlan,
     /// 上一轮正在显示的 iPad（随航里的名称，只用来记"断开了"的日志）。
     prev_showing: Option<String>,
-    /// 用户从 Afar 断开了（菜单栏、命令行、App），之后用户自己点连接才清掉：iPad App 回到前台时的自动连接不接。
-    user_off: bool,
     /// 随航上次意外断开的时间：之后 `AUTO_AFTER_DROP` 内 iPad App 的自动连接不接。
     dropped_at: Option<Instant>,
     /// 保持显示：不是从 Afar 断开的都自动连回（见 reconnect.rs）。
@@ -129,6 +127,8 @@ struct State {
     saved: Saved,
     dir: PathBuf,
     presets: Vec<scale::Preset>,
+    /// config.toml 的 extra_sizes：虚拟屏额外的分辨率（像素）。
+    extra_sizes: Vec<[u32; 2]>,
     status: Arc<Mutex<Status>>,
     bonjour: Option<dnssd::Registration>,
     port: u16,
@@ -512,7 +512,12 @@ pub fn run() -> i32 {
     let mut kinds = HashMap::new();
     let (physical, showing) = classify(&mut kinds, 0);
     let vd = if screens::want_vd(!physical.is_empty(), showing, cfg.mirror) {
-        match virtual_display::create(&scale::vd_modes(&presets, want, 0), scale::vd_max(&presets), VD_NAME, 1) {
+        match virtual_display::create(
+            &scale::with_extra(scale::vd_modes(&presets, want, 0), &cfg.extra_sizes),
+            scale::vd_max(&presets),
+            VD_NAME,
+            1,
+        ) {
             Ok(v) => {
                 info!("虚拟屏已创建，显示器 ID {}（{}）", v.id, vd_reason(!physical.is_empty()));
                 // 等系统把虚拟屏挂上来再切缩放档位。
@@ -550,7 +555,6 @@ pub fn run() -> i32 {
         mirror: cfg.mirror,
         vd_plan: VdPlan::default(),
         prev_showing: None,
-        user_off: false,
         dropped_at: None,
         keep: Keep::default(),
         front: None,
@@ -585,6 +589,7 @@ pub fn run() -> i32 {
         saved,
         dir: dir.clone(),
         presets,
+        extra_sizes: cfg.extra_sizes.clone(),
         status: Arc::new(Mutex::new(Status::default())),
         bonjour: None,
         port: cfg.port,
@@ -705,6 +710,14 @@ pub fn run() -> i32 {
         if bar.is_some() {
             objc2::rc::autoreleasepool(|_| handle_setup(&mut st));
         }
+        if act == menubar::ACT_BOOT_ON || act == menubar::ACT_BOOT_OFF {
+            let off = act == menubar::ACT_BOOT_OFF;
+            if st.saved.no_boot_connect != off {
+                st.saved.no_boot_connect = off;
+                st.saved.save(&st.dir);
+            }
+            info!("开机自动连接 iPad：{}", if off { "关" } else { "开" });
+        }
         if act == menubar::ACT_TOGGLE {
             let showing = st.status.lock().unwrap().state == "showing";
             let cmd = if showing {
@@ -742,7 +755,13 @@ pub fn run() -> i32 {
             let todo = setup_view(&st).todo();
             let s = st.status.lock().unwrap().clone();
             objc2::rc::autoreleasepool(|_| {
-                b.update(&menubar::View { name: s.name, state: s.state, showing: s.showing, todo })
+                b.update(&menubar::View {
+                    name: s.name,
+                    state: s.state,
+                    showing: s.showing,
+                    todo,
+                    boot_connect: !st.saved.no_boot_connect,
+                })
             });
         }
         // 每秒：认显示器、按需建 / 关虚拟屏、纠正镜像（插回显示器时系统可能套用旧的镜像排列）
@@ -875,15 +894,15 @@ fn run_command(cmd: Command, st: &mut State) {
         Command::Connect { sidecar_name, keyboard, auto } => {
             // iPad App 回到前台自动连（v0.4.10）：用户刚从 Afar 断开（菜单栏、命令行、App）、或随航刚断开不到 10 秒
             // （在随航里从控制中心断开、一连上就掉），都不接：等用户自己点卡片
-            if auto && (st.user_off || st.dropped_at.is_some_and(|t| t.elapsed() < AUTO_AFTER_DROP)) {
+            if auto && (st.saved.user_off || st.dropped_at.is_some_and(|t| t.elapsed() < AUTO_AFTER_DROP)) {
                 info!(
                     "iPad App 自动连接「{sidecar_name}」：{}，不连（等用户点卡片）",
-                    if st.user_off { "刚从 Afar 断开" } else { "随航刚断开" }
+                    if st.saved.user_off { "从 Afar 断开了" } else { "随航刚断开" }
                 );
                 return;
             }
             if !auto {
-                st.user_off = false;
+                set_user_off(st, false);
             }
             st.front = None; // 用户换了操作：回到桌面作废（否则会把这次连接挤掉）
             st.dropping = None;
@@ -920,7 +939,7 @@ fn run_command(cmd: Command, st: &mut State) {
             st.kb.on_disconnect(!connected.is_empty(), Instant::now());
             st.last_connected = Some(Instant::now()); // 冷却期内不会被自动连回去
             st.keep.stop(); // 用户从 Afar 断开：不再自动连回
-            st.user_off = true; // iPad App 回到前台也不自动连，等用户点卡片
+            set_user_off(st, true); // 重启后、iPad App 回到前台都不自动连，等用户点连接
             st.dropping = (!connected.is_empty()).then(Instant::now);
         }
         Command::Front { sidecar_name } => {
@@ -1262,7 +1281,7 @@ fn recreate_display(st: &mut State, style: u8) -> Result<(), String> {
     st.saved.save(&st.dir);
     let serial = if st.vd_serial == 1 { 2 } else { 1 };
     let vd = virtual_display::create(
-        &scale::vd_modes(&st.presets, st.want, style),
+        &scale::with_extra(scale::vd_modes(&st.presets, st.want, style), &st.extra_sizes),
         scale::vd_max(&st.presets),
         VD_NAME,
         serial,
@@ -1415,7 +1434,7 @@ fn tick(cfg: &config::Config, st: &mut State) {
         st.was_available = true;
         st.last_connected = Some(Instant::now());
         st.keep.shown(&d.name);
-        st.user_off = false; // 在显示了（也可能是用户从系统控制中心连的）：不再算"从 Afar 断开"
+        set_user_off(st, false); // 在显示了（也可能是用户从系统控制中心连的）：不再算"从 Afar 断开"
         return;
     }
     // 刚插上实体显示器：自动连回随航也等系统读完它再做（用户自己点连接不拦）
@@ -1438,7 +1457,7 @@ fn tick(cfg: &config::Config, st: &mut State) {
         return;
     }
 
-    // 这次启动后还没连过：iPad 新出现时自动连一次（不补试）。用户从 Afar 断开过就不连，等用户点连接或 Afar 重启（v0.4.10）
+    // 开机后还没连过：iPad 新出现时自动连一次（不补试）。菜单栏"开机自动连接 iPad"关了、或用户从 Afar 断开过（重启后仍算）就不连，等用户点连接
     // 只连：配置里指定的 iPad → 上次用 iPad App 连过的 → 都没有就第一台
     let wanted =
         if !cfg.ipad_name.is_empty() { cfg.ipad_name.clone() } else { st.saved.last_ipad.clone().unwrap_or_default() };
@@ -1448,7 +1467,9 @@ fn tick(cfg: &config::Config, st: &mut State) {
     if st.last_connected.is_some_and(|t| t.elapsed() < COOLDOWN) {
         st.was_available = true;
     }
-    if let Some(dev) = target.filter(|_| reconnect::auto_on_appear(st.was_available, st.user_off)) {
+    if let Some(dev) =
+        target.filter(|_| reconnect::auto_on_appear(st.was_available, st.saved.user_off, !st.saved.no_boot_connect))
+    {
         info!("iPad「{}」可用，自动连接", dev.name);
         if let Err(e) = sidecar::connect(dev) {
             warn!("{e}");
@@ -1640,7 +1661,7 @@ fn manage_virtual_display(st: &mut State) -> bool {
         Some(VdAct::Create) if st.display_retry_at.is_some_and(|t| Instant::now() < t) => {}
         Some(VdAct::Create) => {
             match virtual_display::create(
-                &scale::vd_modes(&st.presets, st.want, 0),
+                &scale::with_extra(scale::vd_modes(&st.presets, st.want, 0), &st.extra_sizes),
                 scale::vd_max(&st.presets),
                 VD_NAME,
                 st.vd_serial,
@@ -1869,6 +1890,14 @@ fn front_step(st: &mut State, available: &[sidecar::Device], connected: &[sideca
             warn!("回到 Mac 桌面：「{name}」没能断开再连回，放弃");
             st.front = None;
         }
+    }
+}
+
+/// 记下"用户从 Afar 断开了"（存盘：重启后仍有效）。
+fn set_user_off(st: &mut State, v: bool) {
+    if st.saved.user_off != v {
+        st.saved.user_off = v;
+        st.saved.save(&st.dir);
     }
 }
 

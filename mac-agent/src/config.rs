@@ -19,6 +19,9 @@ pub struct Config {
     pub mirror: bool,
     /// 控制接口端口（iPad App 连这个端口）。
     pub port: u16,
+    /// 虚拟屏额外的分辨率（像素，如 [[2560, 1600]]），给远程桌面等别的屏幕用；在"系统设置 > 显示器"里选。
+    /// 每个尺寸会有原生 1 倍和清晰（一半大小的 HiDPI，如 2560×1600 → 1280×800）两种可选。默认没有。
+    pub extra_sizes: Vec<[u32; 2]>,
 }
 
 impl Default for Config {
@@ -30,6 +33,7 @@ impl Default for Config {
             ipad_pixels: [2360, 1640],
             mirror: true,
             port: afar_proto::PORT,
+            extra_sizes: Vec::new(),
         }
     }
 }
@@ -53,6 +57,9 @@ mirror = true
 
 # 控制接口端口（iPad App 连这个端口；改了要在 iPad App 里手动填地址）
 port = 47911
+
+# 虚拟屏额外的分辨率（像素），给远程桌面等别的屏幕用，在"系统设置 > 显示器"里选。例：[[2560, 1600]]
+extra_sizes = []
 "#;
 
 pub fn dir() -> PathBuf {
@@ -80,6 +87,13 @@ pub fn load() -> Config {
                 warn!("ipad_pixels 不合理，改用默认 [2360, 1640]");
                 c.ipad_pixels = [2360, 1640];
             }
+            c.extra_sizes.retain(|s| {
+                let ok = (640..=8192).contains(&s[0]) && (480..=8192).contains(&s[1]) && s[0] % 2 == 0 && s[1] % 2 == 0;
+                if !ok {
+                    warn!("extra_sizes 里的 {}×{} 不合理（要偶数、640×480～8192×8192），不用", s[0], s[1]);
+                }
+                ok
+            });
             c
         }
         Err(e) => {

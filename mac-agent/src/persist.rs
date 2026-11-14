@@ -21,6 +21,12 @@ pub struct Saved {
     /// 这次随航期间键盘是 Afar 接管的（程序重启后也要在断开随航时松开）。
     #[serde(default)]
     pub keyboard_taken: bool,
+    /// 用户从 Afar 断开了（菜单栏、命令行、App）：重启后也不自动连随航，等用户自己点连接（或看到随航在显示）才清掉。
+    #[serde(default)]
+    pub user_off: bool,
+    /// 菜单栏"开机自动连接 iPad"关掉了（默认开）。
+    #[serde(default)]
+    pub no_boot_connect: bool,
     /// "设置 Afar"向导走完了。
     #[serde(default)]
     pub setup_done: bool,

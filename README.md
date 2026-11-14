@@ -16,7 +16,7 @@
 - **没接显示器也能用**：建一块虚拟屏、防休眠，Mac mini 不接显示器也有桌面。
 - **随航自动连接**：开机、点卡片时自动连，没连上会再试 2 次；随航中途断了（iPad 锁屏、信号不好），iPad 回到 Afar 时自动连回（Mac 不对着睡着的 iPad 反复重连，不会没完没了地弹"无法连接"）；从 Afar 主动断开后不会被自动连回，直到你再点连接。
 - **显示大小三档**：更大文字 / 默认 / 更多空间，按每台 iPad 的屏幕计算。
-- **菜单栏**：状态、立即连接 / 断开 iPad、配对新 iPad。
+- **菜单栏**：状态、立即连接 / 断开 iPad、「开机自动连接 iPad」开关、配对新 iPad。从 Afar 断开后，重启 Mac 也不会自动连回，直到你再点连接。
 - **"设置 Afar"向导和状态页**：防火墙放行、断电后自动开机、重启助手、文件保险箱和自动登录的引导；列出已配对的 iPad，可逐台取消配对。
 - **给 iPad App 的控制接口**：配对、状态、连接 / 断开、回到 Mac 桌面、重启 Mac、改名称和显示大小、保存登录密码。
 - **蓝牙键盘交接**：用随航时把你选的蓝牙键盘接到 Mac，用完还给 iPad（经典蓝牙键盘，不支持低功耗蓝牙键盘）。
@@ -59,11 +59,12 @@ sh mac-agent/scripts/make-app.sh   # 生成 target/afar-app/Afar.app 和 Afar-<�
 | 项 | 默认 | 说明 |
 |---|---|---|
 | `ipad_name` | `""` | 只自动连这台 iPad；空 = 上次连过的那台 |
-| `auto_connect` | `true` | iPad 可用时自动连 |
+| `auto_connect` | `true` | 总开关：关掉后 Mac 不发起任何自动连接（含点连接没连上时的补试）；只想关开机自动连接，用菜单栏的开关 |
 | `scale` | `"auto"` | 显示大小：`larger` / `default` / `more` |
 | `ipad_pixels` | `[2360, 1640]` | iPad 横屏像素，iPad 没报过屏幕尺寸时用来算虚拟屏比例 |
 | `mirror` | `true` | 随航连上后 iPad 镜像虚拟屏 |
 | `port` | `47911` | 控制接口端口 |
+| `extra_sizes` | `[]` | 虚拟屏额外的分辨率（像素），给远程桌面等别的屏幕用，如 `[[2560, 1600]]`；在"系统设置 › 显示器"里选（系统给的是一半大小的清晰模式，如 1280×800） |
 
 ### 安全设计
 - 只在局域网工作，全程 TLS 加密（Mac 端自签证书）。
@@ -105,7 +106,7 @@ This repository contains Afar's **Mac agent** and the **protocol** spoken betwee
 - **Works without a monitor**: creates a virtual display and keeps the Mac awake.
 - **Sidecar auto-connect**: connects at startup and when you tap a card, retrying twice if it fails; if Sidecar drops (iPad locked, weak signal) the iPad reconnects when you return to the Afar app, so the Mac never keeps calling a sleeping iPad and you don't get endless "couldn't connect" alerts; a disconnect you start from Afar is respected until you connect again.
 - **Three display sizes** (larger text / default / more space), computed per iPad model.
-- **Menu bar item**: status, connect / disconnect, pair a new iPad.
+- **Menu bar item**: status, connect / disconnect, a "connect iPad at startup" switch, pair a new iPad. A disconnect you start from Afar survives a Mac restart until you connect again.
 - **"Set up Afar" assistant and status page**: firewall, automatic start after power loss, restart helper, guidance for FileVault and automatic login; lists paired iPads and lets you unpair each one.
 - **Control API for the iPad app**: pairing, status, connect / disconnect, back to the Mac desktop, restart the Mac, rename, display size, storing the login password.
 - **Bluetooth keyboard hand-over**: moves a classic Bluetooth keyboard to the Mac while Sidecar is on and back to the iPad afterwards (Bluetooth LE keyboards are not supported).
