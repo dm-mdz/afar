@@ -68,10 +68,22 @@ pub fn pick(presets: &[Preset], key: &str) -> Preset {
 ///   最大像素仍是 2 倍（见 `vd_max`）。
 ///
 /// 实测（AFAR-001）：想要的档位不排在第一个时，切换 HiDPI 可能返回 1001；排第一个，虚拟屏一创建出来就是这个档位。
+///
+/// 写法 0 每档都连同另一种写法一起加（像素 2W×2H 和点 W×H 都在列表里）：清晰模式 W×H 要列表里同时有 1 倍的 2W×2H 和 W×H
+/// 系统才标"能当桌面用"（见 `with_extra`）。v0.4.11 加了 extra_sizes 后系统重新生成模式，1180×820 的 1 倍模式没了，
+/// iPad 的"默认"档选不了（切换返回 1001），iPad 卡在 1 倍的 1440×960（2026-11-14 实测）。
 pub fn vd_modes(presets: &[Preset], want: Preset, style: u8) -> Vec<(u32, u32)> {
     let size = |p: Preset| if style == 0 { p.pixels() } else { (p.w, p.h) };
     let mut v = vec![size(want)];
-    v.extend(presets.iter().copied().filter(|p| p.key != want.key).map(size));
+    for p in std::iter::once(want).chain(presets.iter().copied().filter(|p| p.key != want.key)) {
+        // 写法 1 是退路，保持 Chromium 那样只给点尺寸；只有写法 0 两种都给
+        let both = [p.pixels(), (p.w, p.h)];
+        for &m in if style == 0 { &both[..] } else { &both[1..] } {
+            if !v.contains(&m) {
+                v.push(m);
+            }
+        }
+    }
     v
 }
 

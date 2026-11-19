@@ -96,6 +96,10 @@ struct State {
     rebuilds: u8,
     /// 这次换档已经替随航屏切过模式（只切一次）。
     sidecar_switched: bool,
+    /// iPad 没在显示时虚拟屏用远程的尺寸（见 desk.rs）。
+    desk: crate::desk::Desk,
+    /// 上一轮在「回到 Mac 桌面」（结束后 desk 多等一轮）。
+    desk_front: bool,
     /// 切换接口返回成功、但下一轮核对还不对的次数（到 2 就当失败，免得每 3 秒切一次、一直闪）。
     set_tries: u8,
     /// 只核对随航屏尺寸（随航重连、系统自己恢复镜像后发现对不上）：替它切一次，不行只报告，不重建、不回默认、不改保存的档位。
@@ -572,6 +576,8 @@ pub fn run() -> i32 {
         rebuilds: 0,
         sidecar_switched: false,
         set_tries: 0,
+        desk: Default::default(),
+        desk_front: false,
         follow_only: false,
         follow_gave_up: None,
         presets_from: None,
@@ -1407,8 +1413,10 @@ fn keyboard_follow_sidecar(st: &mut State, connected: &[sidecar::Device]) {
 fn tick(cfg: &config::Config, st: &mut State) {
     if !plug_held(st) {
         adopt_sidecar_sizes(st);
+        let scale_was_ok = st.scale_ok;
         follow_check(st);
         ensure_scale(st);
+        desk_follow(st, scale_was_ok);
     }
     let available = match sidecar::devices() {
         Ok(d) => d,
@@ -1478,6 +1486,63 @@ fn tick(cfg: &config::Config, st: &mut State) {
         st.connecting_until = Some(Instant::now() + CONNECTING_FOR); // 卡片报"连接中"，App 这时不会再来连
     }
     st.was_available = now_available;
+}
+
+/// iPad 没在显示时，虚拟屏用上次远程桌面用的清晰尺寸：记住用户换的清晰尺寸，被换成低清、iPad 断开、
+/// 虚拟屏新建、Afar 切过档后切回去（规则见 desk.rs）。`scale_was_ok`：这一轮开始时 Afar 没在切档。
+fn desk_follow(st: &mut State, scale_was_ok: bool) {
+    use crate::desk::Act;
+    let showing = st.kinds.values().any(|k| *k == Kind::Sidecar);
+    // 接着实体显示器时虚拟屏只在 iPad 显示时才有，iPad 断开后几秒就关（这几秒系统可能把实体显示器并进镜像、改虚拟屏的模式，不能当用户换的）
+    if st.vd.is_none() || showing || !st.physical.is_empty() {
+        st.desk.reset();
+        st.desk_front = false;
+        return;
+    }
+    // 「回到 Mac 桌面」断开再连回：结束后多等一轮，随航屏可能还没被认出来
+    let front = st.front.is_some() || st.desk_front;
+    st.desk_front = st.front.is_some();
+    let cur = if scale_was_ok && st.scale_ok && !front { display::current_mode(st.vid) } else { None };
+    let Some(cur) = cur else {
+        st.desk.busy();
+        return;
+    };
+    let now = [cur.w, cur.h, cur.pw, cur.ph];
+    let ipad = [st.want.w as usize, st.want.h as usize, st.want.w as usize * 2, st.want.h as usize * 2];
+    let show = |m: [usize; 4]| format!("{}×{}（像素 {}×{}）", m[0], m[1], m[2], m[3]);
+    match st.desk.step(st.vid, now, ipad, st.saved.desk_mode, Instant::now()) {
+        Act::None => {}
+        Act::Remember(m) => {
+            match m {
+                Some(m) => info!("iPad 没在显示时虚拟屏换成了 {}，记住：iPad 断开后切回这个尺寸", show(m)),
+                None => info!("虚拟屏换回了 iPad 的档位，不再记远程用的尺寸"),
+            }
+            st.saved.desk_mode = m;
+            st.saved.save(&st.dir);
+        }
+        Act::Restore(m, saved) => {
+            let low = !crate::desk::hidpi(now);
+            match display::set_mode(st.vid, (m[0], m[1], m[2], m[3], 0)) {
+                Ok(()) if low => info!("虚拟屏被换成了低清 {}，已切回清晰的 {}", show(now), show(m)),
+                Ok(()) => info!("iPad 没在显示：虚拟屏切回上次远程用的 {}", show(m)),
+                Err(e) if saved => {
+                    warn!(
+                        "虚拟屏切不到上次远程用的 {}，不再记这个尺寸（在远程软件 / 系统设置里重新选一次就会再记住）：{e}",
+                        show(m)
+                    );
+                    st.saved.desk_mode = None;
+                    st.saved.save(&st.dir);
+                }
+                Err(e) => warn!("虚拟屏被换成了低清，切到清晰的 {} 失败：{e}", show(m)),
+            }
+        }
+        Act::Yield(m) => {
+            warn!("虚拟屏切回 {} 几次都没生效（可能别的程序又改了），先不切了；iPad 断开或 Afar 重启后再试", show(m))
+        }
+        Act::YieldLow => {
+            warn!("虚拟屏一分钟里被换成低清好几次（多半是远程软件在改），先不改回了；iPad 断开或 Afar 重启后再管")
+        }
+    }
 }
 
 /// 重新镜像后系统可能把虚拟屏的模式改掉：如实报告，并以实际档位为准（不反复解除镜像重试）。

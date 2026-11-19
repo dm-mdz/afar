@@ -40,6 +40,9 @@ pub struct Saved {
     /// 各台 iPad 按随航屏校正过的三档尺寸（更大文字、默认、更多空间），开机直接用，不用等随航屏出现再校正一次（少闪一次）。
     #[serde(default)]
     pub ipad_sizes: std::collections::HashMap<String, Vec<[u32; 2]>>,
+    /// iPad 没在显示时虚拟屏用的尺寸（用户在远程桌面软件 / 系统设置里选的，见 desk.rs）：（宽、高、像素宽、像素高）。
+    #[serde(default)]
+    pub desk_mode: Option<[usize; 4]>,
     /// 每块实体显示器上次用的模式（键：厂商-型号-序列号，值：宽、高、像素宽、像素高、刷新率×100），插回后系统选错时改回去。
     #[serde(default)]
     pub display_modes: std::collections::HashMap<String, (usize, usize, usize, usize, usize)>,

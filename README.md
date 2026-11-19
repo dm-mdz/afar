@@ -21,6 +21,7 @@
 - **给 iPad App 的控制接口**：配对、状态、连接 / 断开、回到 Mac 桌面、重启 Mac、改名称和显示大小、保存登录密码。
 - **蓝牙键盘交接**：用随航时把你选的蓝牙键盘接到 Mac，用完还给 iPad（经典蓝牙键盘，不支持低功耗蓝牙键盘）。
 - **插回显示器时恢复分辨率**。
+- **远程桌面友好**：iPad 没在显示时，虚拟屏用你上次在远程桌面软件（如 UU 远程）或系统设置里选的清晰尺寸（iPad 断开、开机后自动切回）；远程软件把它切成 1 倍低清时自动改回清晰。配合 `extra_sizes` 加远程电脑的分辨率。
 
 ### 设备要求
 | | 要求 |
@@ -111,6 +112,7 @@ This repository contains Afar's **Mac agent** and the **protocol** spoken betwee
 - **Control API for the iPad app**: pairing, status, connect / disconnect, back to the Mac desktop, restart the Mac, rename, display size, storing the login password.
 - **Bluetooth keyboard hand-over**: moves a classic Bluetooth keyboard to the Mac while Sidecar is on and back to the iPad afterwards (Bluetooth LE keyboards are not supported).
 - **Restores the resolution** of an external monitor when it is plugged back in.
+- **Remote-desktop friendly**: while the iPad isn't showing, the virtual display uses the sharp (HiDPI) size you last picked in a remote desktop app or System Settings (restored after the iPad disconnects and at startup); if a remote app switches it to a blurry 1x mode, Afar switches it back. Add your remote computer's resolution with `extra_sizes`.
 
 ### Requirements
 - Mac with Apple silicon, macOS 27 or later.

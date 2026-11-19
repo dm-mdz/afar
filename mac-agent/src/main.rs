@@ -7,6 +7,7 @@ extern crate afar_agent;
 // 日志和控制接口在库里（iPad 端的测试也要用控制接口）
 pub use afar_agent::{log, server};
 mod config;
+mod desk;
 mod kbflow;
 mod persist;
 mod reconnect;
