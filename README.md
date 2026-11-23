@@ -1,16 +1,33 @@
 # Afar · Mac 端
 
-[中文](#中文) · [English](#english)
+<p align="center">
+  <a href="https://apps.apple.com/app/id6834720178"><img src="https://img.shields.io/badge/App%20Store-Free%20(iPadOS%2027+)-111111?style=for-the-badge&logo=apple&logoColor=FFE45C" alt="App Store"></a>
+  <a href="https://github.com/dm-mdz/afar/releases/latest"><img src="https://img.shields.io/github/v/release/dm-mdz/afar?style=for-the-badge&color=FFE45C&labelColor=111111" alt="Latest Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/Mac%20Agent-GPLv3-111111?style=for-the-badge" alt="GPLv3"></a>
+  <a href="LICENSE-PROTOCOL-MIT"><img src="https://img.shields.io/badge/Protocol-MIT-111111?style=for-the-badge" alt="MIT Protocol"></a>
+</p>
+
+<p align="center">
+  <img src="assets/demo.gif" alt="Afar 0.5.0 Demo — Turn your iPad into a native Sidecar touchscreen for a headless Mac mini" width="760">
+</p>
+
+<p align="center">
+  <a href="#中文">中文</a> · <a href="#english">English</a> · <a href="https://apps.apple.com/app/id6834720178">iPad App (App Store)</a> · <a href="https://github.com/dm-mdz/afar/releases/latest">Download Mac DMG</a>
+</p>
 
 ---
 
 ## 中文
 
-**iPad 点一下，就成为没接显示器的 Mac（比如家里的 Mac mini）的触控屏。**
+**iPad 点一下，就成为没接显示器的 Mac（比如家里的 Mac mini）的原生随航触控屏。**
 
-这个仓库是 Afar 的 **Mac 端常驻程序**（`0.5.0` 起已全面重构为纯 C11 + 轻量原生 Objective-C）和 **Mac 与 iPad 之间的通信协议**。配套的 iPad App 单独发布，不在本仓库。
+<p align="center">
+  <img src="assets/hero.jpg" alt="Headless Mac mini + iPad Sidecar Setup" width="720">
+</p>
 
-**下载**：到本仓库的 [Releases](../../releases) 页下载 `Afar-<版本>.dmg`。
+这个仓库是 Afar 的 **Mac 端常驻程序**（`0.5.0` 起已全面重构为纯 C11 + 轻量原生 Objective-C，`1.3 MB` 已公证 DMG、纯后台仅 `~10 MB` 内存）和 **Mac 与 iPad 之间的通信协议**。配套的 iPad App 免费发布于 [App Store](https://apps.apple.com/app/id6834720178)，不在本仓库。
+
+**下载**：Mac 端到本仓库的 [Releases](../../releases) 页下载已公证的 `Afar-<版本>.dmg`；iPad 端到 [App Store](https://apps.apple.com/app/id6834720178) 免费下载。
 
 ### 能做什么
 - **没接显示器也能用**：建一块虚拟屏、防休眠，Mac mini 不接显示器也有桌面；菜单栏支持「防拔线（保留虚拟屏）」开关。
