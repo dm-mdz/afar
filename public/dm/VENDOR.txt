@@ -1,0 +1,13 @@
+# Afar_C Vendored libdm + dmc + dmcmd Baseline
+source_repo=BotFlow_C
+source_commit=31340c6023818ca2c1821f8d2352368e4e497bc8
+pruned_modules=db,child,secret,httpc
+third_party_libuv=840404ce8ba7cc0204be52389a6cfff9f2c90fb6
+third_party_llhttp=816485216511b86459b2e6478190e14c38c14891
+third_party_yyjson=6447536015f3d600f3d65323b10976103b337ca7
+third_party_mbedtls=82e69999f91126589a28b70dd75b69fbcabe2711
+
+# Zero-intrusion SHA-256 lock (enforced by tool/check_bld.py T-AF-BLD-03)
+sha256 public/dm/libdm/src/transport/conn.c 2eb7065118ab4396ee1cf45298594d65f5228f6be99bf4e62a0e26506c27241e
+sha256 public/dm/libdm/src/transport/http.c 16cfdad324022b6eefdaf7a4b36fb28c1b3fe6775dcbb3c8554f116ec62a8140
+sha256 public/dm/libdm/src/transport/ws.c 3e16bee453536f6fd45734c0983d2ef88500b390e68f8ba17cb7549c70783746

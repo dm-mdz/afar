@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <!-- 公证要求开"加固运行时"；开了以后要显式声明发 Apple 事件（从 iPad 重启时用 osascript 控制"系统事件"，授权算在 Afar 头上） -->
-  <key>com.apple.security.automation.apple-events</key><true/>
-</dict>
-</plist>

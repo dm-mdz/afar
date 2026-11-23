@@ -8,152 +8,98 @@
 
 **iPad 点一下，就成为没接显示器的 Mac（比如家里的 Mac mini）的触控屏。**
 
-这个仓库是 Afar 的 **Mac 端常驻程序**和 **Mac 与 iPad 之间的通信协议**。配套的 iPad App 单独发布，不在本仓库。
+这个仓库是 Afar 的 **Mac 端常驻程序**（`0.5.0` 起已全面重构为纯 C11 + 轻量原生 Objective-C）和 **Mac 与 iPad 之间的通信协议**。配套的 iPad App 单独发布，不在本仓库。
 
 **下载**：到本仓库的 [Releases](../../releases) 页下载 `Afar-<版本>.dmg`。
 
 ### 能做什么
-- **没接显示器也能用**：建一块虚拟屏、防休眠，Mac mini 不接显示器也有桌面。
-- **随航自动连接**：开机、点卡片时自动连，没连上会再试 2 次；随航中途断了（iPad 锁屏、信号不好），iPad 回到 Afar 时自动连回（Mac 不对着睡着的 iPad 反复重连，不会没完没了地弹"无法连接"）；从 Afar 主动断开后不会被自动连回，直到你再点连接。
+- **没接显示器也能用**：建一块虚拟屏、防休眠，Mac mini 不接显示器也有桌面；菜单栏支持「防拔线（保留虚拟屏）」开关。
+- **随航自动连接**：开机、点卡片时自动连，没连上会再试 2 次；随航中途断了（iPad 锁屏、信号不好），iPad 回到 Afar 时自动连回；从 Afar 主动断开后不会被自动连回（跨重启有效），直到你再点连接。
 - **显示大小三档**：更大文字 / 默认 / 更多空间，按每台 iPad 的屏幕计算。
-- **菜单栏**：状态、立即连接 / 断开 iPad、「开机自动连接 iPad」开关、配对新 iPad。从 Afar 断开后，重启 Mac 也不会自动连回，直到你再点连接。
-- **"设置 Afar"向导和状态页**：防火墙放行、断电后自动开机、重启助手、文件保险箱和自动登录的引导；列出已配对的 iPad，可逐台取消配对。
+- **菜单栏与「设置 Afar」向导**：状态、立即连接 / 断开 iPad、「开机自动连接」与「防拔线」开关、配对新 iPad；引导配置防火墙放行、断电自启、文件保险箱和自动登录，列出并可逐台取消配对。
 - **给 iPad App 的控制接口**：配对、状态、连接 / 断开、回到 Mac 桌面、重启 Mac、改名称和显示大小、保存登录密码。
 - **蓝牙键盘交接**：用随航时把你选的蓝牙键盘接到 Mac，用完还给 iPad（经典蓝牙键盘，不支持低功耗蓝牙键盘）。
-- **插回显示器时恢复分辨率**。
-- **远程桌面友好**：iPad 没在显示时，虚拟屏用你上次在远程桌面软件（如 UU 远程）或系统设置里选的清晰尺寸（iPad 断开、开机后自动切回）；远程软件把它切成 1 倍低清时自动改回清晰。配合 `extra_sizes` 加远程电脑的分辨率。
+- **插回显示器恢复分辨率 & 远程桌面友好**：iPad 未显示时保留远程桌面清晰 HiDPI 尺寸，远程软件切低清时自动拉回清晰，支持 `extra_sizes` 追加分辨率。
+- **老版本无损升级**：从 `0.4.x` 升级时自动迁移 `config.toml` → `config.json`，沿用原有 TLS 证书与已配对设备，免重新配对。
 
 ### 设备要求
 | | 要求 |
 |---|---|
 | Mac | Apple 芯片，macOS 27 及以上 |
-| iPad | iPadOS 27 及以上（随航的手指直接点击要 macOS 27 + iPadOS 27） |
-| 随航本身的要求 | 同一个 Apple 账户（开双重认证）；蓝牙、Wi-Fi、接力打开；相距 10 米内；iPad 和 Mac 在同一个局域网 |
+| iPad | iPadOS 27 及以上（随航手指直接点击需 macOS 27 + iPadOS 27） |
+| 随航本身的要求 | 同一个 Apple 账户（开双重认证）；蓝牙、Wi-Fi、接力打开；相距 10 米内；同一局域网 |
 
 ### 编译和安装
-需要 Xcode 命令行工具和 Rust（[rustup](https://rustup.rs)）。
+需要 Xcode 命令行工具（`clang`、`make`）、`cmake` 与 `python3`（无 Rust 依赖，第三方库 `libuv / mbedTLS / llhttp / libdm` 已随仓内嵌）。
 
 ```bash
-sh mac-agent/scripts/make-app.sh   # 生成 target/afar-app/Afar.app 和 Afar-<版本>.dmg
+python3 build.py check        # 静态门禁检查
+python3 build.py release      # 编译 Release 二进制
+./script/make-app.sh          # 生成 build/dist/Afar.app 和 Afar-<版本>.dmg
 ```
-打开 dmg，把 **Afar** 拖进"应用程序"，再从"应用程序"里打开：自动装好开机自启，并弹出"设置 Afar"向导。
 
-- 没有开发者签名时是临时签名：第一次打开要在 系统设置 › 隐私与安全性 里点"仍要打开"。
-- 有 Developer ID 证书时：`AFAR_SIGN_ID="Developer ID Application: …" sh mac-agent/scripts/make-app.sh`，再用 `xcrun notarytool` 公证。签名证书、公证账号和密码**只在打包时用环境变量或钥匙串传入，不要提交到仓库**（`.gitignore` 已排除常见的证书文件）。
-- 日志：`~/Library/Logs/Afar/agent.log`。
+打开 dmg，把 **Afar** 拖进「应用程序」，再从「应用程序」里打开：自动装好开机自启，并弹出「设置 Afar」向导。
 
-命令行：程序在 `/Applications/Afar.app/Contents/MacOS/afar-agent`。
-
-| 命令 | 作用 |
-|---|---|
-| `run` | 前台运行（开机自启跑的也是它） |
-| `install` / `uninstall` | 安装 / 卸载开机自启 |
-| `pair-code` | 打开配对并显示 6 位配对码（10 分钟内有效；要 Afar 在运行） |
-| `ipads` | 列出附近可用 / 已连接的 iPad |
-| `connect [名称]` / `disconnect` | 连接 / 断开随航 |
-| `displays` | 列出显示器、分辨率、镜像关系 |
-| `bt-dump [close\|open <地址>]` | 诊断：列出系统看到的蓝牙设备，可对某个地址试一次断开 / 连上 |
-| `config` | 显示配置文件路径 |
-
-配置文件：`~/Library/Application Support/Afar/config.toml`
-
-| 项 | 默认 | 说明 |
-|---|---|---|
-| `ipad_name` | `""` | 只自动连这台 iPad；空 = 上次连过的那台 |
-| `auto_connect` | `true` | 总开关：关掉后 Mac 不发起任何自动连接（含点连接没连上时的补试）；只想关开机自动连接，用菜单栏的开关 |
-| `scale` | `"auto"` | 显示大小：`larger` / `default` / `more` |
-| `ipad_pixels` | `[2360, 1640]` | iPad 横屏像素，iPad 没报过屏幕尺寸时用来算虚拟屏比例 |
-| `mirror` | `true` | 随航连上后 iPad 镜像虚拟屏 |
-| `port` | `47911` | 控制接口端口 |
-| `extra_sizes` | `[]` | 虚拟屏额外的分辨率（像素），给远程桌面等别的屏幕用，如 `[[2560, 1600]]`；在"系统设置 › 显示器"里选（系统给的是一半大小的清晰模式，如 1280×800） |
+- 无 Developer ID 时为临时签名（ad-hoc），首次打开需在「系统设置 › 隐私与安全性」点「仍要打开」。
+- 有 Developer ID 证书时：`./script/make-app.sh --sign "Developer ID Application: …" --notarize <keychain-profile>`。签名证书与公证凭据**只在打包时传入，不进入仓库**。
+- 配置文件：`~/Library/Application Support/Afar/config.json`（端口默认 `47911`，支持 `ipad_name`、`auto_connect`、`scale`、`ipad_pixels`、`mirror`、`port`、`extra_sizes`）；日志：`~/Library/Application Support/Afar/agent.log`。
+- 命令行：`/Applications/Afar.app/Contents/MacOS/afar-agent run | install | uninstall | pair-code | ipads | connect [名称] | disconnect | displays | bt-dump | setup | status | config`。
 
 ### 安全设计
-- 只在局域网工作，全程 TLS 加密（Mac 端自签证书）。
-- **平时不接受配对**：只有在 Mac 菜单栏点"配对新 iPad…"（或向导走到配对那一屏、命令行 `pair-code`）后的 10 分钟内才接受。配对成功、点"停止配对"、关掉窗口或到时间，都会立即停止。
-- **配对**：Mac 显示 6 位配对码，iPad 输入。用 SPAKE2 协商密钥，配对码不在网络上传输，抓包也无法离线暴力破解；双方再确认各自看到的证书指纹一致，有中间人就配对失败。
-- 配对码用过即作废；每个配对码最多试 5 次，用完暂停配对并换码，暂停时间一次比一次长（1、2、4、8…分钟，最长 1 小时）。
-- 配对后 iPad 只认这一张证书，并拿到一个令牌；Mac 端只保存令牌的哈希。
-- **在 Mac 上能看到、能取消每台已配对的 iPad**；有新 iPad 配对时 Mac 弹系统通知。
-- **登录密码**：先用系统接口校验正确才保存，存进 macOS 钥匙串；连续错 5 次锁 1 分钟（校验前先计数，同时发很多请求也只能试 5 次）。
-- 局域网发现用系统 Bonjour 广播 `_afar._tcp`。
+- 只在局域网工作，全程 TLS 1.3 / 1.2 加密（Mac 端自签证书），通过 Bonjour 广播 `_afar._tcp`。
+- **平时不接受配对**：仅在菜单栏点「配对新 iPad…」、向导配对页或执行 `pair-code` 后的 10 分钟内开放；配对成功、手动停止、关窗或超时立即关闭。
+- **配对协议**：Mac 显示 6 位配对码，双方基于 **EC-JPAKE** 协商会话密钥（配对码不在线路明文传输、抗离线暴力破解），并核对双方所见证书指纹防中间人；单码最多错 5 次，触发指数退避锁定（1、2、4、8…分钟，最长 1 小时）。
+- 配对后 iPad 钉住证书并获得令牌，Mac 仅存令牌哈希；登录密码先经系统校验再存入 macOS 钥匙串（连错 5 次锁 1 分钟）。
 
 ### 关于私有接口
-随航连接、虚拟屏、部分显示模式切换用的是 Apple 未公开的接口，集中在 `mac-agent/src/private/` 和 `mac-agent/src/display.rs`。系统升级后可能失效；也因为这一点，Mac 端用 dmg 分发，不上 Mac App Store。
+随航连接、虚拟屏与部分显示模式切换使用了 Apple 未公开接口，集中隔离在 `src/plat/private/`。系统升级后可能受影响；Mac 端因此通过 dmg 分发，不上架 Mac App Store。
 
-### 许可证
+### 许可证与隐私
 Copyright (C) 2026 DM
 
-- `mac-agent/`：[GPL-3.0-or-later](LICENSE)。修改后再发布，必须同样开源。
-- `proto/`（通信协议）：[MIT](proto/LICENSE)，可以自由用在任何客户端里。
+- **Mac Agent 源码**：[GPL-3.0-or-later](LICENSE)。修改后再发布必须同样开源。
+- **局域网通信协议与 JSON 契约**：[MIT](LICENSE-PROTOCOL-MIT)，可自由用于任何兼容客户端。
+- **商标**：「Afar」名称与图标不在上述许可范围内，基于本仓库修改后再发布请更换名称与图标。
+- **隐私政策**：见 [PRIVACY.md](PRIVACY.md)；**安全漏洞报告**：请勿开公开 Issue，做法见 [SECURITY.md](SECURITY.md)。
 
-**商标**："Afar"这个名称和图标不在上述许可范围内。基于本仓库修改后再发布，请换用别的名称和图标。
-
-### 报告安全问题
-请不要在公开 Issue 里贴漏洞细节，做法见 [SECURITY.md](SECURITY.md)。
-
-本软件按"现状"提供，不附带任何担保。
+本软件按「现状」提供，不附带任何担保。
 
 ---
 
 ## English
 
-**Tap once on your iPad and it becomes the touchscreen of a Mac with no display attached — such as a headless Mac mini.**
+**Tap once on your iPad and it becomes the touchscreen of a headless Mac — such as a Mac mini with no monitor attached.**
 
-This repository contains Afar's **Mac agent** and the **protocol** spoken between the Mac and the iPad. The companion iPad app is distributed separately and is not part of this repository.
+This repository contains Afar's **Mac agent** (rebuilt in pure C11 + thin native Objective-C as of `0.5.0`) and the **LAN control protocol**. The companion iPad app is distributed separately and is not part of this repository.
 
-**Download**: get `Afar-<version>.dmg` from this repository's [Releases](../../releases) page.
+**Download**: get `Afar-<version>.dmg` from the [Releases](../../releases) page.
 
-### Features
-- **Works without a monitor**: creates a virtual display and keeps the Mac awake.
-- **Sidecar auto-connect**: connects at startup and when you tap a card, retrying twice if it fails; if Sidecar drops (iPad locked, weak signal) the iPad reconnects when you return to the Afar app, so the Mac never keeps calling a sleeping iPad and you don't get endless "couldn't connect" alerts; a disconnect you start from Afar is respected until you connect again.
-- **Three display sizes** (larger text / default / more space), computed per iPad model.
-- **Menu bar item**: status, connect / disconnect, a "connect iPad at startup" switch, pair a new iPad. A disconnect you start from Afar survives a Mac restart until you connect again.
-- **"Set up Afar" assistant and status page**: firewall, automatic start after power loss, restart helper, guidance for FileVault and automatic login; lists paired iPads and lets you unpair each one.
-- **Control API for the iPad app**: pairing, status, connect / disconnect, back to the Mac desktop, restart the Mac, rename, display size, storing the login password.
-- **Bluetooth keyboard hand-over**: moves a classic Bluetooth keyboard to the Mac while Sidecar is on and back to the iPad afterwards (Bluetooth LE keyboards are not supported).
-- **Restores the resolution** of an external monitor when it is plugged back in.
-- **Remote-desktop friendly**: while the iPad isn't showing, the virtual display uses the sharp (HiDPI) size you last picked in a remote desktop app or System Settings (restored after the iPad disconnects and at startup); if a remote app switches it to a blurry 1x mode, Afar switches it back. Add your remote computer's resolution with `extra_sizes`.
+### Highlights
+- **Headless virtual display & keep-awake**: HiDPI virtual display with three per-iPad display scales, remote-desktop HiDPI preservation (`extra_sizes`), external monitor resolution restore, and optional "keep virtual display on unplug".
+- **Smart Sidecar lifecycle**: auto-connect on boot and tap, automatic reconnect when returning to the iPad app after link drops, and persistent manual disconnect state across restarts.
+- **Bluetooth keyboard hand-over**: moves a classic Bluetooth keyboard to the Mac while Sidecar is active and hands it back afterwards.
+- **Seamless upgrade from 0.4.x**: automatically migrates `config.toml` to `config.json` while keeping existing TLS certificates and paired devices intact.
 
-### Requirements
-- Mac with Apple silicon, macOS 27 or later.
-- iPad with iPadOS 27 or later (direct finger input in Sidecar needs macOS 27 + iPadOS 27).
-- Sidecar's own requirements: same Apple Account with two-factor authentication, Bluetooth, Wi-Fi and Handoff on, within 10 m, iPad and Mac on the same local network.
-
-### Build and install
-Requires the Xcode command line tools and Rust ([rustup](https://rustup.rs)).
+### Requirements & Build
+Requires Apple silicon Mac (macOS 27+), iPad (iPadOS 27+), Apple Command Line Tools, `cmake`, and `python3` (all C dependencies are vendored under `public/`).
 
 ```bash
-sh mac-agent/scripts/make-app.sh   # produces target/afar-app/Afar.app and Afar-<version>.dmg
+python3 build.py check
+python3 build.py release
+./script/make-app.sh
 ```
-Open the dmg, drag **Afar** into Applications and open it from there. It installs itself as a login item and opens the setup assistant.
 
-- Without a Developer ID the app is ad-hoc signed; on first launch allow it in System Settings › Privacy & Security.
-- With a Developer ID: `AFAR_SIGN_ID="Developer ID Application: …" sh mac-agent/scripts/make-app.sh`, then notarize with `xcrun notarytool`. Signing certificates and notarization credentials are passed only at build time (environment variables or the Keychain) and **must never be committed** (`.gitignore` excludes the usual certificate files).
-- Log: `~/Library/Logs/Afar/agent.log`. Config: `~/Library/Application Support/Afar/config.toml` (`ipad_name`, `auto_connect`, `scale`, `ipad_pixels`, `mirror`, `port` — default port 47911).
-- CLI: `/Applications/Afar.app/Contents/MacOS/afar-agent run | install | uninstall | pair-code | ipads | connect [name] | disconnect | displays | bt-dump | config`.
+- Signing & notarization: `./script/make-app.sh --sign "Developer ID Application: …" --notarize <keychain-profile>` (credentials are never stored in the repo).
+- Config: `~/Library/Application Support/Afar/config.json` (default port `47911`); Log: `~/Library/Application Support/Afar/agent.log`.
 
-### Security design
-- LAN only, everything over TLS (self-signed certificate on the Mac).
-- **Pairing is closed by default**: it is accepted only for 10 minutes after you choose "Pair a new iPad…" in the menu bar (or reach the pairing step of the assistant, or run `pair-code`). It closes immediately when pairing succeeds, when you stop it, close the window, or time runs out.
-- **Pairing**: the Mac shows a 6-digit code that is typed on the iPad. Keys are agreed with SPAKE2, so the code never crosses the network and captured traffic cannot be brute-forced offline; both sides then confirm the certificate fingerprints they see, so a man-in-the-middle makes pairing fail.
-- Codes are single-use; each code allows at most 5 attempts, after which pairing pauses and the code changes, with pauses doubling each time (1, 2, 4, 8… minutes, up to 1 hour).
-- After pairing the iPad pins that certificate and receives a token; the Mac stores only a hash of the token.
-- **Paired iPads are listed on the Mac and can be unpaired there**; the Mac shows a notification whenever a new iPad pairs.
-- **Login password**: verified against the system before it is stored, then kept in the macOS Keychain; 5 wrong attempts lock for 1 minute (attempts are counted before verification, so parallel requests cannot exceed the limit).
-- Discovery via Bonjour (`_afar._tcp`).
+### Security & Private APIs
+- LAN-only TLS 1.3/1.2 with self-signed cert pinning, Bonjour `_afar._tcp`, closed-by-default 10-minute pairing window, EC-JPAKE key agreement with certificate fingerprint confirmation, rate limiting + exponential backoff, and macOS Keychain password storage.
+- Undocumented Apple APIs for Sidecar and virtual displays are isolated under `src/plat/private/`.
 
-### Private APIs
-Sidecar control, the virtual display and part of the display-mode switching use undocumented Apple APIs, kept in `mac-agent/src/private/` and `mac-agent/src/display.rs`. They may break with macOS updates, which is also why the Mac agent ships as a dmg rather than through the Mac App Store.
-
-### License
+### License, Privacy & Security
 Copyright (C) 2026 DM
 
-- `mac-agent/`: [GPL-3.0-or-later](LICENSE). Modified versions you distribute must be open source as well.
-- `proto/` (protocol): [MIT](proto/LICENSE), free to use in any client.
-
-**Trademark**: the name "Afar" and its icon are not covered by these licenses. If you distribute a modified version, please use a different name and icon.
-
-### Reporting security issues
-Please do not post vulnerability details in public issues — see [SECURITY.md](SECURITY.md).
-
-This software is provided "as is", without warranty of any kind.
+- **Mac Agent**: [GPL-3.0-or-later](LICENSE)
+- **Wire Protocol**: [MIT](LICENSE-PROTOCOL-MIT)
+- **Trademark**: the name "Afar" and its icon are excluded from these licenses.
+- **Privacy Policy**: [PRIVACY.md](PRIVACY.md) · **Security**: [SECURITY.md](SECURITY.md)

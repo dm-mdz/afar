@@ -1,0 +1,8 @@
+# 和一苇 C 版同一份（编码规范第 5 节）：2 空格缩进，大括号另起一行
+BasedOnStyle: LLVM
+IndentWidth: 2
+BreakBeforeBraces: Allman
+ColumnLimit: 100
+AllowShortFunctionsOnASingleLine: None
+SortIncludes: Never
+IndentExternBlock: NoIndent            # extern "C" { 里面不缩进（DM 的 .c、.h 都包了这一层；11-16 定）
