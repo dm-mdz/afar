@@ -21,6 +21,7 @@ void af_shell_win_show(in bool_t bShow);
 void af_shell_win_push(in const char *pcViewJson);
 void af_shell_win_destroy(void);
 bool_t af_shell_win_is_visible(void);
+void af_shell_win_refresh_lang(void);
 
 #ifdef __cplusplus
 }

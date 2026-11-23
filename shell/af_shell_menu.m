@@ -13,16 +13,113 @@
 #include "af_ui_ipc.h"
 #include "plat/af_plat.h"
 #include "af_shell_menu.h"
+#include "af_shell_win.h"
 #include "plat/af_objc_undef.h"
 
 #import <Cocoa/Cocoa.h>
 
+#include <stdio.h>
 #include <string.h>
+
+static NSString *const kAfLangDefaultsKey = @"AfarLang";
 
 static void af__post_menu_act(af_menu_act_et eAct, bool_t bVal)
 {
   af_ui_action_msg_st stMsg = {.eAct = eAct, .bVal = bVal};
   (void)dm_queue_post_async(AF_LINK_UI_ACTION, &stMsg, (uint32)sizeof(stMsg));
+}
+
+static NSString *af__lang_pref(void)
+{
+  NSString *oPref = [[NSUserDefaults standardUserDefaults] stringForKey:kAfLangDefaultsKey];
+  if ([oPref isEqualToString:@"zh"] || [oPref isEqualToString:@"en"])
+  {
+    return oPref;
+  }
+  return @"";
+}
+
+bool_t af_shell_lang_is_zh(void)
+{
+  @autoreleasepool
+  {
+    NSString *oPref = af__lang_pref();
+    if ([oPref isEqualToString:@"zh"])
+    {
+      return DM_TRUE;
+    }
+    if ([oPref isEqualToString:@"en"])
+    {
+      return DM_FALSE;
+    }
+    NSString *oSys = [NSLocale preferredLanguages].firstObject ?: @"en";
+    return [oSys hasPrefix:@"zh"] ? DM_TRUE : DM_FALSE;
+  }
+}
+
+void af_shell_lang_set(const char *pcLang)
+{
+  @autoreleasepool
+  {
+    NSUserDefaults *oDef = [NSUserDefaults standardUserDefaults];
+    if ((NULL == pcLang) || ('\0' == pcLang[0]))
+    {
+      [oDef removeObjectForKey:kAfLangDefaultsKey];
+    }
+    else if (0 == strcmp(pcLang, "zh"))
+    {
+      [oDef setObject:@"zh" forKey:kAfLangDefaultsKey];
+    }
+    else if (0 == strcmp(pcLang, "en"))
+    {
+      [oDef setObject:@"en" forKey:kAfLangDefaultsKey];
+    }
+    [oDef synchronize];
+  }
+}
+
+static NSString *af__menu_tr_status(const char *pcLine, BOOL bZh)
+{
+  NSString *oRaw = ((NULL != pcLine) && ('\0' != pcLine[0]))
+                       ? ([NSString stringWithUTF8String:pcLine] ?: @"")
+                       : @"";
+  if (bZh)
+  {
+    return (oRaw.length > 0u) ? oRaw : @"未连接";
+  }
+  if (0u == oRaw.length || [oRaw isEqualToString:@"未连接"])
+  {
+    return @"Not Connected";
+  }
+  if ([oRaw hasPrefix:@"正在显示到 "])
+  {
+    return [@"Showing on " stringByAppendingString:[oRaw substringFromIndex:6u]];
+  }
+  if ([oRaw hasPrefix:@"正在连接"])
+  {
+    return @"Connecting…";
+  }
+  if ([oRaw isEqualToString:@"需要处理"])
+  {
+    return @"Needs Attention";
+  }
+  if ([oRaw isEqualToString:@"已就绪，未连接"])
+  {
+    return @"Ready · Not Connected";
+  }
+  unsigned uCnt = 0u;
+  if (1 == sscanf(pcLine, "还有 %u 项待配置", &uCnt))
+  {
+    return [NSString stringWithFormat:(1u == uCnt) ? @"%u setup item left" : @"%u setup items left",
+                                      uCnt];
+  }
+  if (1 == sscanf(pcLine, "已就绪，附近有 %u 台 iPad", &uCnt))
+  {
+    return [NSString stringWithFormat:(1u == uCnt) ? @"Ready · %u iPad nearby"
+                                                   : @"Ready · %u iPads nearby",
+                                      uCnt];
+  }
+  return oRaw;
 }
 
 @interface AFMenuController : NSObject
@@ -32,10 +129,18 @@ static void af__post_menu_act(af_menu_act_et eAct, bool_t bVal)
 @property (nonatomic, strong) NSMenuItem *connItem;
 @property (nonatomic, strong) NSMenuItem *bootAutoItem;
 @property (nonatomic, strong) NSMenuItem *antiUnplugItem;
+@property (nonatomic, strong) NSMenuItem *pairItem;
 @property (nonatomic, strong) NSMenuItem *setupItem;
+@property (nonatomic, strong) NSMenuItem *resetItem;
+@property (nonatomic, strong) NSMenuItem *langMenuItem;
+@property (nonatomic, strong) NSMenuItem *langSysItem;
+@property (nonatomic, strong) NSMenuItem *langZhItem;
+@property (nonatomic, strong) NSMenuItem *langEnItem;
 @property (nonatomic, strong) NSMenuItem *versionItem;
+@property (nonatomic, strong) NSMenuItem *quitItem;
 @property (nonatomic, assign) af_menu_snap_st snap;
 - (void)applySnap:(af_menu_snap_st)stSnap;
+- (void)refreshLang;
 - (void)teardown;
 @end
 
@@ -67,6 +172,20 @@ static AFMenuController *g_oMenuCtrl = nil;
   return oItem;
 }
 
+- (void)buildLangSubmenu
+{
+  NSMenu *oSub = [[NSMenu alloc] initWithTitle:@"Language"];
+  self.langSysItem = [self makeItem:@"跟随系统 / System" action:@selector(onLangSys:) key:@""];
+  self.langZhItem = [self makeItem:@"中文" action:@selector(onLangZh:) key:@""];
+  self.langEnItem = [self makeItem:@"English" action:@selector(onLangEn:) key:@""];
+  [oSub addItem:self.langSysItem];
+  [oSub addItem:self.langZhItem];
+  [oSub addItem:self.langEnItem];
+  self.langMenuItem = [self makeItem:@"语言 / Language" action:NULL key:@""];
+  self.langMenuItem.submenu = oSub;
+  [self.menu addItem:self.langMenuItem];
+}
+
 - (void)buildMenu
 {
   if (NSApplicationActivationPolicyProhibited == [NSApp activationPolicy])
@@ -80,36 +199,78 @@ static AFMenuController *g_oMenuCtrl = nil;
   self.menu = [[NSMenu alloc] initWithTitle:@"Afar"];
   self.menu.autoenablesItems = NO;
 
-  self.statusLineItem = [self makeItem:@"未连接" action:NULL key:@""];
+  self.statusLineItem = [self makeItem:@"" action:NULL key:@""];
   self.statusLineItem.enabled = NO;
   [self.menu addItem:self.statusLineItem];
   [self.menu addItem:[NSMenuItem separatorItem]];
 
-  self.connItem = [self makeItem:@"立即连接" action:@selector(onToggleConnect:) key:@""];
+  self.connItem = [self makeItem:@"" action:@selector(onToggleConnect:) key:@""];
   [self.menu addItem:self.connItem];
   [self.menu addItem:[NSMenuItem separatorItem]];
 
-  self.bootAutoItem = [self makeItem:@"开机自动连接" action:@selector(onToggleBootAuto:) key:@""];
+  self.bootAutoItem = [self makeItem:@"" action:@selector(onToggleBootAuto:) key:@""];
   [self.menu addItem:self.bootAutoItem];
 
-  self.antiUnplugItem =
-      [self makeItem:@"防拔线（保留虚拟屏）" action:@selector(onToggleAntiUnplug:) key:@""];
+  self.antiUnplugItem = [self makeItem:@"" action:@selector(onToggleAntiUnplug:) key:@""];
   [self.menu addItem:self.antiUnplugItem];
   [self.menu addItem:[NSMenuItem separatorItem]];
 
-  [self.menu addItem:[self makeItem:@"配对新 iPad…" action:@selector(onPairNew:) key:@""]];
-  self.setupItem = [self makeItem:@"检查并配置…" action:@selector(onOpenSetup:) key:@""];
+  self.pairItem = [self makeItem:@"" action:@selector(onPairNew:) key:@""];
+  [self.menu addItem:self.pairItem];
+  self.setupItem = [self makeItem:@"" action:@selector(onOpenSetup:) key:@""];
   [self.menu addItem:self.setupItem];
-  [self.menu addItem:[self makeItem:@"重新设置…" action:@selector(onResetSetup:) key:@""]];
+  self.resetItem = [self makeItem:@"" action:@selector(onResetSetup:) key:@""];
+  [self.menu addItem:self.resetItem];
   [self.menu addItem:[NSMenuItem separatorItem]];
 
+  [self buildLangSubmenu];
   NSString *oVer = [NSString stringWithFormat:@"Afar %s", AF_VERSION];
   self.versionItem = [self makeItem:oVer action:NULL key:@""];
   self.versionItem.enabled = NO;
   [self.menu addItem:self.versionItem];
 
-  [self.menu addItem:[self makeItem:@"退出" action:@selector(onQuit:) key:@"q"]];
+  self.quitItem = [self makeItem:@"" action:@selector(onQuit:) key:@"q"];
+  [self.menu addItem:self.quitItem];
   self.statusItem.menu = self.menu;
+  [self applyLabels];
+}
+
+- (void)applyLabels
+{
+  if (nil == self.statusItem)
+  {
+    return;
+  }
+  BOOL bZh = (DM_TRUE == af_shell_lang_is_zh());
+  NSString *oPref = af__lang_pref();
+  self.statusLineItem.title = af__menu_tr_status(self.snap.acStatusLine, bZh);
+  self.connItem.title = self.snap.bShowing ? (bZh ? @"断开 iPad" : @"Disconnect iPad")
+                                           : (bZh ? @"立即连接" : @"Connect Now");
+  self.bootAutoItem.title = bZh ? @"开机自动连接" : @"Connect at Startup";
+  self.antiUnplugItem.title =
+      bZh ? @"防拔线（保留虚拟屏）" : @"Keep Virtual Display on Unplug";
+  self.pairItem.title = bZh ? @"配对新 iPad…" : @"Pair New iPad…";
+  self.resetItem.title = bZh ? @"重新设置…" : @"Run Setup Again…";
+  self.langMenuItem.title = bZh ? @"语言 / Language" : @"Language / 语言";
+  self.langSysItem.title = bZh ? @"跟随系统" : @"Follow System";
+  self.langSysItem.state = (0u == oPref.length) ? NSControlStateValueOn : NSControlStateValueOff;
+  self.langZhItem.state =
+      [oPref isEqualToString:@"zh"] ? NSControlStateValueOn : NSControlStateValueOff;
+  self.langEnItem.state =
+      [oPref isEqualToString:@"en"] ? NSControlStateValueOn : NSControlStateValueOff;
+  self.quitItem.title = bZh ? @"退出" : @"Quit";
+  if (self.snap.u32TodoCount > 0u)
+  {
+    self.setupItem.title =
+        bZh ? [NSString stringWithFormat:@"检查并配置… (%u 项待办)",
+                                         (unsigned)self.snap.u32TodoCount]
+            : [NSString stringWithFormat:@"Check & Configure… (%u left)",
+                                         (unsigned)self.snap.u32TodoCount];
+  }
+  else
+  {
+    self.setupItem.title = bZh ? @"检查并配置…" : @"Check & Configure…";
+  }
 }
 
 - (void)applySnap:(af_menu_snap_st)stSnap
@@ -129,23 +290,41 @@ static AFMenuController *g_oMenuCtrl = nil;
     oIcon = @"⚠︎";
   }
   self.statusItem.button.title = oIcon;
-
-  const char *pcLine = ('\0' != stSnap.acStatusLine[0]) ? stSnap.acStatusLine : "未连接";
-  self.statusLineItem.title = [NSString stringWithUTF8String:pcLine] ?: @"未连接";
-  self.connItem.title = stSnap.bShowing ? @"断开 iPad" : @"立即连接";
   self.bootAutoItem.state = stSnap.bBootAuto ? NSControlStateValueOn : NSControlStateValueOff;
   self.antiUnplugItem.state = stSnap.bAntiUnplug ? NSControlStateValueOn : NSControlStateValueOff;
-  if (stSnap.u32TodoCount > 0u)
-  {
-    self.setupItem.title =
-        [NSString stringWithFormat:@"检查并配置… (%u 项待办)", (unsigned)stSnap.u32TodoCount];
-  }
-  else
-  {
-    self.setupItem.title = @"检查并配置…";
-  }
   const char *pcVer = ('\0' != stSnap.acVersion[0]) ? stSnap.acVersion : AF_VERSION;
   self.versionItem.title = [NSString stringWithFormat:@"Afar %s", pcVer];
+  [self applyLabels];
+}
+
+- (void)refreshLang
+{
+  [self applyLabels];
+}
+
+- (void)selectLang:(const char *)pcLang
+{
+  af_shell_lang_set(pcLang);
+  [self applyLabels];
+  af_shell_win_refresh_lang();
+}
+
+- (void)onLangSys:(id)oSender
+{
+  (void)oSender;
+  [self selectLang:""];
+}
+
+- (void)onLangZh:(id)oSender
+{
+  (void)oSender;
+  [self selectLang:"zh"];
+}
+
+- (void)onLangEn:(id)oSender
+{
+  (void)oSender;
+  [self selectLang:"en"];
 }
 
 - (void)onToggleConnect:(id)oSender
@@ -244,6 +423,19 @@ void af_shell_menu_update(const af_menu_snap_st *pstSnap)
         g_oMenuCtrl = [[AFMenuController alloc] init];
       }
       [g_oMenuCtrl applySnap:stCopy];
+    });
+  }
+}
+
+void af_shell_menu_refresh_lang(void)
+{
+  @autoreleasepool
+  {
+    af__run_main_sync_or_async(^{
+      if (nil != g_oMenuCtrl)
+      {
+        [g_oMenuCtrl refreshLang];
+      }
     });
   }
 }

@@ -17,7 +17,7 @@ extern "C"
 {
 #endif
 
-#define AF_VERSION             "0.5.0"
+#define AF_VERSION             "0.5.1"
 
 /* ---- 1. 模块号（8 个，紧接 libdm 0..15 保留段） ---- */
 #define AF_MOD_AUTH            16u

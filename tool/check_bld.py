@@ -63,11 +63,12 @@ REQUIRED_VENDOR_FILES = {
 }
 
 FROZEN_IPAD_UI = {
-    "ipad/ui/index.html": "a2f73fb1c87173e27b17239e740394b2231d45324ba703ebb9b923e24fedad01",
-    "ipad/ui/app.js": "c4d7d2a31f7ad2fe69b5f75893642f06d91b3debf758125f46478e7ab217038b",
-    "ipad/ui/style.css": "7e7ee36056bb0f2ee0886a577e8a2f573f585d376bff40efd50b2caf8362f0d9",
+    "ipad/ui/index.html": "c9b962ef74c5c7e9a3b2a2256648b1514b1abe5060de505bcce4438af0ec97ca",
+    "ipad/ui/i18n.js": "4d50914ca4fa07f49c3e7c4de2c64cd68013b9bd621c2498a52904d640782809",
+    "ipad/ui/app.js": "3f9ad03e8510a1bcf93f5a263eff29b2794a9c312e4ba10b82bd6983430590e3",
+    "ipad/ui/style.css": "72bd1e9ecaf0446ffbac53b64658bd3d59291b8ce17e683f1358dc56d8287e02",
 }
-FROZEN_SETUP_HTML_SHA256 = "fec3792c2333530e6fbd9856f3f79e86ff89666fe3fab67311c7d8b9b5268098"
+FROZEN_SETUP_HTML_SHA256 = "15b9c046e57db7cbc80c5b4b3c2bfcf8ade7b72673dd5d35bbd13bc2516bea1d"
 
 
 def sha256_file(path: Path) -> str:
@@ -601,6 +602,7 @@ def run_self_tests(repo_root: Path) -> list:
             ).encode(),
         )
         write(td, "ipad/ui/index.html", b"tampered")
+        write(td, "ipad/ui/i18n.js", b"tampered")
         write(td, "ipad/ui/app.js", b"tampered")
         write(td, "ipad/ui/style.css", b"tampered")
         write(td, "shell/ui/setup.html", "下面 3 项 tampered".encode("utf-8"))

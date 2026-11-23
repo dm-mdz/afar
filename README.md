@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/demo.gif" alt="Afar 0.5.0 Demo — Turn your iPad into a native Sidecar touchscreen for a headless Mac mini" width="760">
+  <img src="assets/demo.gif" alt="Afar 0.5.1 Demo — Turn your iPad into a native Sidecar touchscreen for a headless Mac mini" width="760">
 </p>
 
 <p align="center">
@@ -38,6 +38,7 @@
 - **蓝牙键盘交接**：用随航时把你选的蓝牙键盘接到 Mac，用完还给 iPad（经典蓝牙键盘，不支持低功耗蓝牙键盘）。
 - **插回显示器恢复分辨率 & 远程桌面友好**：iPad 未显示时保留远程桌面清晰 HiDPI 尺寸，远程软件切低清时自动拉回清晰，支持 `extra_sizes` 追加分辨率。
 - **老版本无损升级**：从 `0.4.x` 升级时自动迁移 `config.toml` → `config.json`，沿用原有 TLS 证书与已配对设备，免重新配对。
+- **原生中英双语（0.5.1 新增）**：Mac 菜单栏、设置向导与 iPad 端自动跟随系统语言，并在菜单栏和界面角落提供一键 `中 / EN` 切换。
 
 ### 设备要求
 | | 要求 |
@@ -96,6 +97,7 @@ This repository contains Afar's **Mac agent** (rebuilt in pure C11 + thin native
 - **Smart Sidecar lifecycle**: auto-connect on boot and tap, automatic reconnect when returning to the iPad app after link drops, and persistent manual disconnect state across restarts.
 - **Bluetooth keyboard hand-over**: moves a classic Bluetooth keyboard to the Mac while Sidecar is active and hands it back afterwards.
 - **Seamless upgrade from 0.4.x**: automatically migrates `config.toml` to `config.json` while keeping existing TLS certificates and paired devices intact.
+- **Bilingual English & Chinese UI (new in 0.5.1)**: auto-detects macOS / iPadOS system language with a built-in one-click `EN / 中文` switcher in the menu bar and setup window.
 
 ### Requirements & Build
 Requires Apple silicon Mac (macOS 27+), iPad (iPadOS 27+), Apple Command Line Tools, `cmake`, and `python3` (all C dependencies are vendored under `public/`).

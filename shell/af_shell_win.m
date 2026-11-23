@@ -12,6 +12,7 @@
 #include "af_modules.h"
 #include "af_ui_ipc.h"
 #include "plat/af_plat.h"
+#include "af_shell_menu.h"
 #include "af_shell_win.h"
 #include "plat/af_objc_undef.h"
 
@@ -43,6 +44,7 @@
 - (void)showWindow;
 - (void)hideWindow;
 - (void)pushJson:(NSString *)oJson;
+- (void)refreshLang;
 - (void)teardown;
 @end
 
@@ -88,7 +90,7 @@ static NSString *af__find_setup_html(void)
                                             styleMask:uStyle
                                               backing:NSBackingStoreBuffered
                                                 defer:NO];
-  self.window.title = @"设置 Afar";
+  self.window.title = (DM_TRUE == af_shell_lang_is_zh()) ? @"设置 Afar" : @"Set Up Afar";
   self.window.releasedWhenClosed = NO;
   self.window.delegate = self;
   [self.window center];
@@ -226,15 +228,65 @@ static NSString *af__find_setup_html(void)
   (void)dm_queue_post_async(AF_LINK_UI_SETUP_MSG, acClose, (uint32)(sizeof(acClose) - 1u));
 }
 
+- (void)evalLang
+{
+  if ((nil == self.webView) || (!self.loaded))
+  {
+    return;
+  }
+  const char *pcLang = (DM_TRUE == af_shell_lang_is_zh()) ? "zh" : "en";
+  NSString *oJs =
+      [NSString stringWithFormat:@"window.afar && window.afar.setLang && window.afar.setLang('%s');",
+                                 pcLang];
+  [self.webView evaluateJavaScript:oJs completionHandler:nil];
+}
+
+- (void)refreshLang
+{
+  if (nil != self.window)
+  {
+    self.window.title = (DM_TRUE == af_shell_lang_is_zh()) ? @"设置 Afar" : @"Set Up Afar";
+  }
+  [self evalLang];
+}
+
 - (void)webView:(WKWebView *)oWv didFinishNavigation:(WKNavigation *)oNav
 {
   (void)oWv;
   (void)oNav;
   self.loaded = YES;
+  [self evalLang];
   if (nil != self.lastJson)
   {
     [self evalPush:self.lastJson];
   }
+}
+
+- (BOOL)handleLangMessage:(NSString *)oBody
+{
+  NSData *oData = [oBody dataUsingEncoding:NSUTF8StringEncoding];
+  if (nil == oData)
+  {
+    return NO;
+  }
+  id oObj = [NSJSONSerialization JSONObjectWithData:oData options:0 error:nil];
+  if (![oObj isKindOfClass:[NSDictionary class]])
+  {
+    return NO;
+  }
+  NSDictionary *oDict = (NSDictionary *)oObj;
+  if (![oDict[@"cmd"] isEqualToString:@"lang"])
+  {
+    return NO;
+  }
+  NSString *oLang = [oDict[@"lang"] isKindOfClass:[NSString class]] ? oDict[@"lang"] : @"";
+  af_shell_lang_set([oLang UTF8String]);
+  if (nil != self.window)
+  {
+    self.window.title = (DM_TRUE == af_shell_lang_is_zh()) ? @"设置 Afar" : @"Set Up Afar";
+  }
+  af_shell_menu_refresh_lang();
+  return YES;
 }
 
 - (void)userContentController:(WKUserContentController *)oUcc
@@ -246,6 +298,10 @@ static NSString *af__find_setup_html(void)
     return;
   }
   NSString *oBody = (NSString *)oMsg.body;
+  if ([self handleLangMessage:oBody])
+  {
+    return;
+  }
   const char *pcUtf8 = [oBody UTF8String];
   if (NULL != pcUtf8)
   {
@@ -340,6 +396,19 @@ void af_shell_win_destroy(void)
       {
         [g_oWinCtrl teardown];
         g_oWinCtrl = nil;
+      }
+    });
+  }
+}
+
+void af_shell_win_refresh_lang(void)
+{
+  @autoreleasepool
+  {
+    af__win_on_main(^{
+      if (nil != g_oWinCtrl)
+      {
+        [g_oWinCtrl refreshLang];
       }
     });
   }
