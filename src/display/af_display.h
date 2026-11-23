@@ -26,7 +26,8 @@ extern "C"
 #define AF_PHYS_RETRY_MAX   8u     /* 最多 8 次恢复尝试 */
 #define AF_VD_DROP_MS       3000u  /* 不再需要虚拟屏后等 3 秒再销毁 */
 #define AF_VD_STABLE_MS     2000u  /* 防拔线需随航稳定 2 秒才建备用虚拟屏 */
-#define AF_DESK_TRIES       2u
+#define AF_DESK_TRIES       3u
+#define AF_DESK_RETRY_MS    1000u
 #define AF_DESK_LOW_WIN_MS  60000u
 #define AF_DESK_LOW_MAX     2u
 
@@ -94,6 +95,13 @@ typedef struct af_desk
   uint32 u32SavedPh;
   bool_t bNeedRestore;
   uint32 u32RestoreTries;
+  bool_t bHasLastTry;
+  uint64 u64LastTryMs;
+  bool_t bHasSeen;
+  uint32 u32SeenW;
+  uint32 u32SeenH;
+  uint32 u32SeenPw;
+  uint32 u32SeenPh;
   bool_t bYieldLow;
   uint32 u32LowCnt;
   uint64 au64LowTimes[AF_DESK_LOW_MAX + 1u];

@@ -378,6 +378,7 @@ static void af__disp_handle_desk_and_ipad(in const af_disp_info_st *pstVdInfo,
   if (AF_VD_HEADLESS_DESK == g_stDisp.eVdState)
   {
     af_disp_mode_st stRestore;
+    if ((NULL != pstScInfo) || ((NULL != pstVdInfo) && (0u != pstVdInfo->u32MirrorOf))) { return; }
     if ((NULL != pstVdInfo) && pstVdInfo->bHasCur)
     {
       af_desk_act_et eAct = af_desk_step(&g_stDisp.stDesk, &pstVdInfo->stCur, u64Now, &stRestore);
@@ -391,10 +392,7 @@ static void af__disp_handle_desk_and_ipad(in const af_disp_info_st *pstVdInfo,
         pstS->au32DeskMode[3] = pstVdInfo->stCur.u32Ph;
         (void)af_store_save_async(NULL, NULL);
       }
-      else if (AF_DESK_RESTORE == eAct)
-      {
-        (void)pstOps->pfDispSetMode(g_stDisp.u32VdDispId, &stRestore, DM_FALSE);
-      }
+      else if (AF_DESK_RESTORE == eAct) { (void)pstOps->pfDispSetMode(g_stDisp.u32VdDispId, &stRestore, DM_TRUE); }
     }
     return;
   }

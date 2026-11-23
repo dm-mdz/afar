@@ -334,6 +334,8 @@ void af_desk_on_ipad(io af_desk_st *pstD)
   }
   pstD->bNeedRestore = DM_FALSE;
   pstD->u32RestoreTries = 0u;
+  pstD->bHasLastTry = DM_FALSE;
+  pstD->bHasSeen = DM_FALSE;
   pstD->bYieldLow = DM_FALSE;
   pstD->u32LowCnt = 0u;
 }
@@ -346,6 +348,8 @@ void af_desk_on_enter_desk(io af_desk_st *pstD)
   }
   pstD->bNeedRestore = pstD->bHasSaved;
   pstD->u32RestoreTries = 0u;
+  pstD->bHasLastTry = DM_FALSE;
+  pstD->bHasSeen = DM_FALSE;
   pstD->bYieldLow = DM_FALSE;
   pstD->u32LowCnt = 0u;
 }
@@ -358,6 +362,8 @@ void af_desk_on_vd_rebuilt(io af_desk_st *pstD)
   }
   pstD->bNeedRestore = pstD->bHasSaved;
   pstD->u32RestoreTries = 0u;
+  pstD->bHasLastTry = DM_FALSE;
+  pstD->bHasSeen = DM_FALSE;
 }
 
 void af_desk_reset(io af_desk_st *pstD)
@@ -369,6 +375,8 @@ void af_desk_reset(io af_desk_st *pstD)
   pstD->bYieldLow = DM_FALSE;
   pstD->u32LowCnt = 0u;
   pstD->u32RestoreTries = 0u;
+  pstD->bHasLastTry = DM_FALSE;
+  pstD->bHasSeen = DM_FALSE;
 }
 
 static void af__desk_fill_saved(in const af_desk_st *pstD, out af_disp_mode_st *pstOut)
@@ -441,6 +449,12 @@ af_desk_act_et af_desk_step(io af_desk_st *pstD, in const af_disp_mode_st *pstCu
   {
     pstD->bNeedRestore = DM_FALSE;
     pstD->u32RestoreTries = 0u;
+    pstD->bHasLastTry = DM_FALSE;
+    pstD->bHasSeen = DM_TRUE;
+    pstD->u32SeenW = pstCur->u32W;
+    pstD->u32SeenH = pstCur->u32H;
+    pstD->u32SeenPw = pstCur->u32Pw;
+    pstD->u32SeenPh = pstCur->u32Ph;
     pstD->bYieldLow = DM_FALSE;
     return AF_DESK_NONE;
   }
@@ -450,20 +464,45 @@ af_desk_act_et af_desk_step(io af_desk_st *pstD, in const af_disp_mode_st *pstCu
   }
   if (pstD->bNeedRestore && pstD->bHasSaved)
   {
+    if (pstD->bHasLastTry && (u64NowMs >= pstD->u64LastTryMs)
+        && ((u64NowMs - pstD->u64LastTryMs) < AF_DESK_RETRY_MS))
+    {
+      return AF_DESK_NONE;
+    }
     if (pstD->u32RestoreTries < AF_DESK_TRIES)
     {
       pstD->u32RestoreTries++;
+      pstD->bHasLastTry = DM_TRUE;
+      pstD->u64LastTryMs = u64NowMs;
       af__desk_fill_saved(pstD, pstRestoreOut);
       return AF_DESK_RESTORE;
     }
+    /* 重试耗尽：让步但保留已记住的 desk_mode，避免把残留的 iPad 尺寸覆盖写入 */
     pstD->bNeedRestore = DM_FALSE;
     pstD->u32RestoreTries = 0u;
+    pstD->bHasLastTry = DM_FALSE;
+    pstD->bHasSeen = DM_TRUE;
+    pstD->u32SeenW = pstCur->u32W;
+    pstD->u32SeenH = pstCur->u32H;
+    pstD->u32SeenPw = pstCur->u32Pw;
+    pstD->u32SeenPh = pstCur->u32Ph;
+    return AF_DESK_NONE;
+  }
+  if (pstD->bHasSeen && (pstCur->u32W == pstD->u32SeenW) && (pstCur->u32H == pstD->u32SeenH)
+      && (pstCur->u32Pw == pstD->u32SeenPw) && (pstCur->u32Ph == pstD->u32SeenPh))
+  {
+    return AF_DESK_NONE;
   }
   pstD->bHasSaved = DM_TRUE;
   pstD->u32SavedW = pstCur->u32W;
   pstD->u32SavedH = pstCur->u32H;
   pstD->u32SavedPw = pstCur->u32Pw;
   pstD->u32SavedPh = pstCur->u32Ph;
+  pstD->bHasSeen = DM_TRUE;
+  pstD->u32SeenW = pstCur->u32W;
+  pstD->u32SeenH = pstCur->u32H;
+  pstD->u32SeenPw = pstCur->u32Pw;
+  pstD->u32SeenPh = pstCur->u32Ph;
   pstD->bYieldLow = DM_FALSE;
   pstD->u32LowCnt = 0u;
   return AF_DESK_REMEMBER;
