@@ -2,8 +2,8 @@
  ******************************************************************************
  * @file    type.h
  * @author  MDM
- * @version 0.0.0.1
- * @brief   DM 框架跨平台基础类型、参数方向标注（in/out/io）与可见性宏定义。
+ * @version 2.1.0
+ * @brief   DM 框架跨平台基础类型、参数方向标注（dm_in/dm_out/dm_io）与可见性宏定义。
  ******************************************************************************
  */
 #ifndef DM_TYPE_H
@@ -37,10 +37,10 @@ extern "C"
 #endif
 #endif
 
-/* Input/Output direction macros(空宏,仅作文档标注参数方向) */
-#define in
-#define out
-#define io
+/* Input/Output direction macros (空宏，仅作参数方向标注；C++20 STL 安全，绝不定义裸 in/out/io) */
+#define dm_in
+#define dm_out
+#define dm_io
 
 /* DZFree Code Style Type(通用类型,宽度随平台,勿用于跨平台数据布局) */
 typedef unsigned char uchar;
@@ -63,6 +63,10 @@ typedef uint8_t uint8;
 typedef uint16_t uint16;
 typedef uint32_t uint32;
 typedef uint64_t uint64;
+
+/* 平台无关跨进程/Peer 原始流描述符（零 <uv.h>/<winsock2.h> 泄露，独立于内部 dm_os_fd_t） */
+typedef intptr_t dm_peer_fd_t;
+#define DM_PEER_FD_INVALID ((dm_peer_fd_t)(-1))
 
 /* 编译期校验:定宽类型在目标系统/编译器上的真实宽度(保证跨 OS 数据布局一致) */
 #ifdef __cplusplus

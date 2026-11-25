@@ -11,6 +11,7 @@
 #define DM_MODULE_H
 
 #include <dm.h>
+#include <dm/fs.h>
 
 #ifdef __cplusplus
 extern "C"
@@ -45,12 +46,12 @@ typedef struct dm_drain dm_drain_st;
 
 typedef struct dm_module
 {
-  uint16 u16ModID;                           /* 唯一模块号：应用模块 16..93 */
-  const char *pcName;                        /* 日志与诊断名，如 "bf_proc" */
-  int (*pfInit)(void);                       /* 初始化：登记处理项、接口、定时器、事件 */
-  void (*pfDrain)(io dm_drain_st *pstDrain); /* 优雅收尾（可 NULL） */
-  void (*pfFini)(void);                      /* 倒序清理（可 NULL） */
-  const dm_err_entry_st *pastErrMap;         /* 本模块错误码文案表（{0, NULL} 结尾，可 NULL） */
+  uint16 u16ModID;                              /* 唯一模块号：应用模块 16..93 */
+  const char *pcName;                           /* 日志与诊断名，如 "bf_proc" */
+  int (*pfInit)(void);                          /* 初始化：登记处理项、接口、定时器、事件 */
+  void (*pfDrain)(dm_io dm_drain_st *pstDrain); /* 优雅收尾（可 NULL） */
+  void (*pfFini)(void);                         /* 倒序清理（可 NULL） */
+  const dm_err_entry_st *pastErrMap;            /* 本模块错误码文案表（{0, NULL} 结尾，可 NULL） */
 } dm_module_st;
 
 typedef struct dm_role
@@ -62,23 +63,22 @@ typedef struct dm_role
 } dm_role_st;
 
 struct dm_cfg;
-struct dm_https_cfg; /* 前向声明：libdm_core 零反向依赖 dm/https.h */
 
 /* 可选组件生命周期钩子（解除 libdm_core 对 net/db/child 的强链接依赖，AUD-02 / AUD-01） */
 typedef struct dm_ext_hooks
 {
-  int (*pfBeforeInit)(in const struct dm_cfg *pstCfg);
+  int (*pfBeforeInit)(dm_in const struct dm_cfg *pstCfg);
   void (*pfAfterInit)(void);
   void (*pfOnDrain)(void);
   void (*pfOnTeardown)(void);
   void (*pfOnEnd)(void);
-  void (*pfAfterWork)(in uint32 u32StatKey);
+  void (*pfAfterWork)(dm_in uint32 u32StatKey);
   void (*pfOnThreadExit)(void);
-  void (*pfGetPorts)(out int *piLinkPort, out int *piHttpPort);
+  void (*pfGetPorts)(dm_out int *piLinkPort, dm_out int *piHttpPort);
   uint32 (*pfChildCount)(void);
-  int (*pfReplyTake)(in const void *pvMsg, out void *pvReply);
-  int (*pfReplySend)(in const void *pvReply, in int iStatus, in const void *pvBody,
-                     in uint32 u32Len);
+  int (*pfReplyTake)(dm_in const void *pvMsg, dm_out void *pvReply);
+  int (*pfReplySend)(dm_in const void *pvReply, dm_in int iStatus, dm_in const void *pvBody,
+                     dm_in uint32 u32Len);
 } dm_ext_hooks_st;
 
 typedef struct dm_cfg
@@ -105,36 +105,32 @@ typedef struct dm_cfg
   uint16 u16PoolMax;               /* dm_pool 最大线程数（W3），0 = 默认 */
   uint32 u32PoolIdleMs;            /* dm_pool 空闲缩容超时（W3），0 = 默认 */
   const dm_ext_hooks_st *pstHooks; /* 可选组件单组钩子（可与 dm_ext_register 组合使用） */
-  const char *pcLockName;          /* 数据目录锁文件名；NULL = "dm.lock"（Afar 设 "agent.lock"） */
+  const char *pcLockName;          /* 数据目录锁文件名；NULL = "dm.lock" */
   bool_t bDisableLocalHttp;        /* DM_TRUE = 不监听 127.0.0.1 明文 HTTP 口 */
-  const struct dm_https_cfg *pstHttps; /* 非 NULL 时由 dm_https_hooks() 启用局域网 TLS HTTPS */
 } dm_cfg_st;
 
 /* 注册可选组件钩子（幂等去重，供 libdm_net / libdm_db / libdm_child 装配，零环依赖） */
-DM_API int dm_ext_register(in const dm_ext_hooks_st *pstHooks);
+DM_API int dm_ext_register(dm_in const dm_ext_hooks_st *pstHooks);
 
 /* 清空已注册的可选组件钩子（测试隔离用） */
 DM_API void dm_ext_clear(void);
 
-DM_API int dm_main_ex(in int argc, in char **argv, in const dm_cfg_st *pstCfg,
-                      in const dm_module_st *pastMod, in uint uiCount);
+DM_API int dm_main_ex(dm_in int argc, dm_in char **argv, dm_in const dm_cfg_st *pstCfg,
+                      dm_in const dm_module_st *pastMod, dm_in uint uiCount);
 
-DM_API int dm_main(in int argc, in char **argv);
+DM_API int dm_main(dm_in int argc, dm_in char **argv);
 
 DM_API int dm_main_last_err(void);
 
-DM_API void dm_quit(in int iCode);
+DM_API void dm_quit(dm_in int iCode);
 
-DM_API int dm_stdin_line(out char *pcBuf, in uint uiSize);
+DM_API int dm_stdin_line(dm_out char *pcBuf, dm_in uint uiSize);
 
-DM_API int dm_token_make(out char *pcBuf, in uint uiSize);
+DM_API int dm_token_make(dm_out char *pcBuf, dm_in uint uiSize);
 
-DM_API int dm_drain_hold(io dm_drain_st *pstDrain);
+DM_API int dm_drain_hold(dm_io dm_drain_st *pstDrain);
 
-DM_API void dm_drain_release(in int iHold);
-
-/* 原子写文件（0600，唯一临时文件 + 写满循环 + fsync + 原子替换 + 失败清理，路径 UTF-8） */
-DM_API int dm_fs_write_atomic(in const char *pcPath, in const void *pvData, in size_t uLen);
+DM_API void dm_drain_release(dm_in int iHold);
 
 #ifdef __cplusplus
 }

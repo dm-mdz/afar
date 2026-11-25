@@ -52,8 +52,8 @@ static uint64 dm__os_linux_btime_sec(void)
   return u64Btime;
 }
 
-static int dm__os_linux_read_stat(in int iPid, in uint64 u64BtimeSec, in long lClkTck,
-                                  out dm__os_node_st *pstNode)
+static int dm__os_linux_read_stat(dm_in int iPid, dm_in uint64 u64BtimeSec, dm_in long lClkTck,
+                                  dm_out dm__os_node_st *pstNode)
 {
   char acPath[64] = {0};
   char acBuf[1024] = {0};
@@ -135,7 +135,7 @@ static int dm__os_linux_read_stat(in int iPid, in uint64 u64BtimeSec, in long lC
   return DM_SUCCESS;
 }
 
-static void dm__os_linux_cmdline(in int iPid, out char *pcOut, in size_t uCap)
+static void dm__os_linux_cmdline(dm_in int iPid, dm_out char *pcOut, dm_in size_t uCap)
 {
   char acPath[64] = {0};
   FILE *pstFp = NULL;
@@ -170,7 +170,7 @@ static void dm__os_linux_cmdline(in int iPid, out char *pcOut, in size_t uCap)
   return;
 }
 
-int dm_os_proc_start_ms(in int iPid, out uint64 *pu64StartMs)
+int dm_os_proc_start_ms(dm_in int iPid, dm_out uint64 *pu64StartMs)
 {
   dm__os_node_st stNode = {0};
   int iRc = DM_SUCCESS;
@@ -190,8 +190,8 @@ int dm_os_proc_start_ms(in int iPid, out uint64 *pu64StartMs)
   return DM_SUCCESS;
 }
 
-int dm_os_proc_descendants(in int iRootPid, out dm_os_proc_st *pastOut, in uint32 u32Cap,
-                           out uint32 *pu32Count)
+int dm_os_proc_descendants(dm_in int iRootPid, dm_out dm_os_proc_st *pastOut, dm_in uint32 u32Cap,
+                           dm_out uint32 *pu32Count)
 {
   DIR *pstDir = NULL;
   struct dirent *pstEnt = NULL;
@@ -285,7 +285,7 @@ int dm_os_proc_descendants(in int iRootPid, out dm_os_proc_st *pastOut, in uint3
   return DM_SUCCESS;
 }
 
-static int dm__os_linux_kill_one(in int iPid)
+static int dm__os_linux_kill_one(dm_in int iPid)
 {
   if (0 == kill((pid_t)iPid, SIGKILL))
   {
@@ -294,7 +294,7 @@ static int dm__os_linux_kill_one(in int iPid)
   return (EPERM == errno) ? DM_PERM : DM_NOT_FOUND;
 }
 
-int dm_os_proc_kill_tree(in int iPid)
+int dm_os_proc_kill_tree(dm_in int iPid)
 {
   dm_os_proc_st *pastDesc = NULL;
   uint32 u32Count = 0u;
@@ -339,7 +339,7 @@ int dm_os_proc_kill_tree(in int iPid)
 
 /* ============================ 文件可执行性与目录链接 ============================ */
 
-bool_t dm_os_is_exec(in const char *pcPathUtf8)
+bool_t dm_os_is_exec(dm_in const char *pcPathUtf8)
 {
   struct stat stSt = {0};
   return ((NULL != pcPathUtf8) && (0 == stat(pcPathUtf8, &stSt)) && S_ISREG(stSt.st_mode) &&
@@ -348,8 +348,8 @@ bool_t dm_os_is_exec(in const char *pcPathUtf8)
              : DM_FALSE;
 }
 
-int dm_os_dir_link(in const char *pcLinkPathUtf8, in const char *pcTargetPathUtf8,
-                   out bool_t *pbUsedCopy)
+int dm_os_dir_link(dm_in const char *pcLinkPathUtf8, dm_in const char *pcTargetPathUtf8,
+                   dm_out bool_t *pbUsedCopy)
 {
   struct stat stTarget = {0};
   char acAbsTarget[PATH_MAX] = {0};
@@ -380,7 +380,7 @@ int dm_os_dir_link(in const char *pcLinkPathUtf8, in const char *pcTargetPathUtf
   return DM_SUCCESS;
 }
 
-static int dm__os_linux_rm_recursive(in const char *pcPath, in uint32 u32Depth)
+static int dm__os_linux_rm_recursive(dm_in const char *pcPath, dm_in uint32 u32Depth)
 {
   struct stat stSt = {0};
   DIR *pstDir = NULL;
@@ -422,7 +422,7 @@ static int dm__os_linux_rm_recursive(in const char *pcPath, in uint32 u32Depth)
   return (0 == rmdir(pcPath)) ? DM_SUCCESS : DM_IO;
 }
 
-int dm_os_dir_unlink(in const char *pcLinkPathUtf8)
+int dm_os_dir_unlink(dm_in const char *pcLinkPathUtf8)
 {
   DM_ASSERT_SLOW();
   if ((NULL == pcLinkPathUtf8) || ('\0' == pcLinkPathUtf8[0]))

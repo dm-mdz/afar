@@ -26,7 +26,8 @@
 
 #define AF_CERT_FILE_MAX (64u * 1024u)
 
-static int af__cert_read_file(in const char *pcPath, out uint8 **ppu8Out, out size_t *puLen)
+static int af__cert_read_file(dm_in const char *pcPath, dm_out uint8 **ppu8Out,
+                              dm_out size_t *puLen)
 {
   FILE *pf = NULL;
   long lSz = 0;
@@ -64,8 +65,9 @@ static int af__cert_read_file(in const char *pcPath, out uint8 **ppu8Out, out si
   return DM_SUCCESS;
 }
 
-static int af__cert_verify_pair(in const uint8 *pu8Cert, in size_t uCertLen, in const uint8 *pu8Key,
-                                in size_t uKeyLen, out uint8 au8Fp[32])
+static int af__cert_verify_pair(dm_in const uint8 *pu8Cert, dm_in size_t uCertLen,
+                                dm_in const uint8 *pu8Key, dm_in size_t uKeyLen,
+                                dm_out uint8 au8Fp[32])
 {
   mbedtls_entropy_context stEnt;
   mbedtls_ctr_drbg_context stDrbg;
@@ -79,12 +81,12 @@ static int af__cert_verify_pair(in const uint8 *pu8Cert, in size_t uCertLen, in 
   mbedtls_pk_init(&stKey);
 
   if ((0 == mbedtls_ctr_drbg_seed(&stDrbg, mbedtls_entropy_func, &stEnt,
-                                  (const unsigned char *)"af_cert_v", 9u))
-      && (0 == mbedtls_x509_crt_parse_der(&stCrt, pu8Cert, uCertLen))
-      && (0 == mbedtls_pk_parse_key(&stKey, pu8Key, uKeyLen, NULL, 0u, mbedtls_ctr_drbg_random,
-                                    &stDrbg))
-      && (0 == mbedtls_pk_check_pair(&stCrt.pk, &stKey, mbedtls_ctr_drbg_random, &stDrbg))
-      && (0 == mbedtls_sha256(pu8Cert, uCertLen, au8Fp, 0)))
+                                  (const unsigned char *)"af_cert_v", 9u)) &&
+      (0 == mbedtls_x509_crt_parse_der(&stCrt, pu8Cert, uCertLen)) &&
+      (0 ==
+       mbedtls_pk_parse_key(&stKey, pu8Key, uKeyLen, NULL, 0u, mbedtls_ctr_drbg_random, &stDrbg)) &&
+      (0 == mbedtls_pk_check_pair(&stCrt.pk, &stKey, mbedtls_ctr_drbg_random, &stDrbg)) &&
+      (0 == mbedtls_sha256(pu8Cert, uCertLen, au8Fp, 0)))
   {
     iRc = DM_SUCCESS;
   }
@@ -96,8 +98,8 @@ static int af__cert_verify_pair(in const uint8 *pu8Cert, in size_t uCertLen, in 
   return iRc;
 }
 
-static int af__cert_load_existing(in const char *pcCertPath, in const char *pcKeyPath,
-                                  out uint8 au8Fp[32])
+static int af__cert_load_existing(dm_in const char *pcCertPath, dm_in const char *pcKeyPath,
+                                  dm_out uint8 au8Fp[32])
 {
   uint8 *pu8Cert = NULL;
   uint8 *pu8Key = NULL;
@@ -131,10 +133,10 @@ static int af__cert_load_existing(in const char *pcCertPath, in const char *pcKe
   return iRet;
 }
 
-static int af__cert_write_generated(in mbedtls_pk_context *pstKey,
-                                    io mbedtls_ctr_drbg_context *pstDrbg,
-                                    in const char *pcCertPath, in const char *pcKeyPath,
-                                    out uint8 au8Fp[32])
+static int af__cert_write_generated(dm_in mbedtls_pk_context *pstKey,
+                                    dm_io mbedtls_ctr_drbg_context *pstDrbg,
+                                    dm_in const char *pcCertPath, dm_in const char *pcKeyPath,
+                                    dm_out uint8 au8Fp[32])
 {
   mbedtls_x509write_cert stCrt;
   unsigned char aucSer[16];
@@ -150,10 +152,10 @@ static int af__cert_write_generated(in mbedtls_pk_context *pstKey,
   mbedtls_x509write_crt_set_subject_key(&stCrt, pstKey);
   mbedtls_x509write_crt_set_issuer_key(&stCrt, pstKey);
 
-  if ((0 == mbedtls_ctr_drbg_random(pstDrbg, aucSer, sizeof(aucSer)))
-      && (0 == mbedtls_x509write_crt_set_subject_name(&stCrt, "CN=afar.local"))
-      && (0 == mbedtls_x509write_crt_set_issuer_name(&stCrt, "CN=afar.local"))
-      && (0 == mbedtls_x509write_crt_set_validity(&stCrt, "20240101000000", "20491231235959")))
+  if ((0 == mbedtls_ctr_drbg_random(pstDrbg, aucSer, sizeof(aucSer))) &&
+      (0 == mbedtls_x509write_crt_set_subject_name(&stCrt, "CN=afar.local")) &&
+      (0 == mbedtls_x509write_crt_set_issuer_name(&stCrt, "CN=afar.local")) &&
+      (0 == mbedtls_x509write_crt_set_validity(&stCrt, "20240101000000", "20491231235959")))
   {
     aucSer[0] = (unsigned char)((aucSer[0] & 0x7Fu) | 0x01u);
     if (0 == mbedtls_x509write_crt_set_serial_raw(&stCrt, aucSer, sizeof(aucSer)))
@@ -167,9 +169,9 @@ static int af__cert_write_generated(in mbedtls_pk_context *pstKey,
   {
     const uint8 *pu8KeyStart = aucKeyDer + (sizeof(aucKeyDer) - (size_t)iKeyLen);
     const uint8 *pu8CrtStart = aucCrtDer + (sizeof(aucCrtDer) - (size_t)iCrtLen);
-    if ((DM_SUCCESS == af_store_write_atomic(pcKeyPath, pu8KeyStart, (size_t)iKeyLen))
-        && (DM_SUCCESS == af_store_write_atomic(pcCertPath, pu8CrtStart, (size_t)iCrtLen))
-        && (0 == mbedtls_sha256(pu8CrtStart, (size_t)iCrtLen, au8Fp, 0)))
+    if ((DM_SUCCESS == af_store_write_atomic(pcKeyPath, pu8KeyStart, (size_t)iKeyLen)) &&
+        (DM_SUCCESS == af_store_write_atomic(pcCertPath, pu8CrtStart, (size_t)iCrtLen)) &&
+        (0 == mbedtls_sha256(pu8CrtStart, (size_t)iCrtLen, au8Fp, 0)))
     {
       iRet = DM_SUCCESS;
     }
@@ -180,8 +182,8 @@ static int af__cert_write_generated(in mbedtls_pk_context *pstKey,
   return iRet;
 }
 
-static int af__cert_generate_new(in const char *pcCertPath, in const char *pcKeyPath,
-                                 out uint8 au8Fp[32])
+static int af__cert_generate_new(dm_in const char *pcCertPath, dm_in const char *pcKeyPath,
+                                 dm_out uint8 au8Fp[32])
 {
   mbedtls_entropy_context stEnt;
   mbedtls_ctr_drbg_context stDrbg;
@@ -192,10 +194,10 @@ static int af__cert_generate_new(in const char *pcCertPath, in const char *pcKey
   mbedtls_ctr_drbg_init(&stDrbg);
   mbedtls_pk_init(&stKey);
   if ((0 == mbedtls_ctr_drbg_seed(&stDrbg, mbedtls_entropy_func, &stEnt,
-                                  (const unsigned char *)"af_cert_g", 9u))
-      && (0 == mbedtls_pk_setup(&stKey, mbedtls_pk_info_from_type(MBEDTLS_PK_ECKEY)))
-      && (0 == mbedtls_ecp_gen_key(MBEDTLS_ECP_DP_SECP256R1, mbedtls_pk_ec(stKey),
-                                   mbedtls_ctr_drbg_random, &stDrbg)))
+                                  (const unsigned char *)"af_cert_g", 9u)) &&
+      (0 == mbedtls_pk_setup(&stKey, mbedtls_pk_info_from_type(MBEDTLS_PK_ECKEY))) &&
+      (0 == mbedtls_ecp_gen_key(MBEDTLS_ECP_DP_SECP256R1, mbedtls_pk_ec(stKey),
+                                mbedtls_ctr_drbg_random, &stDrbg)))
   {
     iRet = af__cert_write_generated(&stKey, &stDrbg, pcCertPath, pcKeyPath, au8Fp);
   }
@@ -205,7 +207,7 @@ static int af__cert_generate_new(in const char *pcCertPath, in const char *pcKey
   return iRet;
 }
 
-int af_auth_ensure_tls_cert(in const char *pcDataDir, out uint8 au8Fp[32])
+int af_auth_ensure_tls_cert(dm_in const char *pcDataDir, dm_out uint8 au8Fp[32])
 {
   char acCertPath[600];
   char acKeyPath[600];
@@ -242,4 +244,27 @@ int af_auth_ensure_tls_cert(in const char *pcDataDir, out uint8 au8Fp[32])
     memcpy(au8Fp, au8LocalFp, sizeof(au8LocalFp));
   }
   return DM_SUCCESS;
+}
+
+bool_t af_auth_get_cert_sha256(dm_out char acHexOut[65])
+{
+  static const char sc_acHex[17] = "0123456789abcdef";
+  size_t uIdx = 0u;
+
+  if (NULL == acHexOut)
+  {
+    return DM_FALSE;
+  }
+  if (!g_stAfAuth.bHasCertFp)
+  {
+    acHexOut[0] = '\0';
+    return DM_FALSE;
+  }
+  for (uIdx = 0u; uIdx < 32u; uIdx++)
+  {
+    acHexOut[uIdx * 2u] = sc_acHex[(g_stAfAuth.au8OwnCertFp[uIdx] >> 4u) & 0x0Fu];
+    acHexOut[uIdx * 2u + 1u] = sc_acHex[g_stAfAuth.au8OwnCertFp[uIdx] & 0x0Fu];
+  }
+  acHexOut[64] = '\0';
+  return DM_TRUE;
 }

@@ -34,12 +34,12 @@ uint32 g_u32ConnNext = 0;
 /* ============================ 连接表与关闭 ============================ */
 
 /* 这条连接已经在关，或者答完错误等着关 */
-bool_t dm__conn_dead(in const dm__conn_st *pstConn)
+bool_t dm__conn_dead(dm_in const dm__conn_st *pstConn)
 {
   return (pstConn->bClosing || pstConn->bDoomed) ? DM_TRUE : DM_FALSE;
 }
 
-dm__conn_st *dm__conn_find(in uint32 u32Id)
+dm__conn_st *dm__conn_find(dm_in uint32 u32Id)
 {
   if (NULL == g_stConnTable.pstBuckets)
   {
@@ -48,7 +48,7 @@ dm__conn_st *dm__conn_find(in uint32 u32Id)
   return (dm__conn_st *)dm_hash_find(&g_stConnTable, u32Id);
 }
 
-static void dm__conn_on_closed(in dm_handle_st *pstHandle)
+static void dm__conn_on_closed(dm_in dm_uv_handle_st *pstHandle)
 {
   dm__conn_st *pstConn = (dm__conn_st *)pstHandle;
   dm_hash_destroy(&pstConn->stPending, NULL);
@@ -64,16 +64,16 @@ static void dm__conn_on_closed(in dm_handle_st *pstHandle)
   return;
 }
 
-void dm__hs_timer_closed(in dm_handle_st *pstHandle)
+void dm__hs_timer_closed(dm_in dm_uv_handle_st *pstHandle)
 {
   dm__conn_st *pstConn = container_of(pstHandle, dm__conn_st, stHsTimer);
   /* 握手定时器关完了，才关连接本身（连接对象里含着定时器，不能先释放） */
-  dm_close((dm_handle_st *)&pstConn->stTcp, dm__conn_on_closed);
+  dm_uv_close((dm_uv_handle_st *)dm__conn_stream(pstConn), dm__conn_on_closed);
   return;
 }
 
 /* 关一条连接：摘表、摘停读、发断开事件（握过手的），再关句柄 */
-void dm__conn_close(io dm__conn_st *pstConn, in const char *pcWhy)
+void dm__conn_close(dm_io dm__conn_st *pstConn, dm_in const char *pcWhy)
 {
   dm_conn_ev_st stEv = {0};
 
@@ -86,6 +86,7 @@ void dm__conn_close(io dm__conn_st *pstConn, in const char *pcWhy)
   (void)dm_hash_del(&g_stConnTable, pstConn->u32Id, NULL);
   dm_list_del_node(&pstConn->stNode);
   dm__flow_remove(&pstConn->stFlow);
+  dm__conn_notify_peer_hello(pstConn, DM_CONN_GONE, 0u, NULL, 0u);
   dm__call_conn_gone(pstConn->u32Id); /* 发给它、还在等应答的反向调用，各交一次 DM_CONN_GONE */
   if (NULL != pstConn->pvHttp)
   {
@@ -103,12 +104,12 @@ void dm__conn_close(io dm__conn_st *pstConn, in const char *pcWhy)
     stEv.acPeerID[sizeof(stEv.acPeerID) - 1u] = '\0';
     (void)dm_event_publish(DM_EV_CONN_CLOSE, &stEv, sizeof(stEv));
   }
-  (void)dm_timer_stop(&pstConn->stHsTimer);
-  dm_close((dm_handle_st *)&pstConn->stHsTimer, dm__hs_timer_closed);
+  (void)dm_uv_timer_stop(&pstConn->stHsTimer);
+  dm_uv_close((dm_uv_handle_st *)&pstConn->stHsTimer, dm__hs_timer_closed);
   return;
 }
 
-static void dm__conn_run_close(io dm__qitem_st *pstItem)
+static void dm__conn_run_close(dm_io dm__qitem_st *pstItem)
 {
   dm__conn_st *pstConn = dm__conn_find((uint32)(uintptr_t)pstItem->pvCtx);
   if (NULL != pstConn)
@@ -118,7 +119,7 @@ static void dm__conn_run_close(io dm__qitem_st *pstItem)
   return;
 }
 
-void dm__conn_close_later(io dm__conn_st *pstConn, in const char *pcWhy)
+void dm__conn_close_later(dm_io dm__conn_st *pstConn, dm_in const char *pcWhy)
 {
   if (pstConn->bClosing || pstConn->bKill)
   {
@@ -141,7 +142,7 @@ void dm__conn_close_later(io dm__conn_st *pstConn, in const char *pcWhy)
   return;
 }
 
-static void dm__conn_on_shutdown(in dm_shutdown_st *pstReq, in int iStatus)
+static void dm__conn_on_shutdown(dm_in dm_uv_shutdown_st *pstReq, dm_in int iStatus)
 {
   dm__conn_st *pstConn = container_of(pstReq, dm__conn_st, stShutdown);
   (void)iStatus;
@@ -150,7 +151,7 @@ static void dm__conn_on_shutdown(in dm_shutdown_st *pstReq, in int iStatus)
 }
 
 /* 答完一个错误再关：先停读，等写完（shutdown）再关。停读用自己的一位，总队列降下来也不会重新开读 */
-void dm__conn_close_after_write(io dm__conn_st *pstConn)
+void dm__conn_close_after_write(dm_io dm__conn_st *pstConn)
 {
   if (pstConn->bClosing || pstConn->bDoomed)
   {
@@ -159,7 +160,7 @@ void dm__conn_close_after_write(io dm__conn_st *pstConn)
   pstConn->bDoomed = DM_TRUE;
   dm__flow_stop(&pstConn->stFlow, DM__STOP_CLOSING);
   if (DM_SUCCESS !=
-      dm_shutdown(&pstConn->stShutdown, (dm_stream_st *)&pstConn->stTcp, dm__conn_on_shutdown))
+      dm_uv_shutdown(&pstConn->stShutdown, dm__conn_stream(pstConn), dm__conn_on_shutdown))
   {
     dm__conn_close_later(pstConn, "shutdown failed");
   }
@@ -170,13 +171,13 @@ void dm__conn_close_after_write(io dm__conn_st *pstConn)
 
 typedef struct dm__conn_write
 {
-  dm_write_st stReq;
+  dm_uv_write_st stReq;
   uint32 u32FrameLen;
   bool_t bSensitive;
   uint8 au8Frame[];
 } dm__conn_write_st;
 
-static void dm__conn_on_written(in dm_write_st *pstReq, in int iStatus)
+static void dm__conn_on_written(dm_in dm_uv_write_st *pstReq, dm_in int iStatus)
 {
   dm__conn_write_st *pstWrite = container_of(pstReq, dm__conn_write_st, stReq);
   (void)iStatus;
@@ -190,9 +191,9 @@ static void dm__conn_on_written(in dm_write_st *pstReq, in int iStatus)
 
 /* 往一条连接写一帧（pu8Head 为 NULL 时 pvRest 就是整帧）；没写出去的超过 DM_SLOW_CONN 就断开
  * （不让一个卡住的客户端撑爆内存） */
-static int dm__conn_write_io(io dm__conn_st *pstConn, in const uint8 *pu8Head,
-                             in const void *pvRest, in uint32 u32RestLen, in bool_t bWsFrame,
-                             in bool_t bFramePayload)
+static int dm__conn_write_io(dm_io dm__conn_st *pstConn, dm_in const uint8 *pu8Head,
+                             dm_in const void *pvRest, dm_in uint32 u32RestLen,
+                             dm_in bool_t bWsFrame, dm_in bool_t bFramePayload)
 {
   dm__conn_write_st *pstWrite = NULL;
   uint32 u32Head = (NULL != pu8Head) ? DM_FRAME_HEAD : 0u;
@@ -201,7 +202,7 @@ static int dm__conn_write_io(io dm__conn_st *pstConn, in const uint8 *pu8Head,
   uint8 u8FrameFlag = 0u;
   uint64 u64Total = 0u;
   size_t uTotal = 0u;
-  dm_buf_st stBuf = {0};
+  dm_uv_buf_st stBuf = {0};
   int iErrCode = DM_SUCCESS;
 
   if (pstConn->bClosing || pstConn->bKill)
@@ -250,9 +251,9 @@ static int dm__conn_write_io(io dm__conn_st *pstConn, in const uint8 *pu8Head,
   {
     memcpy(pstWrite->au8Frame + u32Ws + u32Head, pvRest, u32RestLen);
   }
-  stBuf = dm_buf_init((char *)pstWrite->au8Frame, pstWrite->u32FrameLen);
+  stBuf = dm_uv_buf_init((char *)pstWrite->au8Frame, pstWrite->u32FrameLen);
   iErrCode =
-      dm_write(&pstWrite->stReq, (dm_stream_st *)&pstConn->stTcp, &stBuf, 1, dm__conn_on_written);
+      dm_uv_write(&pstWrite->stReq, dm__conn_stream(pstConn), &stBuf, 1, dm__conn_on_written);
   if (DM_SUCCESS != iErrCode)
   {
     if (pstWrite->bSensitive && (pstWrite->u32FrameLen > 0u))
@@ -263,7 +264,7 @@ static int dm__conn_write_io(io dm__conn_st *pstConn, in const uint8 *pu8Head,
     dm__conn_close_later(pstConn, "write failed"); /* 延迟关闭，避免破坏调用方栈状态 */
     return DM_CONN_GONE;
   }
-  if (dm_stream_get_write_queue_size((dm_stream_st *)&pstConn->stTcp) > DM_SLOW_CONN)
+  if (dm_uv_stream_get_write_queue_size(dm__conn_stream(pstConn)) > DM_SLOW_CONN)
   {
     DM_LOG_WARN("conn %u: over %u bytes not written, disconnecting slow peer", pstConn->u32Id,
                 (unsigned)DM_SLOW_CONN);
@@ -274,21 +275,21 @@ static int dm__conn_write_io(io dm__conn_st *pstConn, in const uint8 *pu8Head,
 
 /* 往一条连接写一帧（pu8Head 为 NULL 时 pvRest 就是整帧）；WebSocket 连接自动套一层消息头。
  * 没写出去的超过 DM_SLOW_CONN 就断开（不让一个卡住的客户端撑爆内存） */
-int dm__conn_write_parts(io dm__conn_st *pstConn, in const uint8 *pu8Head, in const void *pvRest,
-                         in uint32 u32RestLen)
+int dm__conn_write_parts(dm_io dm__conn_st *pstConn, dm_in const uint8 *pu8Head,
+                         dm_in const void *pvRest, dm_in uint32 u32RestLen)
 {
   return dm__conn_write_io(pstConn, pu8Head, pvRest, u32RestLen,
                            (DM__CONN_WS == pstConn->u8Kind) ? DM_TRUE : DM_FALSE, DM_TRUE);
 }
 
 /* 原样写字节（HTTP 应答、WebSocket 的控制帧） */
-int dm__conn_write_raw(io dm__conn_st *pstConn, in const void *pv, in uint32 u32Len)
+int dm__conn_write_raw(dm_io dm__conn_st *pstConn, dm_in const void *pv, dm_in uint32 u32Len)
 {
   return dm__conn_write_io(pstConn, NULL, pv, u32Len, DM_FALSE, DM_FALSE);
 }
 
-int dm__conn_write(io dm__conn_st *pstConn, in const dm_frame_head_st *pstHead,
-                   in const void *pvBody)
+int dm__conn_write(dm_io dm__conn_st *pstConn, dm_in const dm_frame_head_st *pstHead,
+                   dm_in const void *pvBody)
 {
   uint8 au8Head[DM_FRAME_HEAD] = {0};
   dm_frame_put(au8Head, pstHead);
@@ -297,7 +298,7 @@ int dm__conn_write(io dm__conn_st *pstConn, in const dm_frame_head_st *pstHead,
 
 /* UTF-8 完整序列长度检测（返回 1..4，非法/截断字节序列返回 0）；
  * 逐字节校验续字节再读下一字节，数学上绝不越过末尾 '\0' 越界读 */
-static size_t dm__utf8_seq_len(in const uint8 *pu8)
+static size_t dm__utf8_seq_len(dm_in const uint8 *pu8)
 {
   uint8 u8B0 = pu8[0];
 
@@ -358,8 +359,8 @@ static size_t dm__utf8_seq_len(in const uint8 *pu8)
 }
 
 /* 追加单个字符或完整 UTF-8 码点到 JSON 字符串；空间不足返回 0，否则返回消耗的输入字节数 */
-static size_t dm__err_json_append_one(in const char *pcMsg, out char *pcBuf, in size_t uCap,
-                                      io size_t *puPos)
+static size_t dm__err_json_append_one(dm_in const char *pcMsg, dm_out char *pcBuf,
+                                      dm_in size_t uCap, dm_io size_t *puPos)
 {
   uint8 u8Ch = (uint8)*pcMsg;
   size_t uPos = *puPos;
@@ -418,7 +419,7 @@ static size_t dm__err_json_append_one(in const char *pcMsg, out char *pcBuf, in 
 
 /* 零分配构造标准错误信封 {"code":<iStatus>,"error":"<escaped>"}（DD-01 标准错误信封）；
  * 完整 UTF-8 码点原子拷贝不截断半个字符，控制字符与 DEL(0x7F) 均转义 */
-static size_t dm__err_json_fmt(in int iStatus, out char *pcBuf, in size_t uCap)
+static size_t dm__err_json_fmt(dm_in int iStatus, dm_out char *pcBuf, dm_in size_t uCap)
 {
   const char *pcMsg = dm_errno_str(iStatus);
   size_t uPos = 0u;
@@ -453,9 +454,9 @@ static size_t dm__err_json_fmt(in int iStatus, out char *pcBuf, in size_t uCap)
   return uPos;
 }
 
-static int dm__conn_reply_ex(io dm__conn_st *pstConn, in uint uiLinkID, in uint32 u32ReqID,
-                             in int iStatus, in uint8 u8ExtraFlag, in const void *pvBody,
-                             in uint32 u32Len)
+int dm__conn_reply_ex(dm_io dm__conn_st *pstConn, dm_in uint uiLinkID, dm_in uint32 u32ReqID,
+                      dm_in int iStatus, dm_in uint8 u8ExtraFlag, dm_in const void *pvBody,
+                      dm_in uint32 u32Len)
 {
   dm_frame_head_st stHead = {0};
   char acErr[256] = {0};
@@ -483,16 +484,17 @@ static int dm__conn_reply_ex(io dm__conn_st *pstConn, in uint uiLinkID, in uint3
   return dm__conn_write(pstConn, &stHead, pvBody);
 }
 
-int dm__conn_reply(io dm__conn_st *pstConn, in uint uiLinkID, in uint32 u32ReqID, in int iStatus,
-                   in const void *pvBody, in uint32 u32Len)
+int dm__conn_reply(dm_io dm__conn_st *pstConn, dm_in uint uiLinkID, dm_in uint32 u32ReqID,
+                   dm_in int iStatus, dm_in const void *pvBody, dm_in uint32 u32Len)
 {
   return dm__conn_reply_ex(pstConn, uiLinkID, u32ReqID, iStatus, 0u, pvBody, u32Len);
 }
 
 /* rpc.c 用：答一个请求。只能答一次（没挂着的回 DM_EXISTS）；敏感请求自动透传 DM_FRAME_F_SENSITIVE
  */
-int dm__conn_answer_ex(in uint32 u32ConnID, in uint uiLinkID, in uint32 u32ReqID, in int iStatus,
-                       in uint8 u8ExtraFlag, in const void *pvBody, in uint32 u32Len)
+int dm__conn_answer_ex(dm_in uint32 u32ConnID, dm_in uint uiLinkID, dm_in uint32 u32ReqID,
+                       dm_in int iStatus, dm_in uint8 u8ExtraFlag, dm_in const void *pvBody,
+                       dm_in uint32 u32Len)
 {
   dm__conn_st *pstConn = dm__conn_find(u32ConnID);
 
@@ -508,8 +510,8 @@ int dm__conn_answer_ex(in uint32 u32ConnID, in uint uiLinkID, in uint32 u32ReqID
   return dm__conn_reply_ex(pstConn, uiLinkID, u32ReqID, iStatus, u8ExtraFlag, pvBody, u32Len);
 }
 
-int dm__conn_answer(in uint32 u32ConnID, in uint uiLinkID, in uint32 u32ReqID, in int iStatus,
-                    in const void *pvBody, in uint32 u32Len)
+int dm__conn_answer(dm_in uint32 u32ConnID, dm_in uint uiLinkID, dm_in uint32 u32ReqID,
+                    dm_in int iStatus, dm_in const void *pvBody, dm_in uint32 u32Len)
 {
   return dm__conn_answer_ex(u32ConnID, uiLinkID, u32ReqID, iStatus, 0u, pvBody, u32Len);
 }
@@ -520,7 +522,7 @@ uint32 dm__conn_count(void)
 }
 
 /* 连接的角色位（rpc.c 的 dm.iface.list 用） */
-uint32 dm__conn_role(in uint32 u32ConnID)
+uint32 dm__conn_role(dm_in uint32 u32ConnID)
 {
   dm__conn_st *pstConn = dm__conn_find(u32ConnID);
   return (NULL != pstConn) ? pstConn->u32Role : 0u;
@@ -528,7 +530,7 @@ uint32 dm__conn_role(in uint32 u32ConnID)
 
 /* ============================ 推送、反向调用用（push.c、call.c） ============================ */
 
-static bool_t dm__conn_wants(in const dm__conn_st *pstConn, in uint uiTopic)
+static bool_t dm__conn_wants(dm_in const dm__conn_st *pstConn, dm_in uint uiTopic)
 {
   uint uiIdx = 0;
   if (!pstConn->bAuthed || dm__conn_dead(pstConn))
@@ -550,8 +552,8 @@ static bool_t dm__conn_wants(in const dm__conn_st *pstConn, in uint uiTopic)
 }
 
 /* 发给所有收这一类的连接。流式的：积压超过 DM_STREAM_HIGH 的这一拍不给它发（丢掉、不补） */
-void dm__conn_push_fanout(in uint uiTopic, in const uint8 *pu8Frame, in uint32 u32Len,
-                          in bool_t bStream)
+void dm__conn_push_fanout(dm_in uint uiTopic, dm_in const uint8 *pu8Frame, dm_in uint32 u32Len,
+                          dm_in bool_t bStream)
 {
   dm_list_node_st *pstNode = NULL;
   dm_list_node_st *pstNext = NULL;
@@ -567,8 +569,7 @@ void dm__conn_push_fanout(in uint uiTopic, in const uint8 *pu8Frame, in uint32 u
     {
       continue;
     }
-    if (bStream &&
-        (dm_stream_get_write_queue_size((dm_stream_st *)&pstConn->stTcp) > DM_STREAM_HIGH))
+    if (bStream && (dm_uv_stream_get_write_queue_size(dm__conn_stream(pstConn)) > DM_STREAM_HIGH))
     {
       continue;
     }
@@ -578,8 +579,8 @@ void dm__conn_push_fanout(in uint uiTopic, in const uint8 *pu8Frame, in uint32 u
 }
 
 /* 按 peer_id 单播推送：不进广播重放环，仅发给 peer_id 匹配且订阅该类的已握手活跃连接 */
-int dm__conn_push_peer(in const char *pcPeerID, in uint uiTopic, in const uint8 *pu8Frame,
-                       in uint32 u32Len)
+int dm__conn_push_peer(dm_in const char *pcPeerID, dm_in uint uiTopic, dm_in const uint8 *pu8Frame,
+                       dm_in uint32 u32Len)
 {
   dm_list_node_st *pstNode = NULL;
   dm_list_node_st *pstNext = NULL;
@@ -621,8 +622,8 @@ int dm__conn_push_peer(in const char *pcPeerID, in uint uiTopic, in const uint8 
 }
 
 /* 补发一条给某条连接（它要收这一类才发） */
-int dm__conn_push_one(in uint32 u32ConnID, in uint uiTopic, in const uint8 *pu8Frame,
-                      in uint32 u32Len)
+int dm__conn_push_one(dm_in uint32 u32ConnID, dm_in uint uiTopic, dm_in const uint8 *pu8Frame,
+                      dm_in uint32 u32Len)
 {
   dm__conn_st *pstConn = dm__conn_find(u32ConnID);
   if ((NULL == pstConn) || dm__conn_dead(pstConn))
@@ -637,7 +638,8 @@ int dm__conn_push_one(in uint32 u32ConnID, in uint uiTopic, in const uint8 *pu8F
 }
 
 /* 反向调用：往一条连接发一帧 */
-int dm__conn_send(in uint32 u32ConnID, in const dm_frame_head_st *pstHead, in const void *pvBody)
+int dm__conn_send(dm_in uint32 u32ConnID, dm_in const dm_frame_head_st *pstHead,
+                  dm_in const void *pvBody)
 {
   dm__conn_st *pstConn = dm__conn_find(u32ConnID);
   if ((NULL == pstConn) || dm__conn_dead(pstConn))
@@ -649,7 +651,7 @@ int dm__conn_send(in uint32 u32ConnID, in const dm_frame_head_st *pstHead, in co
 
 /* 反向调用找对方：最早连上、握过手、带这个角色位（且 pcPeerID 非 NULL 时匹配 peer_id）；没有返回 0
  */
-uint32 dm__conn_pick_peer(in const char *pcPeerID, in uint32 u32Role)
+uint32 dm__conn_pick_peer(dm_in const char *pcPeerID, dm_in uint32 u32Role)
 {
   dm_list_node_st *pstNode = NULL;
 
@@ -672,12 +674,12 @@ uint32 dm__conn_pick_peer(in const char *pcPeerID, in uint32 u32Role)
   return 0u;
 }
 
-uint32 dm__conn_pick(in uint32 u32Role)
+uint32 dm__conn_pick(dm_in uint32 u32Role)
 {
   return dm__conn_pick_peer(NULL, u32Role);
 }
 
-const char *dm__conn_kind_str(in uint8 u8Kind)
+const char *dm__conn_kind_str(dm_in uint8 u8Kind)
 {
   switch ((dm__conn_kind_et)u8Kind)
   {
@@ -692,7 +694,7 @@ const char *dm__conn_kind_str(in uint8 u8Kind)
   }
 }
 
-bool_t dm__conn_peer_exists(in const char *pcPeerID)
+bool_t dm__conn_peer_exists(dm_in const char *pcPeerID)
 {
   dm_list_node_st *pstNode = NULL;
 
@@ -712,7 +714,7 @@ bool_t dm__conn_peer_exists(in const char *pcPeerID)
 }
 
 /* 遍历活跃连接表（dm.diag.snapshot 诊断快照用） */
-void dm__conn_each(in dm__conn_info_cb pfEach, in void *pvArg)
+void dm__conn_each(dm_in dm__conn_info_cb pfEach, dm_in void *pvArg)
 {
   dm_list_node_st *pstNode = NULL;
 
@@ -742,10 +744,9 @@ void dm__conn_each(in dm__conn_info_cb pfEach, in void *pvArg)
   return;
 }
 
-/* 握手里的 push：不写 = 不收；["*"] = 全收；["类名", …] = 只收这几类（不认识的名字忽略） */
-void dm__conn_parse_push(io dm__conn_st *pstConn, in yyjson_val *pstRoot)
+/* 握手里的 push 数组解析：["*"] = 全收；["类名", …] = 只收这几类（不认识的名字忽略） */
+void dm__conn_parse_push_arr(dm_io dm__conn_st *pstConn, dm_in yyjson_val *pstArr)
 {
-  yyjson_val *pstArr = (NULL != pstRoot) ? yyjson_obj_get(pstRoot, "push") : NULL;
   yyjson_val *pstOne = NULL;
   yyjson_arr_iter stIter = {0};
 
@@ -776,6 +777,124 @@ void dm__conn_parse_push(io dm__conn_st *pstConn, in yyjson_val *pstRoot)
     }
   }
   return;
+}
+
+/* 握手里的 push：不写 = 不收；["*"] = 全收；["类名", …] = 只收这几类（不认识的名字忽略） */
+void dm__conn_parse_push(dm_io dm__conn_st *pstConn, dm_in yyjson_val *pstRoot)
+{
+  yyjson_val *pstArr = (NULL != pstRoot) ? yyjson_obj_get(pstRoot, "push") : NULL;
+  dm__conn_parse_push_arr(pstConn, pstArr);
+  return;
+}
+
+/* 查找尚未 bAuthed 的主动出站 Peer 连接（仅供 dm_link_peer_send_hello / mark_ready 使用） */
+dm__conn_st *dm__conn_find_peer_preauth(dm_in const char *pcPeerID, dm_in uint64 u64ConnGen)
+{
+  dm_list_node_st *pstNode = NULL;
+
+  if ((NULL == pcPeerID) || ('\0' == pcPeerID[0]) || (NULL == g_stConnList.stHead.pstNext))
+  {
+    return NULL;
+  }
+  DM_LIST_FOREACH(&g_stConnList, pstNode)
+  {
+    dm__conn_st *pstConn = DM_LIST_ENTRY(pstNode, dm__conn_st, stNode);
+    if (pstConn->bPeerAdopted && pstConn->bPeerInitiator && !pstConn->bAuthed &&
+        !dm__conn_dead(pstConn) && (pstConn->u64ConnGen == u64ConnGen) &&
+        (0 == strcmp(pstConn->acPeerID, pcPeerID)))
+    {
+      return pstConn;
+    }
+  }
+  return NULL;
+}
+
+/* 主动出站 Peer HELLO 应答/超时/断连唯一一次回投通知（严格标记敏感载荷） */
+void dm__conn_notify_peer_hello(dm_io dm__conn_st *pstConn, dm_in int iStatus, dm_in uint8 u8Flags,
+                                dm_in const uint8 *pu8Body, dm_in uint32 u32Len)
+{
+  dm_link_msg_st stMsg = {0};
+  uint uiReply = 0u;
+
+  if ((NULL == pstConn) || !pstConn->bPeerHelloSent)
+  {
+    return;
+  }
+  pstConn->bPeerHelloSent = DM_FALSE;
+  uiReply = pstConn->uiPeerHelloReply;
+  if (dm__phase() >= DM__PHASE_TEARDOWN)
+  {
+    return;
+  }
+  stMsg.pu8Data = (uint8 *)pu8Body;
+  stMsg.u32Len = u32Len;
+  stMsg.u8Src = DM_SRC_REPLY;
+  stMsg.u8Flags = (uint8)(u8Flags | DM_FRAME_F_SENSITIVE);
+  stMsg.u64Tag = pstConn->u64PeerHelloTag;
+  stMsg.iStatus = iStatus;
+  (void)dm__link_enqueue(uiReply, &stMsg, (DM_SUCCESS == iStatus) ? DM_TRUE : DM_FALSE, 0u, 0u);
+  return;
+}
+
+/* 主动断开指定 peer_id 且角色匹配 u32RoleMask 的所有活跃连接（返回断开条数；仅主线程） */
+uint32 dm_link_disconnect_peer(dm_in const char *pcPeerID, dm_in uint32 u32RoleMask)
+{
+  dm_list_node_st *pstNode = NULL;
+  dm_list_node_st *pstNext = NULL;
+  uint32 u32Closed = 0u;
+
+  if ((NULL == pcPeerID) || ('\0' == pcPeerID[0]) || (0u == u32RoleMask) ||
+      (NULL == g_stConnList.stHead.pstNext))
+  {
+    return 0u;
+  }
+  DM_LIST_FOREACH_SAFE(&g_stConnList, pstNode, pstNext)
+  {
+    dm__conn_st *pstConn = DM_LIST_ENTRY(pstNode, dm__conn_st, stNode);
+    if (!pstConn->bAuthed || dm__conn_dead(pstConn))
+    {
+      continue;
+    }
+    if ((0u == (pstConn->u32Role & u32RoleMask)) || (0 != strcmp(pstConn->acPeerID, pcPeerID)))
+    {
+      continue;
+    }
+    dm__conn_close_later(pstConn, "peer revoked");
+    u32Closed++;
+  }
+  return u32Closed;
+}
+
+/* 查询消息来源连接已认证的 peer_id（连接有效且已认证返回 DM_SUCCESS，否则返回 DM_NOT_FOUND） */
+int dm_link_msg_peer_id(dm_in const dm_link_msg_st *pstMsg, dm_out char *pcBuf, dm_in size_t uCap)
+{
+  const dm__reply_ctx_st *pstCtx = NULL;
+  const dm__conn_st *pstConn = NULL;
+  size_t uLen = 0u;
+
+  if ((NULL == pstMsg) || (NULL == pcBuf) || (0u == uCap))
+  {
+    return DM_INVALID;
+  }
+  pcBuf[0] = '\0';
+  pstCtx = (const dm__reply_ctx_st *)pstMsg->pvPriv;
+  if ((NULL == pstCtx) || (0u == pstCtx->u32ConnID))
+  {
+    return DM_NOT_FOUND;
+  }
+  pstConn = dm__conn_find(pstCtx->u32ConnID);
+  if ((NULL == pstConn) || !pstConn->bAuthed || dm__conn_dead(pstConn) ||
+      ('\0' == pstConn->acPeerID[0]))
+  {
+    return DM_NOT_FOUND;
+  }
+  uLen = strlen(pstConn->acPeerID);
+  if (uLen >= uCap)
+  {
+    return DM_TOO_BIG;
+  }
+  memcpy(pcBuf, pstConn->acPeerID, uLen + 1u);
+  return DM_SUCCESS;
 }
 
 #ifdef __cplusplus

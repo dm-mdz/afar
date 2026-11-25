@@ -50,10 +50,10 @@ typedef struct dm__route
 
 typedef struct dm__http_file
 {
-  dm_fs_st stReq;       /* 读文件的请求（线程池里跑） */
-  dm_timer_st stWait;   /* 连接上积压太多时等一下再读 */
-  dm__conn_st *pstConn; /* 连接没了就是 NULL */
-  dm_file iFd;
+  dm_uv_fs_st stReq;     /* 读文件的请求（线程池里跑） */
+  dm_uv_timer_st stWait; /* 连接上积压太多时等一下再读 */
+  dm__conn_st *pstConn;  /* 连接没了就是 NULL */
+  dm_uv_file iFd;
   uint64 u64Off;
   uint64 u64Left;
   bool_t bReading; /* 线程池里正读着：连接没了也要等它回来再收拾 */
@@ -81,7 +81,7 @@ typedef struct dm__http_req
 
 typedef struct dm__http
 {
-  dm_timer_st stIdle; /* 首成员：空闲多久关 */
+  dm_uv_timer_st stIdle; /* 首成员：空闲多久关 */
   llhttp_t stParser;
   dm__conn_st *pstConn;
   dm_list_st stReqs; /* 按到达的顺序 */
@@ -112,7 +112,7 @@ static const char *const *g_ppcOrigin = NULL;
 static llhttp_settings_t g_stHttpSettings;
 static bool_t g_bHttpSettingsUp = DM_FALSE;
 
-void dm__http_config(in const dm_cfg_st *pstCfg)
+void dm__http_config(dm_in const dm_cfg_st *pstCfg)
 {
   g_ppcOrigin = (NULL != pstCfg) ? pstCfg->ppcOrigin : NULL;
   return;
@@ -120,7 +120,7 @@ void dm__http_config(in const dm_cfg_st *pstCfg)
 
 /* ============================ 路由 ============================ */
 
-int dm_http_route(in const char *pcMethod, in const char *pcPrefix, in uint uiLinkID)
+int dm_http_route(dm_in const char *pcMethod, dm_in const char *pcPrefix, dm_in uint uiLinkID)
 {
   uint uiIdx = 0;
 
@@ -167,7 +167,7 @@ void dm__http_routes_clear(void)
 
 /* 前缀对得上：整段一样，或者前缀后面紧跟 '/'，或者前缀本身以 '/' 结尾（/a 不匹配 /ab）。
  * 路径里已经去掉了 '?' 后面的部分 */
-static bool_t dm__route_hit(in const char *pcPrefix, in const char *pcPath)
+static bool_t dm__route_hit(dm_in const char *pcPrefix, dm_in const char *pcPath)
 {
   size_t uLen = strlen(pcPrefix);
   if (0 != strncmp(pcPrefix, pcPath, uLen))
@@ -180,7 +180,8 @@ static bool_t dm__route_hit(in const char *pcPrefix, in const char *pcPath)
 }
 
 /* 最长的前缀优先；有前缀对得上、但方法不对，*piStatus = 405，否则 404 */
-static uint dm__route_find(in const char *pcMethod, in const char *pcPath, out uint *puiStatus)
+static uint dm__route_find(dm_in const char *pcMethod, dm_in const char *pcPath,
+                           dm_out uint *puiStatus)
 {
   size_t uBest = 0;
   uint uiBest = 0;
@@ -216,7 +217,7 @@ static uint dm__route_find(in const char *pcMethod, in const char *pcPath, out u
 
 /* ============================ 请求的取值（只在 before 里有效） ============================ */
 
-static dm__http_req_st *dm__http_req_of(in const dm_link_msg_st *pstMsg)
+static dm__http_req_st *dm__http_req_of(dm_in const dm_link_msg_st *pstMsg)
 {
   const dm__reply_ctx_st *pstCtx = NULL;
   dm__conn_st *pstConn = NULL;
@@ -250,14 +251,15 @@ static dm__http_req_st *dm__http_req_of(in const dm_link_msg_st *pstMsg)
   return NULL;
 }
 
-const char *dm_http_path(in const dm_link_msg_st *pstMsg)
+const char *dm_http_path(dm_in const dm_link_msg_st *pstMsg)
 {
   dm__http_req_st *pstReq = dm__http_req_of(pstMsg);
   return (NULL != pstReq) ? pstReq->pcPath : NULL;
 }
 
 /* 在 "a\0b\0c\0d\0\0" 这样的对里找；bNoCase 为真时名字不分大小写 */
-static const char *dm__pairs_get(in const char *pcPairs, in const char *pcKey, in bool_t bNoCase)
+static const char *dm__pairs_get(dm_in const char *pcPairs, dm_in const char *pcKey,
+                                 dm_in bool_t bNoCase)
 {
   const char *pc = pcPairs;
   while ((NULL != pc) && ('\0' != *pc))
@@ -287,14 +289,14 @@ static const char *dm__pairs_get(in const char *pcPairs, in const char *pcKey, i
   return NULL;
 }
 
-const char *dm_http_query(in const dm_link_msg_st *pstMsg, in const char *pcKey)
+const char *dm_http_query(dm_in const dm_link_msg_st *pstMsg, dm_in const char *pcKey)
 {
   dm__http_req_st *pstReq = dm__http_req_of(pstMsg);
   return ((NULL != pstReq) && (NULL != pcKey)) ? dm__pairs_get(pstReq->pcQuery, pcKey, DM_FALSE)
                                                : NULL;
 }
 
-const char *dm_http_header(in const dm_link_msg_st *pstMsg, in const char *pcName)
+const char *dm_http_header(dm_in const dm_link_msg_st *pstMsg, dm_in const char *pcName)
 {
   dm__http_req_st *pstReq = dm__http_req_of(pstMsg);
   return ((NULL != pstReq) && (NULL != pcName)) ? dm__pairs_get(pstReq->pcHeaders, pcName, DM_TRUE)
@@ -303,7 +305,7 @@ const char *dm_http_header(in const dm_link_msg_st *pstMsg, in const char *pcNam
 
 /* ============================ 应答：按到达的顺序发 ============================ */
 
-static const char *dm__http_reason(in uint uiStatus)
+static const char *dm__http_reason(dm_in uint uiStatus)
 {
   switch (uiStatus)
   {
@@ -342,7 +344,7 @@ static const char *dm__http_reason(in uint uiStatus)
   }
 }
 
-static void dm__http_req_free(io dm__http_req_st *pstReq)
+static void dm__http_req_free(dm_io dm__http_req_st *pstReq)
 {
   dm_list_del_node(&pstReq->stNode);
   dm_free_tag(pstReq->pcPath);
@@ -351,19 +353,19 @@ static void dm__http_req_free(io dm__http_req_st *pstReq)
   return;
 }
 
-static void dm__http_on_idle(in dm_timer_st *pstTimer);
+static void dm__http_on_idle(dm_in dm_uv_timer_st *pstTimer);
 
-static void dm__http_idle_kick(io dm__http_st *pstHttp)
+static void dm__http_idle_kick(dm_io dm__http_st *pstHttp)
 {
-  (void)dm_timer_start(&pstHttp->stIdle, dm__http_on_idle, DM_HTTP_IDLE_MS, 0);
+  (void)dm_uv_timer_start(&pstHttp->stIdle, dm__http_on_idle, DM_HTTP_IDLE_MS, 0);
   return;
 }
 
-static void dm__http_resume_parse(io dm__http_st *pstHttp);
-static void dm__http_file_next(io dm__http_file_st *pstFile);
+static void dm__http_resume_parse(dm_io dm__http_st *pstHttp);
+static void dm__http_file_next(dm_io dm__http_file_st *pstFile);
 
 /* 把排在最前面、已经答好的发出去 */
-static void dm__http_flush(io dm__http_st *pstHttp)
+static void dm__http_flush(dm_io dm__http_st *pstHttp)
 {
   dm__conn_st *pstConn = pstHttp->pstConn;
 
@@ -426,8 +428,8 @@ static void dm__http_flush(io dm__http_st *pstHttp)
 }
 
 /* 往响应头缓冲追加格式化片段；容量不足返回 DM_FALSE，防止下标越界 */
-static bool_t dm__http_cat(io char *pcHead, in size_t uCap, io int *piHead, in const char *pcFmt,
-                           ...)
+static bool_t dm__http_cat(dm_io char *pcHead, dm_in size_t uCap, dm_io int *piHead,
+                           dm_in const char *pcFmt, ...)
 {
   va_list stArgs;
   int iN = 0;
@@ -448,9 +450,10 @@ static bool_t dm__http_cat(io char *pcHead, in size_t uCap, io int *piHead, in c
 }
 
 /* 构造 HTTP 应答并挂入请求（暂不发送）；u64Len 支持超过 4GB 的文件正文长度 */
-static int dm__http_set_resp(io dm__http_req_st *pstReq, in uint uiStatus, in const char *pcType,
-                             in const char *pcHeaders, in const void *pvBody, in uint64 u64Len,
-                             in const char *pcExtra)
+static int dm__http_set_resp(dm_io dm__http_req_st *pstReq, dm_in uint uiStatus,
+                             dm_in const char *pcType, dm_in const char *pcHeaders,
+                             dm_in const void *pvBody, dm_in uint64 u64Len,
+                             dm_in const char *pcExtra)
 {
   char acHead[1024] = {0};
   int iHead = 0;
@@ -504,8 +507,8 @@ static int dm__http_set_resp(io dm__http_req_st *pstReq, in uint uiStatus, in co
 }
 
 /* 凭据 -> 连接和请求。没了回 DM_CONN_GONE，答过了回 DM_EXISTS，不是 HTTP 的回 DM_INVALID */
-static int dm__http_req_by_reply(in const dm_reply_st *pstReply, out dm__http_st **ppstHttp,
-                                 out dm__http_req_st **ppstReq)
+static int dm__http_req_by_reply(dm_in const dm_reply_st *pstReply, dm_out dm__http_st **ppstHttp,
+                                 dm_out dm__http_req_st **ppstReq)
 {
   dm__conn_st *pstConn = NULL;
   dm__http_st *pstHttp = NULL;
@@ -540,15 +543,14 @@ static int dm__http_req_by_reply(in const dm_reply_st *pstReply, out dm__http_st
   return DM_EXISTS; /* 答完、发出去了 */
 }
 
-int dm_http_reply(in const dm_reply_st *pstReply, in uint uiStatus, in const char *pcType,
-                  in const char *pcHeaders, in const void *pvBody, in uint32 u32Len)
+int dm_http_reply(dm_in const dm_reply_st *pstReply, dm_in const dm_http_reply_opt_st *pstOpt)
 {
   dm__http_st *pstHttp = NULL;
   dm__http_req_st *pstReq = NULL;
   int iErrCode = DM_SUCCESS;
 
   DM__CHECK_LOOP();
-  if ((NULL == pvBody) && (u32Len > 0u))
+  if ((NULL == pstOpt) || ((NULL == pstOpt->pvBody) && (pstOpt->u32Len > 0u)))
   {
     return DM_INVALID;
   }
@@ -557,7 +559,8 @@ int dm_http_reply(in const dm_reply_st *pstReply, in uint uiStatus, in const cha
   {
     return iErrCode;
   }
-  iErrCode = dm__http_set_resp(pstReq, uiStatus, pcType, pcHeaders, pvBody, u32Len, NULL);
+  iErrCode = dm__http_set_resp(pstReq, pstOpt->uiStatus, pstOpt->pcType, pstOpt->pcHeaders,
+                               pstOpt->pvBody, pstOpt->u32Len, NULL);
   if (DM_SUCCESS == iErrCode)
   {
     dm__http_flush(pstHttp);
@@ -567,8 +570,8 @@ int dm_http_reply(in const dm_reply_st *pstReply, in uint uiStatus, in const cha
 
 /* ============================ 流式分块应答（AUD-03 SSE） ============================ */
 
-static int dm__http_stream_find(in const dm_reply_st *pstReply, out dm__http_st **ppstHttp,
-                                out dm__http_req_st **ppstReq)
+static int dm__http_stream_find(dm_in const dm_reply_st *pstReply, dm_out dm__http_st **ppstHttp,
+                                dm_out dm__http_req_st **ppstReq)
 {
   dm__conn_st *pstConn = NULL;
   dm__http_st *pstHttp = NULL;
@@ -602,8 +605,8 @@ static int dm__http_stream_find(in const dm_reply_st *pstReply, out dm__http_st 
   return DM_EXISTS;
 }
 
-static int dm__http_stream_append(io dm__http_req_st *pstReq, in const void *pvData,
-                                  in uint32 u32Len, in bool_t bFinal)
+static int dm__http_stream_append(dm_io dm__http_req_st *pstReq, dm_in const void *pvData,
+                                  dm_in uint32 u32Len, dm_in bool_t bFinal)
 {
   uint8 *pu8New = NULL;
   uint32 u32Total = 0u;
@@ -626,8 +629,8 @@ static int dm__http_stream_append(io dm__http_req_st *pstReq, in const void *pvD
   return DM_SUCCESS;
 }
 
-int dm_http_stream_begin(in const dm_reply_st *pstReply, in uint uiStatus, in const char *pcType,
-                         in const char *pcHeaders)
+int dm_http_stream_begin(dm_in const dm_reply_st *pstReply, dm_in uint uiStatus,
+                         dm_in const char *pcType, dm_in const char *pcHeaders)
 {
   dm__http_st *pstHttp = NULL;
   dm__http_req_st *pstReq = NULL;
@@ -682,7 +685,8 @@ int dm_http_stream_begin(in const dm_reply_st *pstReply, in uint uiStatus, in co
   return DM_SUCCESS;
 }
 
-int dm_http_stream_write(in const dm_reply_st *pstReply, in const void *pvData, in uint32 u32Len)
+int dm_http_stream_write(dm_in const dm_reply_st *pstReply, dm_in const void *pvData,
+                         dm_in uint32 u32Len)
 {
   dm__http_st *pstHttp = NULL;
   dm__http_req_st *pstReq = NULL;
@@ -711,7 +715,7 @@ int dm_http_stream_write(in const dm_reply_st *pstReply, in const void *pvData, 
     return DM_TOO_BIG;
   }
   if (pstReq->bStreamHeadSent &&
-      (dm_stream_get_write_queue_size((dm_stream_st *)&pstHttp->pstConn->stTcp) > DM_STREAM_HIGH))
+      (dm_uv_stream_get_write_queue_size(dm__conn_stream(pstHttp->pstConn)) > DM_STREAM_HIGH))
   {
     return DM_BUSY;
   }
@@ -745,7 +749,7 @@ int dm_http_stream_write(in const dm_reply_st *pstReply, in const void *pvData, 
   return iErrCode;
 }
 
-int dm_http_stream_end(in const dm_reply_st *pstReply)
+int dm_http_stream_end(dm_in const dm_reply_st *pstReply)
 {
   static const char s_acTerm[] = "0\r\n\r\n";
   dm__http_st *pstHttp = NULL;
@@ -795,21 +799,21 @@ int dm_http_stream_end(in const dm_reply_st *pstReply)
 
 /* ============================ 发文件（线程池里分块读） ============================ */
 
-static void dm__http_file_done(io dm__http_file_st *pstFile);
+static void dm__http_file_done(dm_io dm__http_file_st *pstFile);
 
-static void dm__http_file_on_wait(in dm_timer_st *pstTimer)
+static void dm__http_file_on_wait(dm_in dm_uv_timer_st *pstTimer)
 {
   dm__http_file_next(container_of(pstTimer, dm__http_file_st, stWait));
   return;
 }
 
-static void dm__http_file_on_read(in dm_fs_st *pstReq)
+static void dm__http_file_on_read(dm_in dm_uv_fs_st *pstReq)
 {
   dm__http_file_st *pstFile = container_of(pstReq, dm__http_file_st, stReq);
   ssize_t iGot = pstReq->result;
 
   pstFile->bReading = DM_FALSE;
-  dm_fs_req_cleanup(pstReq);
+  dm_uv_fs_req_cleanup(pstReq);
   if ((NULL == pstFile->pstConn) || (iGot <= 0))
   {
     if ((NULL != pstFile->pstConn) && !dm__conn_dead(pstFile->pstConn))
@@ -829,9 +833,9 @@ static void dm__http_file_on_read(in dm_fs_st *pstReq)
   return;
 }
 
-static void dm__http_file_next(io dm__http_file_st *pstFile)
+static void dm__http_file_next(dm_io dm__http_file_st *pstFile)
 {
-  dm_buf_st stBuf = {0};
+  dm_uv_buf_st stBuf = {0};
   uint32 u32Want = (pstFile->u64Left < DM__FILE_CHUNK) ? (uint32)pstFile->u64Left : DM__FILE_CHUNK;
 
   if ((NULL == pstFile->pstConn) || dm__conn_dead(pstFile->pstConn) || (0u == pstFile->u64Left))
@@ -839,15 +843,15 @@ static void dm__http_file_next(io dm__http_file_st *pstFile)
     dm__http_file_done(pstFile);
     return;
   }
-  if (dm_stream_get_write_queue_size((dm_stream_st *)&pstFile->pstConn->stTcp) > DM__FILE_HIGH)
+  if (dm_uv_stream_get_write_queue_size(dm__conn_stream(pstFile->pstConn)) > DM__FILE_HIGH)
   {
-    (void)dm_timer_start(&pstFile->stWait, dm__http_file_on_wait, 5u, 0); /* 等对方收一收 */
+    (void)dm_uv_timer_start(&pstFile->stWait, dm__http_file_on_wait, 5u, 0); /* 等对方收一收 */
     return;
   }
-  stBuf = dm_buf_init((char *)pstFile->au8Buf, u32Want);
+  stBuf = dm_uv_buf_init((char *)pstFile->au8Buf, u32Want);
   pstFile->bReading = DM_TRUE;
-  if (DM_SUCCESS != dm_fs_read(dm_default_loop(), &pstFile->stReq, pstFile->iFd, &stBuf, 1,
-                               (int64_t)pstFile->u64Off, dm__http_file_on_read))
+  if (DM_SUCCESS != dm_uv_fs_read(dm_uv_default_loop(), &pstFile->stReq, pstFile->iFd, &stBuf, 1,
+                                  (int64_t)pstFile->u64Off, dm__http_file_on_read))
   {
     pstFile->bReading = DM_FALSE;
     dm__http_file_done(pstFile);
@@ -855,21 +859,21 @@ static void dm__http_file_next(io dm__http_file_st *pstFile)
   return;
 }
 
-static void dm__http_file_on_closed(in dm_handle_st *pstHandle)
+static void dm__http_file_on_closed(dm_in dm_uv_handle_st *pstHandle)
 {
-  dm_free_tag(container_of((dm_timer_st *)pstHandle, dm__http_file_st, stWait));
+  dm_free_tag(container_of((dm_uv_timer_st *)pstHandle, dm__http_file_st, stWait));
   return;
 }
 
 /* 发完（或者连接没了）：关文件，接着发后面排着的应答 */
-static void dm__http_file_done(io dm__http_file_st *pstFile)
+static void dm__http_file_done(dm_io dm__http_file_st *pstFile)
 {
-  dm_fs_st stClose = {0};
+  dm_uv_fs_st stClose = {0};
   dm__conn_st *pstConn = pstFile->pstConn;
 
-  (void)dm_fs_close(NULL, &stClose, pstFile->iFd, NULL);
-  dm_fs_req_cleanup(&stClose);
-  dm_close((dm_handle_st *)&pstFile->stWait, dm__http_file_on_closed);
+  (void)dm_uv_fs_close(NULL, &stClose, pstFile->iFd, NULL);
+  dm_uv_fs_req_cleanup(&stClose);
+  dm_uv_close((dm_uv_handle_st *)&pstFile->stWait, dm__http_file_on_closed);
   if ((NULL != pstConn) && (NULL != pstConn->pvHttp))
   {
     dm__http_st *pstHttp = (dm__http_st *)pstConn->pvHttp;
@@ -881,8 +885,8 @@ static void dm__http_file_done(io dm__http_file_st *pstFile)
 }
 
 /* Range: bytes=a-b / a- / -n。范围不对返回 DM_RANGE；没有 Range 头返回 DM_NOT_FOUND */
-static int dm__http_range(in const char *pcRange, in uint64 u64Size, out uint64 *pu64From,
-                          out uint64 *pu64To)
+static int dm__http_range(dm_in const char *pcRange, dm_in uint64 u64Size, dm_out uint64 *pu64From,
+                          dm_out uint64 *pu64To)
 {
   char *pcEnd = NULL;
   if (NULL == pcRange)
@@ -927,13 +931,14 @@ static int dm__http_range(in const char *pcRange, in uint64 u64Size, out uint64 
   return DM_SUCCESS;
 }
 
-int dm_http_reply_file(in const dm_reply_st *pstReply, in const char *pcPath, in const char *pcType)
+int dm_http_reply_file(dm_in const dm_reply_st *pstReply, dm_in const char *pcPath,
+                       dm_in const char *pcType)
 {
   dm__http_st *pstHttp = NULL;
   dm__http_req_st *pstReq = NULL;
   dm__http_file_st *pstFile = NULL;
-  dm_fs_st stOpen = {0};
-  dm_fs_st stStat = {0};
+  dm_uv_fs_st stOpen = {0};
+  dm_uv_fs_st stStat = {0};
   uint64 u64Size = 0;
   uint64 u64From = 0;
   uint64 u64To = 0;
@@ -950,22 +955,22 @@ int dm_http_reply_file(in const dm_reply_st *pstReply, in const char *pcPath, in
   }
   /* 仅允许普通文件：目录或 FIFO 一律返回 404（避免打开 FIFO 阻塞主线程） */
   memset(&stStat, 0, sizeof(stStat));
-  if ((NULL != pcPath) && (0 == dm_fs_stat(NULL, &stStat, pcPath, NULL)) &&
+  if ((NULL != pcPath) && (0 == dm_uv_fs_stat(NULL, &stStat, pcPath, NULL)) &&
       (S_IFREG == (stStat.statbuf.st_mode & S_IFMT)))
   {
     memset(&stOpen, 0, sizeof(stOpen));
-    iFd = dm_fs_open(NULL, &stOpen, pcPath, DM_FS_O_RDONLY, 0, NULL);
-    dm_fs_req_cleanup(&stOpen);
+    iFd = dm_uv_fs_open(NULL, &stOpen, pcPath, DM_UV_FS_O_RDONLY, 0, NULL);
+    dm_uv_fs_req_cleanup(&stOpen);
   }
-  dm_fs_req_cleanup(&stStat);
+  dm_uv_fs_req_cleanup(&stStat);
   if (iFd >= 0)
   {
     memset(&stStat, 0, sizeof(stStat));
-    if (0 == dm_fs_fstat(NULL, &stStat, iFd, NULL))
+    if (0 == dm_uv_fs_fstat(NULL, &stStat, iFd, NULL))
     {
       u64Size = stStat.statbuf.st_size;
     }
-    dm_fs_req_cleanup(&stStat);
+    dm_uv_fs_req_cleanup(&stStat);
   }
   if (iFd < 0)
   {
@@ -980,9 +985,9 @@ int dm_http_reply_file(in const dm_reply_st *pstReply, in const char *pcPath, in
       dm__http_range(dm__pairs_get(pstReq->pcHeaders, "Range", DM_TRUE), u64Size, &u64From, &u64To);
   if (DM_RANGE == iRange)
   {
-    dm_fs_st stClose = {0};
-    (void)dm_fs_close(NULL, &stClose, iFd, NULL);
-    dm_fs_req_cleanup(&stClose);
+    dm_uv_fs_st stClose = {0};
+    (void)dm_uv_fs_close(NULL, &stClose, iFd, NULL);
+    dm_uv_fs_req_cleanup(&stClose);
     snprintf(acExtra, sizeof(acExtra), "Content-Range: bytes */%llu\r\n",
              (unsigned long long)u64Size);
     if (DM_SUCCESS != dm__http_set_resp(pstReq, 416u, NULL, NULL, NULL, 0u, acExtra))
@@ -1000,12 +1005,12 @@ int dm_http_reply_file(in const dm_reply_st *pstReply, in const char *pcPath, in
   pstFile = (dm__http_file_st *)dm_calloc_tag(1u, sizeof(dm__http_file_st), DM_MEM_TAG_HTTP);
   if (NULL == pstFile)
   {
-    dm_fs_st stClose = {0};
-    (void)dm_fs_close(NULL, &stClose, iFd, NULL);
-    dm_fs_req_cleanup(&stClose);
+    dm_uv_fs_st stClose = {0};
+    (void)dm_uv_fs_close(NULL, &stClose, iFd, NULL);
+    dm_uv_fs_req_cleanup(&stClose);
     return DM_ALLOC;
   }
-  pstFile->iFd = (dm_file)iFd;
+  pstFile->iFd = (dm_uv_file)iFd;
   pstFile->u64Off = u64From;
   pstFile->u64Left = (u64Size > 0u) ? (u64To - u64From + 1u) : 0u;
   pstReq->pstFile = pstFile;
@@ -1024,21 +1029,21 @@ int dm_http_reply_file(in const dm_reply_st *pstReply, in const char *pcPath, in
                                pstFile->u64Left, acExtra);
   if (DM_SUCCESS != iErrCode)
   {
-    dm_fs_st stClose = {0};
+    dm_uv_fs_st stClose = {0};
     pstReq->pstFile = NULL;
     dm_free_tag(pstFile);
-    (void)dm_fs_close(NULL, &stClose, iFd, NULL);
-    dm_fs_req_cleanup(&stClose);
+    (void)dm_uv_fs_close(NULL, &stClose, iFd, NULL);
+    dm_uv_fs_req_cleanup(&stClose);
     return iErrCode;
   }
-  (void)dm_timer_init(dm_default_loop(), &pstFile->stWait);
+  (void)dm_uv_timer_init(dm_uv_default_loop(), &pstFile->stWait);
   dm__http_flush(pstHttp);
   return DM_SUCCESS;
 }
 
 /* ============================ 解析 ============================ */
 
-static int dm__http_build_put(io dm__http_st *pstHttp, in const char *pc, in size_t uLen)
+static int dm__http_build_put(dm_io dm__http_st *pstHttp, dm_in const char *pc, dm_in size_t uLen)
 {
   if (pstHttp->u32BuildLen + uLen + 2u > DM_HTTP_HEAD_MAX)
   {
@@ -1066,7 +1071,7 @@ static int dm__http_build_put(io dm__http_st *pstHttp, in const char *pc, in siz
   return DM_SUCCESS;
 }
 
-static int dm__http_build_end(io dm__http_st *pstHttp)
+static int dm__http_build_end(dm_io dm__http_st *pstHttp)
 {
   if (pstHttp->u32BuildLen + 1u > DM_HTTP_HEAD_MAX)
   {
@@ -1093,7 +1098,7 @@ static int dm__http_build_end(io dm__http_st *pstHttp)
   return DM_SUCCESS;
 }
 
-static bool_t dm__http_eq_ci(in const char *pcA, in const char *pcB)
+static bool_t dm__http_eq_ci(dm_in const char *pcA, dm_in const char *pcB)
 {
   if ((NULL == pcA) || (NULL == pcB))
   {
@@ -1121,8 +1126,8 @@ static bool_t dm__http_eq_ci(in const char *pcA, in const char *pcB)
 
 /* DM 自己答一个错误（排在这条连接前面的应答后面），答完关连接。
  * pcOrigin：命中白名单的来源（CORS 预检 204 需带 Access-Control-Allow-Origin），其余传 NULL */
-static void dm__http_reject_ex(io dm__http_st *pstHttp, in uint uiStatus, in const char *pcWhy,
-                               in const char *pcOrigin)
+static void dm__http_reject_ex(dm_io dm__http_st *pstHttp, dm_in uint uiStatus,
+                               dm_in const char *pcWhy, dm_in const char *pcOrigin)
 {
   dm__http_req_st *pstReq =
       (dm__http_req_st *)dm_calloc_tag(1u, sizeof(dm__http_req_st), DM_MEM_TAG_HTTP);
@@ -1153,13 +1158,14 @@ static void dm__http_reject_ex(io dm__http_st *pstHttp, in uint uiStatus, in con
   return;
 }
 
-static void dm__http_reject(io dm__http_st *pstHttp, in uint uiStatus, in const char *pcWhy)
+static void dm__http_reject(dm_io dm__http_st *pstHttp, dm_in uint uiStatus,
+                            dm_in const char *pcWhy)
 {
   dm__http_reject_ex(pstHttp, uiStatus, pcWhy, NULL);
   return;
 }
 
-static int dm__on_url(in llhttp_t *pstP, in const char *pc, in size_t uLen)
+static int dm__on_url(dm_in llhttp_t *pstP, dm_in const char *pc, dm_in size_t uLen)
 {
   dm__http_st *pstHttp = (dm__http_st *)pstP->data;
   if (DM_SUCCESS != dm__http_build_put(pstHttp, pc, uLen))
@@ -1170,7 +1176,7 @@ static int dm__on_url(in llhttp_t *pstP, in const char *pc, in size_t uLen)
   return 0;
 }
 
-static int dm__on_url_done(in llhttp_t *pstP)
+static int dm__on_url_done(dm_in llhttp_t *pstP)
 {
   dm__http_st *pstHttp = (dm__http_st *)pstP->data;
   if (DM_SUCCESS != dm__http_build_end(pstHttp))
@@ -1182,7 +1188,7 @@ static int dm__on_url_done(in llhttp_t *pstP)
   return 0;
 }
 
-static int dm__on_field(in llhttp_t *pstP, in const char *pc, in size_t uLen)
+static int dm__on_field(dm_in llhttp_t *pstP, dm_in const char *pc, dm_in size_t uLen)
 {
   dm__http_st *pstHttp = (dm__http_st *)pstP->data;
   if (DM_SUCCESS != dm__http_build_put(pstHttp, pc, uLen))
@@ -1193,7 +1199,7 @@ static int dm__on_field(in llhttp_t *pstP, in const char *pc, in size_t uLen)
   return 0;
 }
 
-static int dm__on_field_done(in llhttp_t *pstP)
+static int dm__on_field_done(dm_in llhttp_t *pstP)
 {
   dm__http_st *pstHttp = (dm__http_st *)pstP->data;
   if (DM_SUCCESS != dm__http_build_end(pstHttp))
@@ -1204,13 +1210,13 @@ static int dm__on_field_done(in llhttp_t *pstP)
   return 0;
 }
 
-static int dm__on_value(in llhttp_t *pstP, in const char *pc, in size_t uLen)
+static int dm__on_value(dm_in llhttp_t *pstP, dm_in const char *pc, dm_in size_t uLen)
 {
   return dm__on_field(pstP, pc, uLen);
 }
 
 /* Host 仅接受 127.0.0.1 或 localhost 加本机端口（DD-01 防 DNS 重绑定） */
-static bool_t dm__http_host_ok(in const char *pcHost)
+static bool_t dm__http_host_ok(dm_in const char *pcHost)
 {
   char acA[64] = {0};
   char acB[64] = {0};
@@ -1221,7 +1227,7 @@ static bool_t dm__http_host_ok(in const char *pcHost)
              : DM_FALSE;
 }
 
-static int dm__http_hex_val(in char cCh)
+static int dm__http_hex_val(dm_in char cCh)
 {
   if ((cCh >= '0') && (cCh <= '9'))
   {
@@ -1238,7 +1244,7 @@ static int dm__http_hex_val(in char cCh)
   return -1;
 }
 
-static bool_t dm__http_has_dotdot(in const char *pcPath)
+static bool_t dm__http_has_dotdot(dm_in const char *pcPath)
 {
   const char *pc = pcPath;
   while ('\0' != *pc)
@@ -1265,7 +1271,7 @@ static bool_t dm__http_has_dotdot(in const char *pcPath)
 
 /* T-BND-06：HTTP 入口路径穿越与非法编码拦截（含多重编码
  * ../、..\、%2e%2e%2f、%252e、%5c、%00、控制字符） */
-static bool_t dm__http_path_unsafe(in const char *pcUrl)
+static bool_t dm__http_path_unsafe(dm_in const char *pcUrl)
 {
   char acCur[2048] = {0};
   char acNext[2048] = {0};
@@ -1338,7 +1344,7 @@ static bool_t dm__http_path_unsafe(in const char *pcUrl)
 
 /* Origin：没带放行（不是浏览器）；带了就必须在白名单里。返回白名单里那一项，或 "" = 没带，NULL =
  * 不行 */
-static const char *dm__http_origin(in const char *pcOrigin)
+static const char *dm__http_origin(dm_in const char *pcOrigin)
 {
   uint uiIdx = 0;
   if (NULL == pcOrigin)
@@ -1356,7 +1362,7 @@ static const char *dm__http_origin(in const char *pcOrigin)
 }
 
 /* 仅放行单一且修剪后精确等于 "chunked" 的 Transfer-Encoding；重头返 400，复合/非 chunked 返 411 */
-static bool_t dm__http_te_chunked_only(in const char *pcHeaders, out uint *puiStatus)
+static bool_t dm__http_te_chunked_only(dm_in const char *pcHeaders, dm_out uint *puiStatus)
 {
   const char *pc = pcHeaders;
   const char *pcValFound = NULL;
@@ -1410,7 +1416,7 @@ static bool_t dm__http_te_chunked_only(in const char *pcHeaders, out uint *puiSt
   return DM_TRUE;
 }
 
-static int dm__on_headers_done(in llhttp_t *pstP)
+static int dm__on_headers_done(dm_in llhttp_t *pstP)
 {
   dm__http_st *pstHttp = (dm__http_st *)pstP->data;
   const char *pcHeaders = NULL;
@@ -1481,7 +1487,7 @@ static int dm__on_headers_done(in llhttp_t *pstP)
   return 0;
 }
 
-static int dm__on_body(in llhttp_t *pstP, in const char *pc, in size_t uLen)
+static int dm__on_body(dm_in llhttp_t *pstP, dm_in const char *pc, dm_in size_t uLen)
 {
   dm__http_st *pstHttp = (dm__http_st *)pstP->data;
   if ((uLen > DM_HTTP_BODY_MAX) || (pstHttp->u32BodyLen > (DM_HTTP_BODY_MAX - (uint32)uLen)))
@@ -1526,8 +1532,9 @@ static int dm__on_body(in llhttp_t *pstP, in const char *pc, in size_t uLen)
 }
 
 /* url 拆成路径和查询，和头一起放进一块：路径\0 k\0v\0…\0 name\0value\0…\0。没有 = 的值是空串 */
-static char *dm__http_split_url(in const char *pcUrl, out char **ppcQuery, in const char *pcHeaders,
-                                in uint32 u32HeadLen, out char **ppcHeaders)
+static char *dm__http_split_url(dm_in const char *pcUrl, dm_out char **ppcQuery,
+                                dm_in const char *pcHeaders, dm_in uint32 u32HeadLen,
+                                dm_out char **ppcHeaders)
 {
   size_t uUrl = strlen(pcUrl);
   char *pcAll = (char *)dm_malloc_tag(uUrl * 2u + 4u + u32HeadLen, DM_MEM_TAG_HTTP);
@@ -1582,7 +1589,7 @@ static char *dm__http_split_url(in const char *pcUrl, out char **ppcQuery, in co
   return pcAll;
 }
 
-static int dm__on_message_done(in llhttp_t *pstP)
+static int dm__on_message_done(dm_in llhttp_t *pstP)
 {
   dm__http_st *pstHttp = (dm__http_st *)pstP->data;
   dm__http_req_st *pstReq = NULL;
@@ -1659,7 +1666,7 @@ static int dm__on_message_done(in llhttp_t *pstP)
   return iRet;
 }
 
-static int dm__on_message_begin(in llhttp_t *pstP)
+static int dm__on_message_begin(dm_in llhttp_t *pstP)
 {
   dm__http_st *pstHttp = (dm__http_st *)pstP->data;
   pstHttp->u32BuildLen = 0;
@@ -1669,7 +1676,7 @@ static int dm__on_message_begin(in llhttp_t *pstP)
 }
 
 /* 解一段；llhttp 停下来（满了 / 升级）时把剩下的存起来 */
-static void dm__http_parse(io dm__http_st *pstHttp, in const uint8 *pu8, in uint32 u32Len)
+static void dm__http_parse(dm_io dm__http_st *pstHttp, dm_in const uint8 *pu8, dm_in uint32 u32Len)
 {
   dm__conn_st *pstConn = pstHttp->pstConn;
   llhttp_errno_t eErr = llhttp_execute(&pstHttp->stParser, (const char *)pu8, u32Len);
@@ -1745,7 +1752,7 @@ static void dm__http_parse(io dm__http_st *pstHttp, in const uint8 *pu8, in uint
   return;
 }
 
-static void dm__http_resume_parse(io dm__http_st *pstHttp)
+static void dm__http_resume_parse(dm_io dm__http_st *pstHttp)
 {
   dm__conn_st *pstConn = pstHttp->pstConn; /* 解析当中可能升级、关掉 HTTP 状态：先记下连接 */
   uint8 *pu8Left = pstHttp->pu8Left;
@@ -1780,7 +1787,7 @@ static void dm__http_resume_parse(io dm__http_st *pstHttp)
 
 /* ============================ 连接 ============================ */
 
-static void dm__http_on_idle(in dm_timer_st *pstTimer)
+static void dm__http_on_idle(dm_in dm_uv_timer_st *pstTimer)
 {
   dm__http_st *pstHttp = (dm__http_st *)pstTimer;
   if ((NULL == pstHttp->pstConn) || (NULL == pstHttp->pstConn->pvHttp))
@@ -1790,15 +1797,15 @@ static void dm__http_on_idle(in dm_timer_st *pstTimer)
   if ((0u != pstHttp->u32Pending) || pstHttp->bSending ||
       (pstHttp->stReqs.stHead.pstNext != &pstHttp->stReqs.stHead))
   {
-    (void)dm_timer_start(&pstHttp->stIdle, dm__http_on_idle, DM_HTTP_IDLE_MS,
-                         0); /* 有挂着的不算空闲 */
+    (void)dm_uv_timer_start(&pstHttp->stIdle, dm__http_on_idle, DM_HTTP_IDLE_MS,
+                            0); /* 有挂着的不算空闲 */
     return;
   }
   dm__conn_close(pstHttp->pstConn, "http idle");
   return;
 }
 
-void dm__http_conn_new(io dm__conn_st *pstConn)
+void dm__http_conn_new(dm_io dm__conn_st *pstConn)
 {
   dm__http_st *pstHttp = (dm__http_st *)dm_calloc_tag(1u, sizeof(dm__http_st), DM_MEM_TAG_HTTP);
 
@@ -1827,19 +1834,19 @@ void dm__http_conn_new(io dm__conn_st *pstConn)
   pstHttp->pstConn = pstConn;
   dm_list_init(&pstHttp->stReqs);
   pstConn->pvHttp = pstHttp;
-  (void)dm_timer_init(dm_default_loop(), &pstHttp->stIdle);
-  (void)dm_timer_start(&pstHttp->stIdle, dm__http_on_idle, DM_HTTP_IDLE_MS, 0);
+  (void)dm_uv_timer_init(dm_uv_default_loop(), &pstHttp->stIdle);
+  (void)dm_uv_timer_start(&pstHttp->stIdle, dm__http_on_idle, DM_HTTP_IDLE_MS, 0);
   return;
 }
 
-void dm__http_conn_data(io dm__conn_st *pstConn, in const uint8 *pu8, in uint32 u32Len)
+void dm__http_conn_data(dm_io dm__conn_st *pstConn, dm_in const uint8 *pu8, dm_in uint32 u32Len)
 {
   dm__http_st *pstHttp = (dm__http_st *)pstConn->pvHttp;
   if ((NULL == pstHttp) || pstHttp->bRejected)
   {
     return;
   }
-  (void)dm_timer_start(&pstHttp->stIdle, dm__http_on_idle, DM_HTTP_IDLE_MS, 0);
+  (void)dm_uv_timer_start(&pstHttp->stIdle, dm__http_on_idle, DM_HTTP_IDLE_MS, 0);
   if (pstHttp->bPaused)
   {
     return; /* 停读期间到的（读回调里剩的）：不会有，流已经停了 */
@@ -1852,7 +1859,7 @@ void dm__http_conn_data(io dm__conn_st *pstConn, in const uint8 *pu8, in uint32 
   return;
 }
 
-static void dm__http_on_closed(in dm_handle_st *pstHandle)
+static void dm__http_on_closed(dm_in dm_uv_handle_st *pstHandle)
 {
   dm__http_st *pstHttp = (dm__http_st *)pstHandle;
   dm_free_tag(pstHttp->pcBuild);
@@ -1863,7 +1870,7 @@ static void dm__http_on_closed(in dm_handle_st *pstHandle)
 }
 
 /* 连接断了（或者升级成 WebSocket 了）：没答的各交一条 DM_SRC_HTTP_GONE，然后放掉 */
-void dm__http_conn_gone(io dm__conn_st *pstConn)
+void dm__http_conn_gone(dm_io dm__conn_st *pstConn)
 {
   dm__http_st *pstHttp = (dm__http_st *)pstConn->pvHttp;
   dm_list_node_st *pstNode = NULL;
@@ -1895,13 +1902,13 @@ void dm__http_conn_gone(io dm__conn_st *pstConn)
     pstFile->pstConn = NULL;
     if (!pstFile->bReading)
     {
-      (void)dm_timer_stop(&pstFile->stWait);
+      (void)dm_uv_timer_stop(&pstFile->stWait);
       dm__http_file_done(pstFile); /* 在等积压降下来：现在就收拾；正读着的等它回来自己收拾 */
     }
   }
   pstHttp->pstConn = NULL;
-  (void)dm_timer_stop(&pstHttp->stIdle);
-  dm_close((dm_handle_st *)&pstHttp->stIdle, dm__http_on_closed);
+  (void)dm_uv_timer_stop(&pstHttp->stIdle);
+  dm_uv_close((dm_uv_handle_st *)&pstHttp->stIdle, dm__http_on_closed);
   return;
 }
 

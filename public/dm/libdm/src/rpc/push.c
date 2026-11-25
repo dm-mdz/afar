@@ -72,12 +72,12 @@ static uint32 g_u32RingCount = 0;
 static uint64 g_u64RingBytes = 0;
 static dm_list_st g_stStreams;
 static bool_t g_bStreamsUp = DM_FALSE;
-static dm_timer_st g_stStreamTimer;
+static dm_uv_timer_st g_stStreamTimer;
 static bool_t g_bStreamTimerUp = DM_FALSE;
 
 /* ============================ 类 ============================ */
 
-static const dm__topic_st *dm__push_topic_find(in uint uiTopic)
+static const dm__topic_st *dm__push_topic_find(dm_in uint uiTopic)
 {
   uint uiIdx = 0;
   for (uiIdx = 0; uiIdx < g_uiTopicCount; uiIdx++)
@@ -90,7 +90,7 @@ static const dm__topic_st *dm__push_topic_find(in uint uiTopic)
   return NULL;
 }
 
-int dm_push_topic(in uint uiTopic, in const char *pcName)
+int dm_push_topic(dm_in uint uiTopic, dm_in const char *pcName)
 {
   uint uiIdx = 0;
 
@@ -121,7 +121,7 @@ int dm_push_topic(in uint uiTopic, in const char *pcName)
   return DM_SUCCESS;
 }
 
-int dm__push_topic_id(in const char *pcName)
+int dm__push_topic_id(dm_in const char *pcName)
 {
   uint uiIdx = 0;
   for (uiIdx = 0; uiIdx < g_uiTopicCount; uiIdx++)
@@ -136,8 +136,9 @@ int dm__push_topic_id(in const char *pcName)
 
 /* ============================ 推送 ============================ */
 
-static uint8 *dm__push_frame(in uint uiTopic, in uint64 u64Seq, in uint64 u64Key, in uint8 u8Flag,
-                             in const void *pv, in uint32 u32Len, out uint32 *pu32Total)
+static uint8 *dm__push_frame(dm_in uint uiTopic, dm_in uint64 u64Seq, dm_in uint64 u64Key,
+                             dm_in uint8 u8Flag, dm_in const void *pv, dm_in uint32 u32Len,
+                             dm_out uint32 *pu32Total)
 {
   dm_frame_head_st stHead = {0};
   uint32 u32Total = DM_FRAME_HEAD + DM_FRAME_PUSH_HEAD + u32Len;
@@ -175,7 +176,7 @@ static void dm__push_drop_oldest(void)
   return;
 }
 
-int dm_push(in uint uiTopic, in uint64 u64Key, in const void *pvVal, in uint32 u32Len)
+int dm_push(dm_in uint uiTopic, dm_in uint64 u64Key, dm_in const void *pvVal, dm_in uint32 u32Len)
 {
   dm__push_ent_st *pstEnt = NULL;
   uint8 *pu8Frame = NULL;
@@ -231,8 +232,8 @@ int dm_push(in uint uiTopic, in uint64 u64Key, in const void *pvVal, in uint32 u
   return DM_SUCCESS;
 }
 
-int dm_push_peer(in const char *pcPeerID, in uint uiTopic, in uint64 u64Key, in const void *pvVal,
-                 in uint32 u32Len)
+int dm_push_peer(dm_in const char *pcPeerID, dm_in uint uiTopic, dm_in uint64 u64Key,
+                 dm_in const void *pvVal, dm_in uint32 u32Len)
 {
   uint8 *pu8Frame = NULL;
   uint32 u32Total = 0u;
@@ -291,7 +292,7 @@ uint32 dm__push_ring_count(void)
 }
 
 /* 握手续传判定（DD-01）：返回 "ok" / "full" / "none" */
-const char *dm__push_resume(in const char *pcBoot, in bool_t bHasSeq, in uint64 u64Seen)
+const char *dm__push_resume(dm_in const char *pcBoot, dm_in bool_t bHasSeq, dm_in uint64 u64Seen)
 {
   uint64 u64Oldest = 0;
 
@@ -316,7 +317,7 @@ const char *dm__push_resume(in const char *pcBoot, in bool_t bHasSeq, in uint64 
 }
 
 /* 续上了：把 u64Seen 之后的补给这条连接（它要收的那几类） */
-void dm__push_replay(in uint32 u32ConnID, in uint64 u64Seen)
+void dm__push_replay(dm_in uint32 u32ConnID, dm_in uint64 u64Seen)
 {
   uint32 u32Idx = 0;
   for (u32Idx = 0; u32Idx < g_u32RingCount; u32Idx++)
@@ -336,7 +337,7 @@ void dm__push_replay(in uint32 u32ConnID, in uint64 u64Seen)
 
 /* ============================ 流式 ============================ */
 
-static dm__stream_st *dm__stream_find(in uint uiTopic, in uint64 u64Key)
+static dm__stream_st *dm__stream_find(dm_in uint uiTopic, dm_in uint64 u64Key)
 {
   dm_list_node_st *pstNode = NULL;
   if (!g_bStreamsUp)
@@ -354,7 +355,7 @@ static dm__stream_st *dm__stream_find(in uint uiTopic, in uint64 u64Key)
   return NULL;
 }
 
-static void dm__stream_flush(io dm__stream_st *pstOne)
+static void dm__stream_flush(dm_io dm__stream_st *pstOne)
 {
   uint8 *pu8Frame = NULL;
   uint32 u32Total = 0;
@@ -381,7 +382,7 @@ static void dm__stream_flush(io dm__stream_st *pstOne)
   return;
 }
 
-static void dm__stream_free(io dm__stream_st *pstOne)
+static void dm__stream_free(dm_io dm__stream_st *pstOne)
 {
   dm_list_del_node(&pstOne->stNode);
   dm_free_tag(pstOne->pu8Data);
@@ -389,7 +390,7 @@ static void dm__stream_free(io dm__stream_st *pstOne)
   return;
 }
 
-static void dm__stream_on_timer(in dm_timer_st *pstTimer)
+static void dm__stream_on_timer(dm_in dm_uv_timer_st *pstTimer)
 {
   dm_list_node_st *pstNode = NULL;
   (void)pstTimer;
@@ -400,7 +401,8 @@ static void dm__stream_on_timer(in dm_timer_st *pstTimer)
   return; /* 一次性的：下一片来了再开 */
 }
 
-int dm_push_stream(in uint uiTopic, in uint64 u64Key, in const void *pvData, in uint32 u32Len)
+int dm_push_stream(dm_in uint uiTopic, dm_in uint64 u64Key, dm_in const void *pvData,
+                   dm_in uint32 u32Len)
 {
   dm__stream_st *pstOne = NULL;
 
@@ -432,7 +434,7 @@ int dm_push_stream(in uint uiTopic, in uint64 u64Key, in const void *pvData, in 
   }
   if (!g_bStreamTimerUp)
   {
-    if (DM_SUCCESS != dm_timer_init(dm_default_loop(), &g_stStreamTimer))
+    if (DM_SUCCESS != dm_uv_timer_init(dm_uv_default_loop(), &g_stStreamTimer))
     {
       return DM_ALLOC;
     }
@@ -480,14 +482,14 @@ int dm_push_stream(in uint uiTopic, in uint64 u64Key, in const void *pvData, in 
   {
     dm__stream_flush(pstOne); /* 一拍里攒得太多：不等定时器 */
   }
-  else if (!dm_is_active((dm_handle_st *)&g_stStreamTimer))
+  else if (!dm_uv_is_active((dm_uv_handle_st *)&g_stStreamTimer))
   {
-    (void)dm_timer_start(&g_stStreamTimer, dm__stream_on_timer, DM_STREAM_MS, 0);
+    (void)dm_uv_timer_start(&g_stStreamTimer, dm__stream_on_timer, DM_STREAM_MS, 0);
   }
   return DM_SUCCESS;
 }
 
-int dm_push_stream_end(in uint uiTopic, in uint64 u64Key)
+int dm_push_stream_end(dm_in uint uiTopic, dm_in uint64 u64Key)
 {
   dm__stream_st *pstOne = NULL;
   dm_list_node_st *pstNode = NULL;
@@ -510,14 +512,15 @@ int dm_push_stream_end(in uint uiTopic, in uint64 u64Key)
   }
   if (!bPending && g_bStreamTimerUp)
   {
-    (void)dm_timer_stop(&g_stStreamTimer); /* 没数据就没有定时器 */
+    (void)dm_uv_timer_stop(&g_stStreamTimer); /* 没数据就没有定时器 */
   }
   return DM_SUCCESS;
 }
 
 bool_t dm__push_stream_timer_on(void)
 {
-  return (g_bStreamTimerUp && dm_is_active((dm_handle_st *)&g_stStreamTimer)) ? DM_TRUE : DM_FALSE;
+  return (g_bStreamTimerUp && dm_uv_is_active((dm_uv_handle_st *)&g_stStreamTimer)) ? DM_TRUE
+                                                                                    : DM_FALSE;
 }
 
 /* ============================ 收尾 ============================ */
@@ -547,8 +550,8 @@ void dm__push_destroy(void)
   }
   if (g_bStreamTimerUp)
   {
-    (void)dm_timer_stop(&g_stStreamTimer);
-    dm_close((dm_handle_st *)&g_stStreamTimer, NULL);
+    (void)dm_uv_timer_stop(&g_stStreamTimer);
+    dm_uv_close((dm_uv_handle_st *)&g_stStreamTimer, NULL);
     g_bStreamTimerUp = DM_FALSE;
   }
   return;

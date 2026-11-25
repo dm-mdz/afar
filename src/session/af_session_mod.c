@@ -29,7 +29,7 @@ typedef struct af__menu_push
 
 typedef struct af__notify_job
 {
-  void (*pfNotify)(in const char *, in const char *, in const char *);
+  void (*pfNotify)(dm_in const char *, dm_in const char *, dm_in const char *);
   char acTitle[64];
   char acBody[128];
   char acTag[32];
@@ -38,8 +38,8 @@ typedef struct af__notify_job
 typedef struct af__restart_job
 {
   bool_t bReopen;
-  int (*pfRunCmd)(in const char *const *, in const char *, in const _Atomic bool_t *, out char *,
-                  in size_t, in uint32, out int *);
+  int (*pfRunCmd)(dm_in const char *const *, dm_in const char *, dm_in const _Atomic bool_t *, dm_out char *,
+                  dm_in size_t, dm_in uint32, dm_out int *);
   bool_t bOk;
   char acErr[256];
 } af__restart_job_st;
@@ -55,46 +55,27 @@ static const dm_err_entry_st g_astAfSesErrMap[] = {
     {0, NULL}
 };
 
-static uint64 af__ses_default_now_ms(void)
-{
-  return dm_hrtime() / 1000000ULL;
-}
+static uint64 af__ses_default_now_ms(void) { return dm_hrtime() / 1000000ULL; }
 
-static void af__ses_init_default_ops(out af_session_ops_st *pstOps)
+static void af__ses_init_default_ops(dm_out af_session_ops_st *pstOps)
 {
-  memset(pstOps, 0, sizeof(*pstOps));
-  pstOps->pfRunOnMain = af_plat_run_on_main;
-  pstOps->pfBonjourStart = af_plat_bonjour_start;
-  pstOps->pfBonjourStop = af_plat_bonjour_stop;
-  pstOps->pfHostName = af_plat_host_name;
-  pstOps->pfCurrentUser = af_plat_current_user;
-  pstOps->pfNotify = af_plat_notify;
-  pstOps->pfRunCmd = af_plat_run_cmd_cancellable;
-  pstOps->pfNowMs = af__ses_default_now_ms;
-  pstOps->u32FrontTickMs = 1000u;
+  static const af_session_ops_st stDef = {
+      af_plat_run_on_main, af_plat_bonjour_start, af_plat_bonjour_stop,
+      af_plat_host_name,   af_plat_current_user,  af_plat_notify,
+      af_plat_run_cmd_cancellable, af__ses_default_now_ms, 1000u
+  };
+  *pstOps = stDef;
 }
 
 const af_session_ops_st *af_ses_ops(void)
 {
-  if (!g_bSesOpsInited)
-  {
-    af__ses_init_default_ops(&g_stSesOps);
-    g_bSesOpsInited = DM_TRUE;
-  }
+  if (!g_bSesOpsInited) { af__ses_init_default_ops(&g_stSesOps); g_bSesOpsInited = DM_TRUE; }
   return &g_stSesOps;
 }
+uint64 af_ses_now_ms(void) { return af_ses_ops()->pfNowMs(); }
+void af_session_set_menu_cb(dm_in af_menu_update_cb pfCb) { g_pfMenuCb = pfCb; }
 
-uint64 af_ses_now_ms(void)
-{
-  return af_ses_ops()->pfNowMs();
-}
-
-void af_session_set_menu_cb(in af_menu_update_cb pfCb)
-{
-  g_pfMenuCb = pfCb;
-}
-
-void af_session_set_ops(in const af_session_ops_st *pstOps)
+void af_session_set_ops(dm_in const af_session_ops_st *pstOps)
 {
   af__ses_init_default_ops(&g_stSesOps);
   g_bSesOpsInited = DM_TRUE;
@@ -110,7 +91,7 @@ void af_session_set_ops(in const af_session_ops_st *pstOps)
   if (pstOps->u32FrontTickMs > 0u) { g_stSesOps.u32FrontTickMs = pstOps->u32FrontTickMs; }
 }
 
-void af_ses_get_mac_name(out char *pcOut, in size_t uCap)
+void af_ses_get_mac_name(dm_out char *pcOut, dm_in size_t uCap)
 {
   const af_state_st *pstSt = af_store_state();
   if ((NULL == pcOut) || (0u == uCap)) { return; }
@@ -151,7 +132,7 @@ void af_ses_drain_check(void)
 
 /* ============================ 菜单快照推送与通知 ============================ */
 
-static void af__ses_menu_trampoline(io void *pvCtx)
+static void af__ses_menu_trampoline(dm_io void *pvCtx)
 {
   af__menu_push_st *pstP = (af__menu_push_st *)pvCtx;
   if (NULL == pstP) { return; }
@@ -159,7 +140,7 @@ static void af__ses_menu_trampoline(io void *pvCtx)
   dm_free_tag(pstP);
 }
 
-static void af__ses_notify_trampoline(io void *pvCtx)
+static void af__ses_notify_trampoline(dm_io void *pvCtx)
 {
   af__notify_job_st *pstJ = (af__notify_job_st *)pvCtx;
   if (NULL == pstJ) { return; }
@@ -167,7 +148,7 @@ static void af__ses_notify_trampoline(io void *pvCtx)
   dm_free_tag(pstJ);
 }
 
-static void af__ses_post_notify(in const char *pcTitle, in const char *pcBody, in const char *pcTag)
+static void af__ses_post_notify(dm_in const char *pcTitle, dm_in const char *pcBody, dm_in const char *pcTag)
 {
   af__notify_job_st *pstJ = NULL;
   if (g_stAfSes.bDraining) { return; }
@@ -180,27 +161,52 @@ static void af__ses_post_notify(in const char *pcTitle, in const char *pcBody, i
   af_ses_ops()->pfRunOnMain(af__ses_notify_trampoline, pstJ);
 }
 
+#define AF_SES_URL_PERM_SC \
+  "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+#define AF_SES_URL_PERM_AX \
+  "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+
+static void af__ses_open_url_trampoline(dm_io void *pvCtx)
+{
+  const char *pcUrl = (const char *)pvCtx;
+  if (NULL != pcUrl) { (void)af_plat_open_url(pcUrl); }
+}
+
 void af_ses_push_menu(void)
 {
   af_sc_snap_st stSc;
+  af_env_snap_st stEnv;
+  af_ev_stream_st stStrm;
   af__menu_push_st *pstP = NULL;
   af_menu_snap_st *pstS = NULL;
+  bool_t bDirect = DM_FALSE;
   bool_t bShowing = DM_FALSE;
 
   if ((NULL == g_pfMenuCb) || g_stAfSes.bDraining) { return; }
   pstP = (af__menu_push_st *)dm_calloc_tag(1u, sizeof(*pstP), AF_SES_TAG_MENU);
   if (NULL == pstP) { return; }
   af_sidecar_get_snap(&stSc);
-  bShowing = ((AF_SC_SHOWING == stSc.eState) && (!g_stAfSes.stFront.bActive)) ? DM_TRUE : DM_FALSE;
+  af_env_get_snapshot(&stEnv);
+  af_ses_direct_get_active(&stStrm, NULL, 0u);
+  bDirect = ((AF_STREAM_STARTING == stStrm.eCur) || (AF_STREAM_STREAMING == stStrm.eCur)) ? DM_TRUE : DM_FALSE;
+  bShowing = (bDirect || ((AF_SC_SHOWING == stSc.eState) && (!g_stAfSes.stFront.bActive))) ? DM_TRUE : DM_FALSE;
   pstP->pfCb = g_pfMenuCb;
   pstS = &pstP->stSnap;
   pstS->bShowing = bShowing;
-  pstS->bBootAuto = (af_store_cfg()->bAutoConnect && (!af_store_state()->bNoBootConnect)) ? DM_TRUE
-                                                                                          : DM_FALSE;
+  pstS->bDirectActive = bDirect;
+  pstS->bPermSc = stEnv.bPermSc;
+  pstS->bPermAx = stEnv.bPermAx;
+  pstS->bBootAuto = (af_store_cfg()->bAutoConnect && (!af_store_state()->bNoBootConnect)) ? DM_TRUE : DM_FALSE;
   pstS->bAntiUnplug = af_store_state()->bAntiUnplug;
   pstS->u32TodoCount = g_stAfSes.u32TodoCount;
   snprintf(pstS->acVersion, sizeof(pstS->acVersion), "%s", AF_VERSION);
-  if (bShowing)
+  if (bDirect)
+  {
+    pstS->u8IconState = 1u;
+    snprintf(pstS->acStatusLine, sizeof(pstS->acStatusLine), "正在直连显示到 %s",
+             ('\0' != stStrm.acDevName[0]) ? stStrm.acDevName : "iPad");
+  }
+  else if (bShowing)
   {
     pstS->u8IconState = 1u;
     snprintf(pstS->acStatusLine, sizeof(pstS->acStatusLine), "正在显示到 %s",
@@ -216,26 +222,18 @@ void af_ses_push_menu(void)
     pstS->u8IconState = 2u;
     if (g_stAfSes.u32TodoCount > 0u)
     {
-      snprintf(pstS->acStatusLine, sizeof(pstS->acStatusLine), "还有 %u 项待配置",
-               (unsigned)g_stAfSes.u32TodoCount);
+      snprintf(pstS->acStatusLine, sizeof(pstS->acStatusLine), "还有 %u 项待配置", (unsigned)g_stAfSes.u32TodoCount);
     }
-    else
-    {
-      snprintf(pstS->acStatusLine, sizeof(pstS->acStatusLine), "需要处理");
-    }
+    else { snprintf(pstS->acStatusLine, sizeof(pstS->acStatusLine), "需要处理"); }
   }
   else
   {
     pstS->u8IconState = 0u;
     if (stSc.u32NearbyCnt > 0u)
     {
-      snprintf(pstS->acStatusLine, sizeof(pstS->acStatusLine), "已就绪，附近有 %u 台 iPad",
-               (unsigned)stSc.u32NearbyCnt);
+      snprintf(pstS->acStatusLine, sizeof(pstS->acStatusLine), "已就绪，附近有 %u 台 iPad", (unsigned)stSc.u32NearbyCnt);
     }
-    else
-    {
-      snprintf(pstS->acStatusLine, sizeof(pstS->acStatusLine), "已就绪，未连接");
-    }
+    else { snprintf(pstS->acStatusLine, sizeof(pstS->acStatusLine), "已就绪，未连接"); }
   }
   af_ses_ops()->pfRunOnMain(af__ses_menu_trampoline, pstP);
 }
@@ -252,7 +250,7 @@ void af_ses_front_stop(void)
   }
 }
 
-void af_ses_front_begin(in const char *pcName)
+void af_ses_front_begin(dm_in const char *pcName)
 {
   uint64 u64Now = af_ses_now_ms();
   uint32 u32TickMs = (af_ses_ops()->u32FrontTickMs > 0u) ? af_ses_ops()->u32FrontTickMs : 1000u;
@@ -266,7 +264,7 @@ void af_ses_front_begin(in const char *pcName)
   af_ses_push_menu();
 }
 
-static bool_t af__name_in_nearby(in const af_sc_snap_st *pstSc, in const char *pcName)
+static bool_t af__name_in_nearby(dm_in const af_sc_snap_st *pstSc, dm_in const char *pcName)
 {
   uint32 i = 0u;
   if ((NULL == pcName) || ('\0' == pcName[0])) { return DM_FALSE; }
@@ -277,7 +275,7 @@ static bool_t af__name_in_nearby(in const af_sc_snap_st *pstSc, in const char *p
   return DM_FALSE;
 }
 
-static int af__ses_on_front_timer(io void *pvArg)
+static int af__ses_on_front_timer(dm_io void *pvArg)
 {
   af_sc_snap_st stSc;
   bool_t bConn = DM_FALSE;
@@ -316,7 +314,7 @@ static int af__ses_on_front_timer(io void *pvArg)
   return DM_SUCCESS;
 }
 
-void af_ses_disconnect_core(in af_store_saved_cb pfOnSaved, io void *pvCtx)
+void af_ses_disconnect_core(dm_in af_store_saved_cb pfOnSaved, dm_io void *pvCtx)
 {
   af_sc_snap_st stSc;
   bool_t bShowingNow = DM_FALSE;
@@ -326,6 +324,7 @@ void af_ses_disconnect_core(in af_store_saved_cb pfOnSaved, io void *pvCtx)
   bShowingNow = (AF_SC_SHOWING == stSc.eState) ? DM_TRUE : DM_FALSE;
   af_ses_front_stop();
   af_display_hold(0u);
+  af_ses_direct_stop_all(DM_FALSE);
   af_store_state_mut()->bUserOff = DM_TRUE;
   if (bWasFront && (!bShowingNow))
   {
@@ -343,7 +342,7 @@ void af_ses_disconnect_core(in af_store_saved_cb pfOnSaved, io void *pvCtx)
 
 /* ============================ 原生重启 HEAVY 作业 ============================ */
 
-static void af__trim_err(in const char *pcSrc, out char *pcDst, in size_t uCap)
+static void af__trim_err(dm_in const char *pcSrc, dm_out char *pcDst, dm_in size_t uCap)
 {
   const char *pcS = pcSrc;
   const char *pcE = NULL;
@@ -360,7 +359,7 @@ static void af__trim_err(in const char *pcSrc, out char *pcDst, in size_t uCap)
   pcDst[uLen] = '\0';
 }
 
-static void af__restart_work(io void *pvArg)
+static void af__restart_work(dm_io void *pvArg)
 {
   af__restart_job_st *pstJ = (af__restart_job_st *)pvArg;
   const char *apcDef[] = {"/usr/bin/defaults", "write", "com.apple.loginwindow",
@@ -404,7 +403,7 @@ static void af__restart_work(io void *pvArg)
   if ('\0' == pstJ->acErr[0]) { snprintf(pstJ->acErr, sizeof(pstJ->acErr), "重启 Mac 失败"); }
 }
 
-static void af__restart_after(io void *pvArg, in int iStatus)
+static void af__restart_after(dm_io void *pvArg, dm_in int iStatus)
 {
   af__restart_job_st *pstJ = (af__restart_job_st *)pvArg;
 
@@ -418,7 +417,7 @@ static void af__restart_after(io void *pvArg, in int iStatus)
   af_ses_drain_check();
 }
 
-int af_ses_start_restart_job(in bool_t bReopen)
+int af_ses_start_restart_job(dm_in bool_t bReopen)
 {
   af__restart_job_st *pstJ = NULL;
   int iRc = DM_SUCCESS;
@@ -442,14 +441,14 @@ int af_ses_start_restart_job(in bool_t bReopen)
 
 /* ============================ 开机自连、CLI RPC 与菜单 9 动作 ============================ */
 
-static void af__ses_try_auto_connect(in const char *pcAppeared)
+static void af__ses_try_auto_connect(dm_in const char *pcAppeared)
 {
   const af_config_st *pstCfg = af_store_cfg();
   const af_state_st *pstSt = af_store_state();
   af_sc_snap_st stSc;
   const char *pcTarget = NULL;
 
-  if ((!pstCfg->bAutoConnect) || pstSt->bNoBootConnect || pstSt->bUserOff
+  if (af_ses_direct_is_active() || (!pstCfg->bAutoConnect) || pstSt->bNoBootConnect || pstSt->bUserOff
       || g_stAfSes.stFront.bActive || af_sidecar_in_cooldown() || g_stAfSes.bDraining)
   {
     return;
@@ -477,7 +476,7 @@ static void af__ses_try_auto_connect(in const char *pcAppeared)
   if (NULL != pcTarget) { (void)af_sidecar_connect(pcTarget, DM_FALSE); }
 }
 
-static void af__cli_disc_on_saved(in int iStatus, io void *pvCtx)
+static void af__cli_disc_on_saved(dm_in int iStatus, dm_io void *pvCtx)
 {
   af__cli_disc_ctx_st *pstCtx = (af__cli_disc_ctx_st *)pvCtx;
   static const char acOk[] = "{\"ok\":true}";
@@ -494,7 +493,7 @@ static void af__cli_disc_on_saved(in int iStatus, io void *pvCtx)
   dm_free_tag(pstCtx);
 }
 
-static int af__on_cli_disconnect(io void *pvArg)
+static int af__on_cli_disconnect(dm_io void *pvArg)
 {
   dm_link_msg_st *pstMsg = (dm_link_msg_st *)pvArg;
   af__cli_disc_ctx_st *pstCtx = NULL;
@@ -525,6 +524,7 @@ static void af__menu_connect(void)
   const af_state_st *pstSt = af_store_state();
   const char *pcTarget = NULL;
 
+  if (af_ses_direct_is_active()) { return; }
   af_sidecar_get_snap(&stSc);
   if ('\0' != pstCfg->acIpadName[0]) { pcTarget = pstCfg->acIpadName; }
   else if ('\0' != pstSt->acLastIpad[0]) { pcTarget = pstSt->acLastIpad; }
@@ -539,7 +539,7 @@ static void af__menu_connect(void)
   (void)af_sidecar_connect(pcTarget, DM_TRUE);
 }
 
-static int af__on_ui_action(io void *pvArg)
+static int af__on_ui_action(dm_io void *pvArg)
 {
   const dm_link_msg_st *pstMsg = (const dm_link_msg_st *)pvArg;
   af_ui_action_msg_st stAct;
@@ -576,13 +576,21 @@ static int af__on_ui_action(io void *pvArg)
       break;
     case AF_MENU_REOPEN: (void)dm_queue_post_async(AF_LINK_UI_SETUP_GO, "", 1u); break;
     case AF_MENU_NOTIFY_DEVICES: (void)dm_queue_post_async(AF_LINK_UI_SETUP_GO, "devices", 8u); break;
+    case AF_MENU_OPEN_PERM_SC:
+      af_env_start_fast_perm_poll(120000u);
+      af_ses_ops()->pfRunOnMain(af__ses_open_url_trampoline, (void *)AF_SES_URL_PERM_SC);
+      break;
+    case AF_MENU_OPEN_PERM_AX:
+      af_env_start_fast_perm_poll(120000u);
+      af_ses_ops()->pfRunOnMain(af__ses_open_url_trampoline, (void *)AF_SES_URL_PERM_AX);
+      break;
     default: break;
   }
   af_ses_push_menu();
   return DM_SUCCESS;
 }
 
-static int af__on_quit(io void *pvArg)
+static int af__on_quit(dm_io void *pvArg)
 {
   (void)pvArg;
   dm_quit(0);
@@ -591,7 +599,7 @@ static int af__on_quit(io void *pvArg)
 
 /* ============================ 事件订阅与模块生命周期 ============================ */
 
-static int af__on_ready(io void *pvArg)
+static int af__on_ready(dm_io void *pvArg)
 {
   char acName[65];
   uint16 u16Port = 0u;
@@ -604,7 +612,7 @@ static int af__on_ready(io void *pvArg)
   }
   g_stAfSes.bReady = DM_TRUE;
   af_ses_get_mac_name(acName, sizeof(acName));
-  u16Port = dm_https_get_port();
+  u16Port = af_https_get_port();
   if (0u == u16Port) { u16Port = af_store_cfg()->u16Port; }
   (void)af_ses_ops()->pfBonjourStart(acName, u16Port);
   af__ses_try_auto_connect(NULL);
@@ -612,7 +620,7 @@ static int af__on_ready(io void *pvArg)
   return DM_SUCCESS;
 }
 
-static int af__on_auth_ev(io void *pvArg)
+static int af__on_auth_ev(dm_io void *pvArg)
 {
   const dm_link_msg_st *pstMsg = (const dm_link_msg_st *)pvArg;
   af_ev_auth_st stEv;
@@ -624,6 +632,7 @@ static int af__on_auth_ev(io void *pvArg)
   memcpy(&stEv, pstMsg->pu8Data, sizeof(stEv));
   if (AF_AUTH_EV_REVOKED == stEv.eKind)
   {
+    af_ses_direct_on_revoked(stEv.acDevId);
     if ('\0' != stEv.acSidecarName[0])
     {
       af_sc_snap_st stSc;
@@ -657,7 +666,7 @@ static int af__on_auth_ev(io void *pvArg)
   return DM_SUCCESS;
 }
 
-static int af__on_setup_todo(io void *pvArg)
+static int af__on_setup_todo(dm_io void *pvArg)
 {
   const dm_link_msg_st *pstMsg = (const dm_link_msg_st *)pvArg;
   af_ev_setup_todo_st stEv;
@@ -672,7 +681,7 @@ static int af__on_setup_todo(io void *pvArg)
   return DM_SUCCESS;
 }
 
-static int af__on_sidecar_ev(io void *pvArg)
+static int af__on_sidecar_ev(dm_io void *pvArg)
 {
   const dm_link_msg_st *pstMsg = (const dm_link_msg_st *)pvArg;
   af_ev_sidecar_st stEv;
@@ -685,29 +694,42 @@ static int af__on_sidecar_ev(io void *pvArg)
       af__ses_try_auto_connect(stEv.acAppeared);
     }
   }
+  af_ses_direct_on_sc_or_disp_ev();
   af_ses_push_menu();
   return DM_SUCCESS;
 }
 
-static int af__on_simple_menu_ev(io void *pvArg)
+static int af__on_disp_ev(dm_io void *pvArg)
 {
   (void)pvArg;
+  af_ses_direct_on_sc_or_disp_ev();
   af_ses_push_menu();
   return DM_SUCCESS;
 }
+
+static int af__on_stream_ev(dm_io void *pvArg)
+{
+  const dm_link_msg_st *pstMsg = (const dm_link_msg_st *)pvArg;
+  af_ev_stream_st stEv;
+  if ((NULL != pstMsg) && (NULL != pstMsg->pu8Data) && (pstMsg->u32Len >= sizeof(stEv)))
+  {
+    memcpy(&stEv, pstMsg->pu8Data, sizeof(stEv));
+    af_ses_direct_on_stream_ev(&stEv);
+  }
+  return DM_SUCCESS;
+}
+
+static int af__on_simple_menu_ev(dm_io void *pvArg) { (void)pvArg; af_ses_push_menu(); return DM_SUCCESS; }
 
 static int af__ses_init(void)
 {
   static const dm_iface_st stCliDisc = {
-      .uiLinkID = AF_LINK_CLI_DISCONNECT,
-      .pcName = "session.disconnect",
-      .u32Roles = AF_ROLE_CLI,
-      .u32Flags = DM_IFACE_MUTATE,
-      .pcDesc = "Disconnect Sidecar and persist user_off=true",
-      .pcArgs = NULL
+      .uiLinkID = AF_LINK_CLI_DISCONNECT, .pcName = "session.disconnect", .u32Roles = AF_ROLE_CLI,
+      .u32Flags = DM_IFACE_MUTATE, .pcDesc = "Disconnect Sidecar and Direct stream", .pcArgs = NULL
   };
 
   memset(&g_stAfSes, 0, sizeof(g_stAfSes));
+  af_ses_direct_init();
   dm_mem_tag_name(AF_SES_TAG_JOB, "af_ses_job");
   dm_mem_tag_name(AF_SES_TAG_MENU, "af_ses_menu");
   dm_mem_tag_name(AF_SES_TAG_SAVE, "af_ses_save");
@@ -715,17 +737,15 @@ static int af__ses_init(void)
   if ((DM_SUCCESS != af_ses_http_register())
       || (DM_SUCCESS != dm_link_register_handler(AF_LINK_UI_ACTION, af__on_ui_action, NULL, NULL))
       || (DM_SUCCESS != dm_link_register_handler(AF_LINK_QUIT, af__on_quit, NULL, NULL))
-      || (DM_SUCCESS != dm_link_register_handler(AF_LINK_CLI_DISCONNECT, af__on_cli_disconnect,
-                                                 NULL, NULL))
+      || (DM_SUCCESS != dm_link_register_handler(AF_LINK_CLI_DISCONNECT, af__on_cli_disconnect, NULL, NULL))
       || (DM_SUCCESS != dm_iface_register(&stCliDisc))
-      || (DM_SUCCESS != dm_link_register_handler(AF_SES_LINK_FRONT_TMR, af__ses_on_front_timer,
-                                                 NULL, NULL))
+      || (DM_SUCCESS != dm_link_register_handler(AF_SES_LINK_FRONT_TMR, af__ses_on_front_timer, NULL, NULL))
       || (DM_SUCCESS != dm_event_subscribe(DM_EV_READY, af__on_ready, NULL, NULL))
       || (DM_SUCCESS != dm_event_subscribe(AF_EV_AUTH_CHANGED, af__on_auth_ev, NULL, NULL))
       || (DM_SUCCESS != dm_event_subscribe(AF_EV_SETUP_TODO, af__on_setup_todo, NULL, NULL))
       || (DM_SUCCESS != dm_event_subscribe(AF_EV_SIDECAR_CHANGED, af__on_sidecar_ev, NULL, NULL))
-      || (DM_SUCCESS != dm_event_subscribe(AF_EV_DISPLAY_CHANGED, af__on_simple_menu_ev, NULL,
-                                           NULL))
+      || (DM_SUCCESS != dm_event_subscribe(AF_EV_STREAM_CHANGED, af__on_stream_ev, NULL, NULL))
+      || (DM_SUCCESS != dm_event_subscribe(AF_EV_DISPLAY_CHANGED, af__on_disp_ev, NULL, NULL))
       || (DM_SUCCESS != dm_event_subscribe(AF_EV_KBD_CHANGED, af__on_simple_menu_ev, NULL, NULL))
       || (DM_SUCCESS != dm_event_subscribe(AF_EV_ENV_UPDATED, af__on_simple_menu_ev, NULL, NULL)))
   {
@@ -734,15 +754,13 @@ static int af__ses_init(void)
   return DM_SUCCESS;
 }
 
-static void af__ses_drain(io dm_drain_st *pstDrain)
+static void af__ses_drain(dm_io dm_drain_st *pstDrain)
 {
   g_stAfSes.bDraining = DM_TRUE;
   af_ses_front_stop();
+  af_ses_direct_drain();
   af_ses_ops()->pfBonjourStop();
-  if (g_stAfSes.bRestartRunning)
-  {
-    atomic_store(&g_bAfQuitting, DM_TRUE);
-  }
+  if (g_stAfSes.bRestartRunning) { atomic_store(&g_bAfQuitting, DM_TRUE); }
   if (g_stAfSes.bRestartRunning || (g_stAfSes.u32InflightSave > 0u))
   {
     int iHold = dm_drain_hold(pstDrain);
@@ -753,9 +771,11 @@ static void af__ses_drain(io dm_drain_st *pstDrain)
 static void af__ses_fini(void)
 {
   af_ses_front_stop();
+  af_ses_direct_fini();
   (void)dm_event_unsubscribe(AF_EV_ENV_UPDATED, af__on_simple_menu_ev);
   (void)dm_event_unsubscribe(AF_EV_KBD_CHANGED, af__on_simple_menu_ev);
-  (void)dm_event_unsubscribe(AF_EV_DISPLAY_CHANGED, af__on_simple_menu_ev);
+  (void)dm_event_unsubscribe(AF_EV_DISPLAY_CHANGED, af__on_disp_ev);
+  (void)dm_event_unsubscribe(AF_EV_STREAM_CHANGED, af__on_stream_ev);
   (void)dm_event_unsubscribe(AF_EV_SIDECAR_CHANGED, af__on_sidecar_ev);
   (void)dm_event_unsubscribe(AF_EV_SETUP_TODO, af__on_setup_todo);
   (void)dm_event_unsubscribe(AF_EV_AUTH_CHANGED, af__on_auth_ev);
@@ -763,16 +783,8 @@ static void af__ses_fini(void)
   memset(&g_stAfSes, 0, sizeof(g_stAfSes));
 }
 
-const dm_module_st g_stAfSessionMod = {
-    .u16ModID = AF_MOD_SESSION,
-    .pcName = "af_session",
-    .pfInit = af__ses_init,
-    .pfDrain = af__ses_drain,
-    .pfFini = af__ses_fini,
-    .pastErrMap = g_astAfSesErrMap
-};
+const dm_module_st g_stAfSessionMod = {.u16ModID = AF_MOD_SESSION, .pcName = "af_session",
+                                       .pfInit = af__ses_init,     .pfDrain = af__ses_drain,
+                                       .pfFini = af__ses_fini,     .pastErrMap = g_astAfSesErrMap};
 
-const dm_module_st *af_session_module(void)
-{
-  return &g_stAfSessionMod;
-}
+const dm_module_st *af_session_module(void) { return &g_stAfSessionMod; }

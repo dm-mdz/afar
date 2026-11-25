@@ -1,13 +1,20 @@
-# Afar_C Vendored libdm + dmc + dmcmd Baseline
-source_repo=BotFlow_C
-source_commit=31340c6023818ca2c1821f8d2352368e4e497bc8
+# Afar_C Vendored libdm + dmc + dmcmd Baseline (Zero C/H Local Patches)
+source_repo=DM
+source_tag=v2.1.0
+source_commit=4f1f068c8a80248040ba1de33b48941dcaf21633
 pruned_modules=db,child,secret,httpc
 third_party_libuv=840404ce8ba7cc0204be52389a6cfff9f2c90fb6
 third_party_llhttp=816485216511b86459b2e6478190e14c38c14891
 third_party_yyjson=6447536015f3d600f3d65323b10976103b337ca7
 third_party_mbedtls=82e69999f91126589a28b70dd75b69fbcabe2711
+third_party_monocypher=vendored-from-DM-v2.1.0
 
 # Zero-intrusion SHA-256 lock (enforced by tool/check_bld.py T-AF-BLD-03)
-sha256 public/dm/libdm/src/transport/conn.c 2eb7065118ab4396ee1cf45298594d65f5228f6be99bf4e62a0e26506c27241e
-sha256 public/dm/libdm/src/transport/http.c 16cfdad324022b6eefdaf7a4b36fb28c1b3fe6775dcbb3c8554f116ec62a8140
-sha256 public/dm/libdm/src/transport/ws.c 3e16bee453536f6fd45734c0983d2ef88500b390e68f8ba17cb7549c70783746
+sha256 public/dm/libdm/src/transport/conn.c 91c3f828c7e1d4763747a54c2ab88b48f400eabf5e160a7c2c7bf8d65ffa48e7
+sha256 public/dm/libdm/src/transport/http.c 56a81a9d55ef44f762a3d64fd12f8958ac4c9c4da9bb030aa2be044e32c24381
+sha256 public/dm/libdm/src/transport/ws.c 14986f3a073ad4e78ae0840b4513fac8435630da89d3d997f678651721a721d2
+sha256 public/dm/libdm/include/dm/thread.h 42083d68e50b5b472c2bf24673a44898685f756ac1ac022fe86eefc071cae84d
+sha256 public/dm/libdm/include/dm/loop.h 5d975b0474df0892697babf869462aa7cd4014e60fbe90f1d1d748d4c91e4bf4
+sha256 public/dm/libdm/include/dm/sock.h 86679b3b855f8c20fcbbf7e80dfd1ca518feb0085c3fc0eaf05527b832903f9e
+sha256 public/dm/libdm/include/dm/crypto.h a39db6336dfae416335128fe4874120e604901dfabf42f765adee0e1183a26bb
+sha256 public/dm/libdm/include/dm/version.h 5a5ec0dd26945b63530f7d6c4083f1c02fe6df88d9419b31e9b5b1695768828b

@@ -48,7 +48,7 @@ typedef struct dm__stat_one
 } dm__stat_one_st;
 
 static dm_hash_table_st g_stStatTable;
-static dm_check_st g_stStatCheck;
+static dm_uv_check_st g_stStatCheck;
 static bool_t g_bStatCheckUp = DM_FALSE;
 static uint64 g_u64LoopLast = 0;     /* 上一圈 check 的时刻 */
 static uint64 g_u64LoopLastIdle = 0; /* 那时累计的空闲时间 */
@@ -60,11 +60,11 @@ static uint32 g_u32PoolN = 0; /* 一共记了几个 */
 static uint64 g_u64PoolTotalNs = 0;
 static uint64 g_u64PoolMaxNs = 0;
 static uint64 g_u64PoolWarnAt = 0;
-static const char *(*g_pfStatName)(in uint uiLinkID) = NULL;
+static const char *(*g_pfStatName)(dm_in uint uiLinkID) = NULL;
 
 /* ============================ ① 处理项计时 ============================ */
 
-static dm__stat_one_st *dm__stat_get(in uint32 u32Key)
+static dm__stat_one_st *dm__stat_get(dm_in uint32 u32Key)
 {
   dm__stat_one_st *pstOne = NULL;
 
@@ -92,7 +92,7 @@ static dm__stat_one_st *dm__stat_get(in uint32 u32Key)
   return pstOne;
 }
 
-uint32 dm__stat_key(in uint uiLinkID, in uint8 u8Src, in uint64 u64Tag)
+uint32 dm__stat_key(dm_in uint uiLinkID, dm_in uint8 u8Src, dm_in uint64 u64Tag)
 {
   if (DM_SRC_EVENT == u8Src)
   {
@@ -101,7 +101,7 @@ uint32 dm__stat_key(in uint uiLinkID, in uint8 u8Src, in uint64 u64Tag)
   return (uint32)uiLinkID;
 }
 
-void dm__stat_call(in uint32 u32Key, in uint64 u64Ns, in bool_t bAfter)
+void dm__stat_call(dm_in uint32 u32Key, dm_in uint64 u64Ns, dm_in bool_t bAfter)
 {
   dm__stat_one_st *pstOne = dm__stat_get(u32Key);
   const char *pcName = NULL;
@@ -143,10 +143,10 @@ void dm__stat_call(in uint32 u32Key, in uint64 u64Ns, in bool_t bAfter)
 
 /* ============================ ② 一圈干了多久 ============================ */
 
-static void dm__stat_on_check(in dm_check_st *pstCheck)
+static void dm__stat_on_check(dm_in dm_uv_check_st *pstCheck)
 {
   uint64 u64Now = dm_hrtime();
-  uint64 u64Idle = dm_metrics_idle_time(dm_default_loop());
+  uint64 u64Idle = dm_uv_metrics_idle_time(dm_uv_default_loop());
   uint64 u64Busy = 0;
   (void)pstCheck;
 
@@ -178,7 +178,7 @@ uint64 dm__stat_loop_turns(void)
 
 /* ============================ ③ 线程池排队 ============================ */
 
-void dm__stat_pool(in uint64 u64WaitNs)
+void dm__stat_pool(dm_in uint64 u64WaitNs)
 {
   uint64 u64Sum = 0;
   uint32 u32Win = 0;
@@ -215,22 +215,22 @@ int dm__stat_init(void)
   int iErrCode = DM_SUCCESS;
 
   dm__stat_reset();
-  (void)dm_loop_configure(dm_default_loop(), DM_METRICS_IDLE_TIME);
-  iErrCode = dm_check_init(dm_default_loop(), &g_stStatCheck);
+  (void)dm_uv_loop_configure(dm_uv_default_loop(), DM_UV_METRICS_IDLE_TIME);
+  iErrCode = dm_uv_check_init(dm_uv_default_loop(), &g_stStatCheck);
   if (DM_SUCCESS == iErrCode)
   {
-    iErrCode = dm_check_start(&g_stStatCheck, dm__stat_on_check);
+    iErrCode = dm_uv_check_start(&g_stStatCheck, dm__stat_on_check);
   }
   if (DM_SUCCESS != iErrCode)
   {
     return iErrCode;
   }
-  dm_unref((dm_handle_st *)&g_stStatCheck); /* 不让循环为它活着 */
+  dm_uv_unref((dm_uv_handle_st *)&g_stStatCheck); /* 不让循环为它活着 */
   g_bStatCheckUp = DM_TRUE;
   return DM_SUCCESS;
 }
 
-static void dm__stat_free_one(in void *pvValue)
+static void dm__stat_free_one(dm_in void *pvValue)
 {
   dm_free_tag(pvValue);
   return;
@@ -257,8 +257,8 @@ void dm__stat_fini(void)
 {
   if (g_bStatCheckUp)
   {
-    (void)dm_check_stop(&g_stStatCheck);
-    dm_close((dm_handle_st *)&g_stStatCheck, NULL);
+    (void)dm_uv_check_stop(&g_stStatCheck);
+    dm_uv_close((dm_uv_handle_st *)&g_stStatCheck, NULL);
     g_bStatCheckUp = DM_FALSE;
   }
   dm__stat_reset();
@@ -268,13 +268,13 @@ void dm__stat_fini(void)
 /* ============================ 可选诊断视图导出（供 rpc/stat_rpc.c） ============================
  */
 
-void dm__stat_set_name_cb(in const char *(*pfName)(in uint uiLinkID))
+void dm__stat_set_name_cb(dm_in const char *(*pfName)(dm_in uint uiLinkID))
 {
   g_pfStatName = pfName;
   return;
 }
 
-void dm__stat_each(in dm__stat_row_cb pfRow, in void *pvArg)
+void dm__stat_each(dm_in dm__stat_row_cb pfRow, dm_in void *pvArg)
 {
   uint32 u32Idx = 0;
   dm_list_node_st *pstNode = NULL;
@@ -300,7 +300,7 @@ void dm__stat_each(in dm__stat_row_cb pfRow, in void *pvArg)
   return;
 }
 
-void dm__stat_summary(out dm__stat_summary_st *pstOut)
+void dm__stat_summary(dm_out dm__stat_summary_st *pstOut)
 {
   if (NULL == pstOut)
   {

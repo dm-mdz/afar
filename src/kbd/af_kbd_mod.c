@@ -18,7 +18,7 @@
 
 #include <dm.h>
 #include <dm/event.h>
-#include <dm/https.h>
+#include "base/af_https_srv.h"
 #include <dm/json.h>
 #include <dm/link.h>
 #include <dm/log.h>
@@ -86,6 +86,7 @@ typedef struct af_kbd_ctx
 {
   af_kbd_flow_st stFlow;
   bool_t bSidecarShowing;
+  bool_t bDirectActive;
   char acSidecarShowing[65];
   bool_t bTaking;
   uint32 u32TakeGen;
@@ -120,13 +121,13 @@ static const dm_err_entry_st g_astKbdErrs[] = {
 
 /* ============================ 平台钩子与通用辅助 ============================ */
 
-void af_kbd_set_ops(in const af_kbd_ops_st *pstOps)
+void af_kbd_set_ops(dm_in const af_kbd_ops_st *pstOps)
 {
   if (NULL == pstOps) { memset(&g_stOps, 0, sizeof(g_stOps)); }
   else { g_stOps = *pstOps; }
 }
 
-static void af__kbd_stop_timer(io uint32 *pu32Tmr)
+static void af__kbd_stop_timer(dm_io uint32 *pu32Tmr)
 {
   if (0u != *pu32Tmr) { (void)dm_timer_cancel(*pu32Tmr); *pu32Tmr = 0u; }
 }
@@ -144,7 +145,7 @@ static void af__kbd_emit_changed(void)
   if (!g_stKbd.bDraining) { (void)dm_event_publish(AF_EV_KBD_CHANGED, NULL, 0u); }
 }
 
-static af_bt_device_st *af__kbd_find_pair_found(in const char *pcAddr)
+static af_bt_device_st *af__kbd_find_pair_found(dm_in const char *pcAddr)
 {
   uint32 i = 0u;
   if ((NULL == pcAddr) || ('\0' == pcAddr[0])) { return NULL; }
@@ -155,7 +156,7 @@ static af_bt_device_st *af__kbd_find_pair_found(in const char *pcAddr)
   return NULL;
 }
 
-static void af__kbd_main_trampoline(io void *pvCtx)
+static void af__kbd_main_trampoline(dm_io void *pvCtx)
 {
   af_kbd_main_req_st *pstR = (af_kbd_main_req_st *)pvCtx;
   if (NULL == pstR) { return; }
@@ -166,7 +167,7 @@ static void af__kbd_main_trampoline(io void *pvCtx)
   dm_free_tag(pstR);
 }
 
-static void af__kbd_post_main(in af_kbd_main_kind_et eKind, in const char *pcStr)
+static void af__kbd_post_main(dm_in af_kbd_main_kind_et eKind, dm_in const char *pcStr)
 {
   af_kbd_main_req_st *pstR = (af_kbd_main_req_st *)dm_calloc_tag(1u, sizeof(*pstR), AF_KBD_TAG_MAIN);
   if (NULL == pstR) { return; }
@@ -176,7 +177,7 @@ static void af__kbd_post_main(in af_kbd_main_kind_et eKind, in const char *pcStr
   AF_KBD_OP(pfRunOnMain, af_plat_run_on_main)(af__kbd_main_trampoline, pstR);
 }
 
-static void af__trim_copy(in const char *pcSrc, out char *pcDst, in size_t uCap)
+static void af__trim_copy(dm_in const char *pcSrc, dm_out char *pcDst, dm_in size_t uCap)
 {
   size_t uLen = 0u;
   const char *pcEnd = NULL;
@@ -194,7 +195,7 @@ static void af__trim_copy(in const char *pcSrc, out char *pcDst, in size_t uCap)
 
 /* ============================ HEAVY 串行连断与 pfDrain ============================ */
 
-static int af__kbd_submit_bt(in bool_t bIsConnect, in const char *pcAddr, in uint32 u32Gen);
+static int af__kbd_submit_bt(dm_in bool_t bIsConnect, dm_in const char *pcAddr, dm_in uint32 u32Gen);
 
 static void af__kbd_drain_step(void)
 {
@@ -213,7 +214,7 @@ static void af__kbd_drain_step(void)
   if (iHold > 0) { dm_drain_release(iHold); }
 }
 
-static void af__kbd_on_drain_saved(in int iErr, io void *pvCtx)
+static void af__kbd_on_drain_saved(dm_in int iErr, dm_io void *pvCtx)
 {
   (void)iErr;
   (void)pvCtx;
@@ -232,7 +233,7 @@ static void af__kbd_take_timeout(void)
   af__kbd_emit_changed();
 }
 
-static void af__kbd_bt_work(io void *pvArg)
+static void af__kbd_bt_work(dm_io void *pvArg)
 {
   af_kbd_bt_job_st *pstJ = (af_kbd_bt_job_st *)pvArg;
   pstJ->iRet = pstJ->bIsConnect
@@ -240,7 +241,7 @@ static void af__kbd_bt_work(io void *pvArg)
                    : AF_KBD_OP_OF(pstJ->stOps, pfBtDisconnect, af_plat_bt_disconnect)(pstJ->acAddr);
 }
 
-static void af__kbd_on_connect_done(in uint32 u32Gen, in int iStatus, in int iRet)
+static void af__kbd_on_connect_done(dm_in uint32 u32Gen, dm_in int iStatus, dm_in int iRet)
 {
   uint32 u32Step = (g_stOps.u32TakeStepMs > 0u) ? g_stOps.u32TakeStepMs : AF_KBD_TAKE_STEP;
   if ((!g_stKbd.bTaking) || (u32Gen != g_stKbd.u32TakeGen) || atomic_load(&g_bAfQuitting)) { return; }
@@ -256,7 +257,7 @@ static void af__kbd_on_connect_done(in uint32 u32Gen, in int iStatus, in int iRe
   if (DM_SUCCESS != dm_timer_add(u32Step, 0u, AF_KBD_LINK_TAKE_TMR, (uint64)u32Gen, &g_stKbd.u32TakeTimer)) { g_stKbd.bTaking = DM_FALSE; }
 }
 
-static void af__kbd_bt_after(io void *pvArg, in int iStatus)
+static void af__kbd_bt_after(dm_io void *pvArg, dm_in int iStatus)
 {
   af_kbd_bt_job_st *pstJ = (af_kbd_bt_job_st *)pvArg;
   bool_t bIsConnect = pstJ->bIsConnect;
@@ -299,7 +300,7 @@ static void af__kbd_bt_after(io void *pvArg, in int iStatus)
   }
 }
 
-static int af__kbd_submit_bt(in bool_t bIsConnect, in const char *pcAddr, in uint32 u32Gen)
+static int af__kbd_submit_bt(dm_in bool_t bIsConnect, dm_in const char *pcAddr, dm_in uint32 u32Gen)
 {
   af_kbd_bt_job_st *pstJ = NULL;
   int iErr = DM_SUCCESS;
@@ -316,7 +317,7 @@ static int af__kbd_submit_bt(in bool_t bIsConnect, in const char *pcAddr, in uin
   return iErr;
 }
 
-static void af__kbd_request_disconnect(in const char *pcAddr)
+static void af__kbd_request_disconnect(dm_in const char *pcAddr)
 {
   if ((NULL == pcAddr) || ('\0' == pcAddr[0])) { return; }
   af__kbd_cancel_take();
@@ -325,7 +326,7 @@ static void af__kbd_request_disconnect(in const char *pcAddr)
   AF_KBD_COPY(g_stKbd.acPendingDiscAddr, pcAddr);
 }
 
-static void af__kbd_release_old_taken(in const char *pcOldAddr)
+static void af__kbd_release_old_taken(dm_in const char *pcOldAddr)
 {
   af__kbd_cancel_take();
   if (!g_stKbd.stFlow.bTaken) { return; }
@@ -334,7 +335,7 @@ static void af__kbd_release_old_taken(in const char *pcOldAddr)
   af__kbd_request_disconnect(pcOldAddr);
 }
 
-static void af__kbd_exec_act(in af_kbd_act_et eAct)
+static void af__kbd_exec_act(dm_in af_kbd_act_et eAct)
 {
   const af_state_st *pstSt = af_store_state();
   uint32 u32MaxMs = (g_stOps.u32TakeMaxMs > 0u) ? g_stOps.u32TakeMaxMs : AF_KBD_TAKE_MAX_MS;
@@ -374,43 +375,49 @@ static void af__kbd_exec_act(in af_kbd_act_et eAct)
   }
 }
 
-static void af__kbd_drive_tick(in uint64 u64NowMs)
+static void af__kbd_drive_tick(dm_in uint64 u64NowMs)
 {
   const af_state_st *pstSt = af_store_state();
   const char *apcConn[1] = {g_stKbd.acSidecarShowing};
   uint32 u32Cnt = (g_stKbd.bSidecarShowing && ('\0' != g_stKbd.acSidecarShowing[0])) ? 1u : 0u;
-  bool_t bKbOnMac = (pstSt->bHasKeyboard && ('\0' != pstSt->stKeyboard.acAddr[0]))
-                        ? AF_KBD_OP(pfBtIsConnected, af_plat_bt_is_connected)(pstSt->stKeyboard.acAddr)
-                        : DM_FALSE;
-  af_kbd_act_et eAct = af_kbd_flow_tick(&g_stKbd.stFlow, apcConn, u32Cnt, bKbOnMac, u64NowMs);
+  bool_t bKbOnMac = DM_FALSE;
+  af_kbd_act_et eAct = AF_KBD_ACT_NONE;
+  if (g_stKbd.bDirectActive) { return; }
+  bKbOnMac = (pstSt->bHasKeyboard && ('\0' != pstSt->stKeyboard.acAddr[0]))
+                 ? AF_KBD_OP(pfBtIsConnected, af_plat_bt_is_connected)(pstSt->stKeyboard.acAddr)
+                 : DM_FALSE;
+  eAct = af_kbd_flow_tick(&g_stKbd.stFlow, apcConn, u32Cnt, bKbOnMac, u64NowMs);
   if (AF_KBD_ACT_NONE != eAct) { af__kbd_exec_act(eAct); }
 }
 
 /* ============================ 定时器、事件与配对回调 ============================ */
 
-static int af__kbd_on_take_timer(io void *pvArg)
+static int af__kbd_on_take_timer(dm_io void *pvArg)
 {
   dm_link_msg_st *pstMsg = (dm_link_msg_st *)pvArg;
   g_stKbd.u32TakeTimer = 0u;
-  if ((!g_stKbd.bTaking) || g_stKbd.bDraining || atomic_load(&g_bAfQuitting) ||
-      (pstMsg->u64Tag != (uint64)g_stKbd.u32TakeGen))
-  {
-    return DM_SUCCESS;
-  }
+  if ((!g_stKbd.bTaking) || g_stKbd.bDraining || g_stKbd.bDirectActive ||
+      atomic_load(&g_bAfQuitting) || (pstMsg->u64Tag != (uint64)g_stKbd.u32TakeGen)) { return DM_SUCCESS; }
   if (AF_KBD_NOW_MS() >= g_stKbd.u64TakeDeadlineMs) { af__kbd_take_timeout(); return DM_SUCCESS; }
   if (0u != g_stKbd.u32InflightBt) { g_stKbd.bTakePending = DM_TRUE; }
   else if (DM_SUCCESS != af__kbd_submit_bt(DM_TRUE, g_stKbd.acTakeAddr, g_stKbd.u32TakeGen)) { g_stKbd.bTaking = DM_FALSE; }
   return DM_SUCCESS;
 }
 
-static int af__kbd_on_tick_timer(io void *pvArg)
+static int af__kbd_on_tick_timer(dm_io void *pvArg) { (void)pvArg; if ((!g_stKbd.bDraining) && (!g_stKbd.bDirectActive)) { af__kbd_drive_tick(AF_KBD_NOW_MS()); } return DM_SUCCESS; }
+
+static int af__kbd_on_stream_ev(dm_io void *pvArg)
 {
-  (void)pvArg;
-  if (!g_stKbd.bDraining) { af__kbd_drive_tick(AF_KBD_NOW_MS()); }
+  dm_link_msg_st *pstMsg = (dm_link_msg_st *)pvArg;
+  af_ev_stream_st stEv;
+  if ((NULL == pstMsg) || (NULL == pstMsg->pu8Data) || (pstMsg->u32Len < sizeof(stEv))) { return DM_SUCCESS; }
+  memcpy(&stEv, pstMsg->pu8Data, sizeof(stEv));
+  g_stKbd.bDirectActive = ((AF_STREAM_STARTING == stEv.eCur) || (AF_STREAM_STREAMING == stEv.eCur)) ? DM_TRUE : DM_FALSE;
+  if (g_stKbd.bDirectActive) { af__kbd_cancel_take(); }
   return DM_SUCCESS;
 }
 
-static int af__kbd_on_sidecar_ev(io void *pvArg)
+static int af__kbd_on_sidecar_ev(dm_io void *pvArg)
 {
   dm_link_msg_st *pstMsg = (dm_link_msg_st *)pvArg;
   af_ev_sidecar_st stEv;
@@ -423,7 +430,7 @@ static int af__kbd_on_sidecar_ev(io void *pvArg)
   return DM_SUCCESS;
 }
 
-static void af__kbd_pair_finish_done(in const af_bt_pair_cb_msg_st *pstCb)
+static void af__kbd_pair_finish_done(dm_in const af_bt_pair_cb_msg_st *pstCb)
 {
   af_bt_device_st stPicked;
   af_bt_device_st *pstFound = NULL;
@@ -450,7 +457,7 @@ static void af__kbd_pair_finish_done(in const af_bt_pair_cb_msg_st *pstCb)
   (void)af_store_save_async(NULL, NULL);
 }
 
-static int af__kbd_on_pair_cb(io void *pvArg)
+static int af__kbd_on_pair_cb(dm_io void *pvArg)
 {
   dm_link_msg_st *pstMsg = (dm_link_msg_st *)pvArg;
   af_bt_pair_cb_msg_st stCb;
@@ -482,7 +489,7 @@ static int af__kbd_on_pair_cb(io void *pvArg)
 
 /* ============================ DEFAULT 泳道查询与 HTTPS 路由 ============================ */
 
-static void af__kbd_query_work(io void *pvArg)
+static void af__kbd_query_work(dm_io void *pvArg)
 {
   af_kbd_query_job_st *pstJ = (af_kbd_query_job_st *)pvArg;
   uint32 i = 0u;
@@ -501,7 +508,7 @@ static void af__kbd_query_work(io void *pvArg)
   }
 }
 
-static void af__kbd_reply_list(in const af_kbd_query_job_st *pstJ)
+static void af__kbd_reply_list(dm_in const af_kbd_query_job_st *pstJ)
 {
   yyjson_mut_doc *pstDoc = yyjson_mut_doc_new(dm_json_alc());
   yyjson_mut_val *pstArr = NULL;
@@ -530,7 +537,7 @@ static void af__kbd_reply_list(in const af_kbd_query_job_st *pstJ)
   else { af_https_send_err(pstJ->u64ReplyId, 500u, "internal", "序列化失败"); }
 }
 
-static void af__kbd_query_after(io void *pvArg, in int iStatus)
+static void af__kbd_query_after(dm_io void *pvArg, dm_in int iStatus)
 {
   af_kbd_query_job_st *pstJ = (af_kbd_query_job_st *)pvArg;
   af_state_st *pstSt = af_store_state_mut();
@@ -559,7 +566,7 @@ static void af__kbd_query_after(io void *pvArg, in int iStatus)
   dm_free_tag(pstJ);
 }
 
-static void af__kbd_submit_query(in uint64 u64ReplyId, in bool_t bIsSet, in const char *pcAddr)
+static void af__kbd_submit_query(dm_in uint64 u64ReplyId, dm_in bool_t bIsSet, dm_in const char *pcAddr)
 {
   af_kbd_query_job_st *pstJ = NULL;
   if (g_stKbd.bDraining) { af_https_send_err(u64ReplyId, 500u, "internal", "服务正在退出"); return; }
@@ -578,13 +585,13 @@ static void af__kbd_submit_query(in uint64 u64ReplyId, in bool_t bIsSet, in cons
   }
 }
 
-static void af__kbd_http_get_keyboards(in const dm_https_msg_st *pstMsg)
+static void af__kbd_http_get_keyboards(dm_in const af_https_msg_st *pstMsg)
 {
   af_device_st stDev;
   if (af_auth_check_https(pstMsg, &stDev)) { af__kbd_submit_query(pstMsg->u64ReplyId, DM_FALSE, NULL); }
 }
 
-static void af__kbd_act_set(in uint64 u64ReplyId, in yyjson_val *pstRoot)
+static void af__kbd_act_set(dm_in uint64 u64ReplyId, dm_in yyjson_val *pstRoot)
 {
   yyjson_val *pstAddr = yyjson_obj_get(pstRoot, "address");
   char acAddr[32] = {0};
@@ -608,7 +615,7 @@ static void af__kbd_act_set(in uint64 u64ReplyId, in yyjson_val *pstRoot)
   af_https_send_ok(u64ReplyId, "{\"ok\":true}");
 }
 
-static void af__kbd_act_pair(in uint64 u64ReplyId, in yyjson_val *pstRoot)
+static void af__kbd_act_pair(dm_in uint64 u64ReplyId, dm_in yyjson_val *pstRoot)
 {
   yyjson_val *pstAddr = yyjson_obj_get(pstRoot, "address");
   char acAddr[32] = {0};
@@ -628,7 +635,7 @@ static void af__kbd_act_pair(in uint64 u64ReplyId, in yyjson_val *pstRoot)
   af_https_send_ok(u64ReplyId, "{\"ok\":true}");
 }
 
-static void af__kbd_dispatch_action(in uint64 u64ReplyId, in const char *pcAct, in yyjson_val *pstRoot)
+static void af__kbd_dispatch_action(dm_in uint64 u64ReplyId, dm_in const char *pcAct, dm_in yyjson_val *pstRoot)
 {
   const af_state_st *pstSt = af_store_state();
   if (0 == strcmp(pcAct, "set")) { af__kbd_act_set(u64ReplyId, pstRoot); }
@@ -672,7 +679,7 @@ static void af__kbd_dispatch_action(in uint64 u64ReplyId, in const char *pcAct, 
   else { af_https_send_err(u64ReplyId, 400u, "bad_request", "未知操作"); }
 }
 
-static void af__kbd_http_post_keyboard(in const dm_https_msg_st *pstMsg)
+static void af__kbd_http_post_keyboard(dm_in const af_https_msg_st *pstMsg)
 {
   af_device_st stDev;
   yyjson_doc *pstDoc = NULL;
@@ -690,7 +697,7 @@ static void af__kbd_http_post_keyboard(in const dm_https_msg_st *pstMsg)
   yyjson_doc_free(pstDoc);
 }
 
-void af_kbd_get_snap(out af_kbd_snap_st *pstOut)
+void af_kbd_get_snap(dm_out af_kbd_snap_st *pstOut)
 {
   const af_state_st *pstSt = af_store_state();
   uint64 u64Now = AF_KBD_NOW_MS();
@@ -705,14 +712,14 @@ void af_kbd_get_snap(out af_kbd_snap_st *pstOut)
   pstOut->stPair = g_stKbd.stPair;
 }
 
-void af_kbd_notify_connect(in const char *pcTarget, in bool_t bKeyboard)
+void af_kbd_notify_connect(dm_in const char *pcTarget, dm_in bool_t bKeyboard)
 {
   uint64 u64Now = AF_KBD_NOW_MS();
   af_kbd_flow_on_connect(&g_stKbd.stFlow, pcTarget, bKeyboard, u64Now);
   af__kbd_drive_tick(u64Now);
 }
 
-void af_kbd_notify_disconnect(in bool_t bShowingNow)
+void af_kbd_notify_disconnect(dm_in bool_t bShowingNow)
 {
   uint64 u64Now = AF_KBD_NOW_MS();
   af__kbd_cancel_take();
@@ -720,7 +727,7 @@ void af_kbd_notify_disconnect(in bool_t bShowingNow)
   if (!bShowingNow) { g_stKbd.bSidecarShowing = DM_FALSE; g_stKbd.acSidecarShowing[0] = '\0'; af__kbd_drive_tick(u64Now); }
 }
 
-void af_kbd_hold(in uint64 u64UntilMs) { af_kbd_flow_hold(&g_stKbd.stFlow, u64UntilMs); }
+void af_kbd_hold(dm_in uint64 u64UntilMs) { af_kbd_flow_hold(&g_stKbd.stFlow, u64UntilMs); }
 
 static int af__kbd_init(void)
 {
@@ -733,12 +740,13 @@ static int af__kbd_init(void)
   if (DM_SUCCESS != (iErr = dm_link_register_handler(AF_KBD_LINK_TAKE_TMR, af__kbd_on_take_timer, NULL, NULL))) { return iErr; }
   if (DM_SUCCESS != (iErr = dm_link_register_handler(AF_KBD_LINK_TICK_TMR, af__kbd_on_tick_timer, NULL, NULL))) { return iErr; }
   if (DM_SUCCESS != (iErr = dm_event_subscribe(AF_EV_SIDECAR_CHANGED, af__kbd_on_sidecar_ev, NULL, NULL))) { return iErr; }
-  if (DM_SUCCESS != (iErr = dm_https_route_exact("GET", "/keyboards", af__kbd_http_get_keyboards))) { return iErr; }
-  if (DM_SUCCESS != (iErr = dm_https_route_exact("POST", "/keyboard", af__kbd_http_post_keyboard))) { return iErr; }
+  if (DM_SUCCESS != (iErr = dm_event_subscribe(AF_EV_STREAM_CHANGED, af__kbd_on_stream_ev, NULL, NULL))) { return iErr; }
+  if (DM_SUCCESS != (iErr = af_https_route_exact("GET", "/keyboards", af__kbd_http_get_keyboards))) { return iErr; }
+  if (DM_SUCCESS != (iErr = af_https_route_exact("POST", "/keyboard", af__kbd_http_post_keyboard))) { return iErr; }
   return dm_timer_add(AF_KBD_TICK_MS, AF_KBD_TICK_MS, AF_KBD_LINK_TICK_TMR, 0u, &g_stKbd.u32TickTimer);
 }
 
-static void af__kbd_drain(io dm_drain_st *pstDrain)
+static void af__kbd_drain(dm_io dm_drain_st *pstDrain)
 {
   bool_t bNeedDisc = DM_FALSE;
   char acDiscAddr[32] = {0};
@@ -778,16 +786,11 @@ static void af__kbd_drain(io dm_drain_st *pstDrain)
 
 static void af__kbd_fini(void)
 {
-  af__kbd_cancel_take();
-  af__kbd_stop_timer(&g_stKbd.u32TickTimer);
+  af__kbd_cancel_take(); af__kbd_stop_timer(&g_stKbd.u32TickTimer);
+  (void)dm_event_unsubscribe(AF_EV_STREAM_CHANGED, af__kbd_on_stream_ev);
   (void)dm_event_unsubscribe(AF_EV_SIDECAR_CHANGED, af__kbd_on_sidecar_ev);
   memset(&g_stKbd, 0, sizeof(g_stKbd));
 }
-
-const dm_module_st g_stAfKbdMod = {
-    .u16ModID = AF_MOD_KBD, .pcName = "af_kbd",
-    .pfInit = af__kbd_init, .pfDrain = af__kbd_drain,
-    .pfFini = af__kbd_fini, .pastErrMap = g_astKbdErrs
-};
-
+const dm_module_st g_stAfKbdMod = {.u16ModID = AF_MOD_KBD, .pcName = "af_kbd", .pfInit = af__kbd_init,
+                                   .pfDrain = af__kbd_drain, .pfFini = af__kbd_fini, .pastErrMap = g_astKbdErrs};
 const dm_module_st *af_kbd_module(void) { return &g_stAfKbdMod; }

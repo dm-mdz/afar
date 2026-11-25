@@ -53,18 +53,21 @@ typedef struct af_setup_view
   char acPlan[8]; /* "auto" | "fv" */
   char acBusy[8]; /* "one" | "ssh" | "" */
   char acError[256];
+  bool_t bPermSc; /* 屏幕录制权限 */
+  bool_t bPermAx; /* 辅助功能权限 */
 } af_setup_view_st;
 
 /* 可选测试注入钩子（NULL 成员回退真实 af_plat_* / af_env_*） */
-typedef int (*af_setup_cmd_fn)(in const char *const *ppcArgv, in const char *pcStdin,
-                               in const _Atomic bool_t *pbCancel, out char *pcOut,
-                               in size_t uOutCap, in uint32 u32TimeoutMs, out int *piExitCode);
+typedef int (*af_setup_cmd_fn)(dm_in const char *const *ppcArgv, dm_in const char *pcStdin,
+                               dm_in const _Atomic bool_t *pbCancel, dm_out char *pcOut,
+                               dm_in size_t uOutCap, dm_in uint32 u32TimeoutMs,
+                               dm_out int *piExitCode);
 
 typedef struct af_setup_ops
 {
   af_setup_cmd_fn pfRunCmd;
-  int (*pfOpenUrl)(in const char *pcUrl);
-  void (*pfRunOnMain)(in af_main_fn pfFn, io void *pvCtx);
+  int (*pfOpenUrl)(dm_in const char *pcUrl);
+  void (*pfRunOnMain)(dm_in af_main_fn pfFn, dm_io void *pvCtx);
   void (*pfEnvProbeNow)(void);
   const char *pcExePath;
   uint32 u32CmdTimeoutMs;
@@ -74,19 +77,20 @@ extern const dm_module_st g_stAfSetupMod;
 const dm_module_st *af_setup_module(void);
 
 /* 由 src/main.c 注入壳回调（提供双名兼容 DD-05 与装配调用） */
-void af_setup_set_ui_cb(in af_setup_push_cb pfPush, in af_setup_win_cb pfWin);
-void af_setup_set_ui_cbs(in af_setup_push_cb pfPush, in af_setup_win_cb pfWin);
-void af_setup_set_ops(in const af_setup_ops_st *pstOps);
+void af_setup_set_ui_cb(dm_in af_setup_push_cb pfPush, dm_in af_setup_win_cb pfWin);
+void af_setup_set_ui_cbs(dm_in af_setup_push_cb pfPush, dm_in af_setup_win_cb pfWin);
+void af_setup_set_ops(dm_in const af_setup_ops_st *pstOps);
 
 /* 纯逻辑单测接口 */
-uint32 af_setup_calc_todo(in const af_setup_view_st *pstV);
-int af_setup_sh_quote(in const char *pcStr, out char *pcBuf, in size_t uCap);
-int af_setup_applescript_str(in const char *pcStr, out char *pcBuf, in size_t uCap);
-int af_setup_build_one_script(in const char *pcExePath, out char *pcBuf, in size_t uCap);
-int af_setup_build_ssh_script(out char *pcBuf, in size_t uCap);
-bool_t af_setup_parse_fail(in const char *pcOut, out char *pcErrOut, in size_t uErrCap);
-const char *af_setup_settings_url(in const char *pcWhat);
-void af_setup_format_date(in uint64 u64EpochSec, in int iCurYear, out char *pcBuf, in size_t uCap);
+uint32 af_setup_calc_todo(dm_in const af_setup_view_st *pstV);
+int af_setup_sh_quote(dm_in const char *pcStr, dm_out char *pcBuf, dm_in size_t uCap);
+int af_setup_applescript_str(dm_in const char *pcStr, dm_out char *pcBuf, dm_in size_t uCap);
+int af_setup_build_one_script(dm_in const char *pcExePath, dm_out char *pcBuf, dm_in size_t uCap);
+int af_setup_build_ssh_script(dm_out char *pcBuf, dm_in size_t uCap);
+bool_t af_setup_parse_fail(dm_in const char *pcOut, dm_out char *pcErrOut, dm_in size_t uErrCap);
+const char *af_setup_settings_url(dm_in const char *pcWhat);
+void af_setup_format_date(dm_in uint64 u64EpochSec, dm_in int iCurYear, dm_out char *pcBuf,
+                          dm_in size_t uCap);
 
 #ifdef __cplusplus
 }

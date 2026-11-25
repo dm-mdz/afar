@@ -25,6 +25,7 @@ typedef struct af__power_ctx
 {
   uint32 u32PhysCount;
   af_sc_state_et eScState;
+  bool_t bDirectStreaming;
   bool_t bHolding;
   bool_t bSsSaveInflight;
   bool_t bDraining;
@@ -35,7 +36,7 @@ static af__power_ctx_st g_stPwr;
 static af_power_ops_st g_stPwrOps;
 static bool_t g_bPwrOpsInited = DM_FALSE;
 
-static void af__pwr_init_default_ops(out af_power_ops_st *pstOps)
+static void af__pwr_init_default_ops(dm_out af_power_ops_st *pstOps)
 {
   memset(pstOps, 0, sizeof(*pstOps));
   pstOps->pfPowerHold = af_plat_power_hold;
@@ -54,7 +55,7 @@ static const af_power_ops_st *af__pwr_ops(void)
   return &g_stPwrOps;
 }
 
-void af_power_set_ops(in const af_power_ops_st *pstOps)
+void af_power_set_ops(dm_in const af_power_ops_st *pstOps)
 {
   af__pwr_init_default_ops(&g_stPwrOps);
   g_bPwrOpsInited = DM_TRUE;
@@ -62,15 +63,34 @@ void af_power_set_ops(in const af_power_ops_st *pstOps)
   {
     return;
   }
-  if (NULL != pstOps->pfPowerHold) { g_stPwrOps.pfPowerHold = pstOps->pfPowerHold; }
-  if (NULL != pstOps->pfSsGet) { g_stPwrOps.pfSsGet = pstOps->pfSsGet; }
-  if (NULL != pstOps->pfSsSet) { g_stPwrOps.pfSsSet = pstOps->pfSsSet; }
-  if (NULL != pstOps->pfSsDelete) { g_stPwrOps.pfSsDelete = pstOps->pfSsDelete; }
+  if (NULL != pstOps->pfPowerHold)
+  {
+    g_stPwrOps.pfPowerHold = pstOps->pfPowerHold;
+  }
+  if (NULL != pstOps->pfSsGet)
+  {
+    g_stPwrOps.pfSsGet = pstOps->pfSsGet;
+  }
+  if (NULL != pstOps->pfSsSet)
+  {
+    g_stPwrOps.pfSsSet = pstOps->pfSsSet;
+  }
+  if (NULL != pstOps->pfSsDelete)
+  {
+    g_stPwrOps.pfSsDelete = pstOps->pfSsDelete;
+  }
 }
 
-bool_t af_power_should_hold(in uint32 u32PhysCount, in af_sc_state_et eScState)
+bool_t af_power_should_hold_ex(dm_in uint32 u32PhysCount, dm_in af_sc_state_et eScState,
+                               dm_in bool_t bDirectStreaming)
 {
-  return ((0u == u32PhysCount) || (AF_SC_SHOWING == eScState)) ? DM_TRUE : DM_FALSE;
+  return ((0u == u32PhysCount) || (AF_SC_SHOWING == eScState) || bDirectStreaming) ? DM_TRUE
+                                                                                   : DM_FALSE;
+}
+
+bool_t af_power_should_hold(dm_in uint32 u32PhysCount, dm_in af_sc_state_et eScState)
+{
+  return af_power_should_hold_ex(u32PhysCount, eScState, DM_FALSE);
 }
 
 bool_t af_power_is_holding(void)
@@ -78,7 +98,7 @@ bool_t af_power_is_holding(void)
   return g_stPwr.bHolding;
 }
 
-static void af__pwr_apply_restore_hw(in const af_orig_ss_st *pstOrig)
+static void af__pwr_apply_restore_hw(dm_in const af_orig_ss_st *pstOrig)
 {
   const af_power_ops_st *pstOps = af__pwr_ops();
   if (pstOrig->bKnown && (pstOrig->iSec > 0))
@@ -91,8 +111,8 @@ static void af__pwr_apply_restore_hw(in const af_orig_ss_st *pstOrig)
   }
 }
 
-void af_power_restore_screensaver(io af_orig_ss_st *pstOrig, in bool_t bSyncSave,
-                                  in const char *pcDataDir)
+void af_power_restore_screensaver(dm_io af_orig_ss_st *pstOrig, dm_in bool_t bSyncSave,
+                                  dm_in const char *pcDataDir)
 {
   if ((NULL == pstOrig) || (!pstOrig->bSaved))
   {
@@ -112,7 +132,7 @@ void af_power_restore_screensaver(io af_orig_ss_st *pstOrig, in bool_t bSyncSave
   }
 }
 
-static void af__pwr_on_ss_saved(in int iStatus, io void *pvCtx)
+static void af__pwr_on_ss_saved(dm_in int iStatus, dm_io void *pvCtx)
 {
   const af_power_ops_st *pstOps = af__pwr_ops();
   (void)pvCtx;
@@ -124,7 +144,7 @@ static void af__pwr_on_ss_saved(in int iStatus, io void *pvCtx)
   }
 }
 
-static void af__pwr_on_drain_saved(in int iStatus, io void *pvCtx)
+static void af__pwr_on_drain_saved(dm_in int iStatus, dm_io void *pvCtx)
 {
   int iHold = (int)(uintptr_t)pvCtx;
   (void)iStatus;
@@ -202,7 +222,7 @@ static void af__pwr_eval(void)
   {
     return;
   }
-  bNeed = af_power_should_hold(g_stPwr.u32PhysCount, g_stPwr.eScState);
+  bNeed = af_power_should_hold_ex(g_stPwr.u32PhysCount, g_stPwr.eScState, g_stPwr.bDirectStreaming);
   if (bNeed && (!g_stPwr.bHolding))
   {
     af__pwr_enter_hold();
@@ -244,6 +264,23 @@ static int af__pwr_on_sidecar_ev(void *pvArg)
   return DM_SUCCESS;
 }
 
+static int af__pwr_on_stream_ev(void *pvArg)
+{
+  const dm_link_msg_st *pstMsg = (const dm_link_msg_st *)pvArg;
+  af_ev_stream_st stEv;
+
+  if ((NULL == pstMsg) || (pstMsg->u32Len < sizeof(stEv)) || (NULL == pstMsg->pu8Data))
+  {
+    return DM_SUCCESS;
+  }
+  memcpy(&stEv, pstMsg->pu8Data, sizeof(stEv));
+  g_stPwr.bDirectStreaming =
+      ((AF_STREAM_STARTING == stEv.eCur) || (AF_STREAM_STREAMING == stEv.eCur)) ? DM_TRUE
+                                                                                : DM_FALSE;
+  af__pwr_eval();
+  return DM_SUCCESS;
+}
+
 static int af__pwr_init(void)
 {
   int iRc = DM_SUCCESS;
@@ -253,11 +290,19 @@ static int af__pwr_init(void)
   g_stPwr.eScState = AF_SC_IDLE;
 
   iRc = dm_event_subscribe(AF_EV_DISPLAY_CHANGED, af__pwr_on_display_ev, NULL, NULL);
-  if (DM_SUCCESS != iRc) { return iRc; }
-  return dm_event_subscribe(AF_EV_SIDECAR_CHANGED, af__pwr_on_sidecar_ev, NULL, NULL);
+  if (DM_SUCCESS != iRc)
+  {
+    return iRc;
+  }
+  iRc = dm_event_subscribe(AF_EV_SIDECAR_CHANGED, af__pwr_on_sidecar_ev, NULL, NULL);
+  if (DM_SUCCESS != iRc)
+  {
+    return iRc;
+  }
+  return dm_event_subscribe(AF_EV_STREAM_CHANGED, af__pwr_on_stream_ev, NULL, NULL);
 }
 
-static void af__pwr_drain(io dm_drain_st *pstDrain)
+static void af__pwr_drain(dm_io dm_drain_st *pstDrain)
 {
   const af_power_ops_st *pstOps = af__pwr_ops();
   af_orig_ss_st *pstOrig = &af_store_state_mut()->stOrigSs;
@@ -292,19 +337,18 @@ static void af__pwr_drain(io dm_drain_st *pstDrain)
 
 static void af__pwr_fini(void)
 {
+  (void)dm_event_unsubscribe(AF_EV_STREAM_CHANGED, af__pwr_on_stream_ev);
   (void)dm_event_unsubscribe(AF_EV_SIDECAR_CHANGED, af__pwr_on_sidecar_ev);
   (void)dm_event_unsubscribe(AF_EV_DISPLAY_CHANGED, af__pwr_on_display_ev);
   memset(&g_stPwr, 0, sizeof(g_stPwr));
 }
 
-const dm_module_st g_stAfPowerMod = {
-    .u16ModID = AF_MOD_POWER,
-    .pcName = "af_power",
-    .pfInit = af__pwr_init,
-    .pfDrain = af__pwr_drain,
-    .pfFini = af__pwr_fini,
-    .pastErrMap = NULL
-};
+const dm_module_st g_stAfPowerMod = {.u16ModID = AF_MOD_POWER,
+                                     .pcName = "af_power",
+                                     .pfInit = af__pwr_init,
+                                     .pfDrain = af__pwr_drain,
+                                     .pfFini = af__pwr_fini,
+                                     .pastErrMap = NULL};
 
 const dm_module_st *af_power_module(void)
 {

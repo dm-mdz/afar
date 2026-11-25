@@ -18,7 +18,7 @@ extern "C"
 
 /* ============================ CRC16-CCITT ============================ */
 
-uint16 dmc_crc16_ccitt(in const uint8 *pu8Data, in size_t uLen)
+uint16 dmc_crc16_ccitt(dm_in const uint8 *pu8Data, dm_in size_t uLen)
 {
   uint16 u16Crc = 0xFFFFu;
   size_t uIdx = 0u;
@@ -46,7 +46,7 @@ uint16 dmc_crc16_ccitt(in const uint8 *pu8Data, in size_t uLen)
   return u16Crc;
 }
 
-size_t dmc_sync_max_encoded_len(in size_t uBodyLen)
+size_t dmc_sync_max_encoded_len(dm_in size_t uBodyLen)
 {
   size_t uPlain = 0u;
   size_t uCobsExtra = 0u;
@@ -76,7 +76,7 @@ typedef struct dmc__cobs_enc
   bool_t bOverflow;
 } dmc__cobs_enc_st;
 
-static void dmc__cobs_put_byte(io dmc__cobs_enc_st *pstEnc, in uint8 u8Byte)
+static void dmc__cobs_put_byte(dm_io dmc__cobs_enc_st *pstEnc, dm_in uint8 u8Byte)
 {
   if (pstEnc->bOverflow)
   {
@@ -115,7 +115,8 @@ static void dmc__cobs_put_byte(io dmc__cobs_enc_st *pstEnc, in uint8 u8Byte)
   return;
 }
 
-static void dmc__cobs_put_buf(io dmc__cobs_enc_st *pstEnc, in const uint8 *pu8Data, in size_t uLen)
+static void dmc__cobs_put_buf(dm_io dmc__cobs_enc_st *pstEnc, dm_in const uint8 *pu8Data,
+                              dm_in size_t uLen)
 {
   size_t uIdx = 0u;
   for (uIdx = 0u; !pstEnc->bOverflow && (uIdx < uLen); uIdx++)
@@ -125,8 +126,98 @@ static void dmc__cobs_put_buf(io dmc__cobs_enc_st *pstEnc, in const uint8 *pu8Da
   return;
 }
 
+int dmc_cobs_encode(dm_in const uint8 *pu8In, dm_in size_t uInLen, dm_out uint8 *pu8Out,
+                    dm_in size_t uOutCap, dm_out size_t *puOutLen)
+{
+  dmc__cobs_enc_st stEnc;
+
+  if (((NULL == pu8In) && (uInLen > 0u)) || (NULL == pu8Out) || (NULL == puOutLen))
+  {
+    return DMC_ERR_ARG;
+  }
+  *puOutLen = 0u;
+  if (uOutCap < 1u)
+  {
+    return DMC_ERR_QUEUE;
+  }
+  memset(&stEnc, 0, sizeof(stEnc));
+  stEnc.pu8Out = pu8Out;
+  stEnc.uCap = uOutCap;
+  stEnc.uCodeIdx = 0u;
+  stEnc.uWriteIdx = 1u;
+  stEnc.u8Code = 1u;
+  if (uInLen > 0u)
+  {
+    dmc__cobs_put_buf(&stEnc, pu8In, uInLen);
+  }
+  if (stEnc.bOverflow)
+  {
+    return DMC_ERR_QUEUE;
+  }
+  pu8Out[stEnc.uCodeIdx] = stEnc.u8Code;
+  *puOutLen = stEnc.uWriteIdx;
+  return DMC_OK;
+}
+
+int dmc_cobs_decode(dm_in const uint8 *pu8In, dm_in size_t uInLen, dm_out uint8 *pu8Out,
+                    dm_in size_t uOutCap, dm_out size_t *puOutLen)
+{
+  size_t uRead = 0u;
+  size_t uWrite = 0u;
+
+  if (((NULL == pu8In) && (uInLen > 0u)) || ((NULL == pu8Out) && (uOutCap > 0u)) ||
+      (NULL == puOutLen))
+  {
+    return DMC_ERR_ARG;
+  }
+  *puOutLen = 0u;
+  if (0u == uInLen)
+  {
+    return DMC_ERR_WIRE;
+  }
+  while (uRead < uInLen)
+  {
+    uint8 u8Code = pu8In[uRead++];
+    size_t uRun = 0u;
+    size_t uIdx = 0u;
+
+    if (0u == u8Code)
+    {
+      return DMC_ERR_WIRE;
+    }
+    uRun = (size_t)(u8Code - 1u);
+    if (uRun > (uInLen - uRead))
+    {
+      return DMC_ERR_WIRE;
+    }
+    for (uIdx = 0u; uIdx < uRun; uIdx++)
+    {
+      uint8 u8Byte = pu8In[uRead++];
+      if (0u == u8Byte)
+      {
+        return DMC_ERR_WIRE;
+      }
+      if (uWrite >= uOutCap)
+      {
+        return DMC_ERR_QUEUE;
+      }
+      pu8Out[uWrite++] = u8Byte;
+    }
+    if ((u8Code < 0xFFu) && (uRead < uInLen))
+    {
+      if (uWrite >= uOutCap)
+      {
+        return DMC_ERR_QUEUE;
+      }
+      pu8Out[uWrite++] = 0x00u;
+    }
+  }
+  *puOutLen = uWrite;
+  return DMC_OK;
+}
+
 /* 增量更新 CRC16-CCITT（避免整帧二次缓冲分配） */
-static uint16 dmc__crc16_update(in uint16 u16Crc, in const uint8 *pu8Data, in size_t uLen)
+static uint16 dmc__crc16_update(dm_in uint16 u16Crc, dm_in const uint8 *pu8Data, dm_in size_t uLen)
 {
   size_t uIdx = 0u;
   for (uIdx = 0u; uIdx < uLen; uIdx++)
@@ -142,8 +233,8 @@ static uint16 dmc__crc16_update(in uint16 u16Crc, in const uint8 *pu8Data, in si
   return u16Crc;
 }
 
-int dmc_sync_encode(in const dm_frame_head_st *pstHead, in const void *pvBody, out uint8 *pu8Out,
-                    in size_t uOutCap, out size_t *puOutLen)
+int dmc_sync_encode(dm_in const dm_frame_head_st *pstHead, dm_in const void *pvBody,
+                    dm_out uint8 *pu8Out, dm_in size_t uOutCap, dm_out size_t *puOutLen)
 {
   uint8 au8Magic[2] = {DMC_SYNC_MAGIC_0, DMC_SYNC_MAGIC_1};
   uint8 au8Head[DM_FRAME_HEAD];
@@ -199,7 +290,8 @@ int dmc_sync_encode(in const dm_frame_head_st *pstHead, in const void *pvBody, o
 /* ============================ 流式 COBS 解码器 ============================ */
 
 /* 原地 COBS 解码（解码后长度严格 <= 编码长度）；失败返回 DM_FALSE */
-static bool_t dmc__cobs_decode_inplace(io uint8 *pu8Buf, in size_t uEncLen, out size_t *puPlainLen)
+static bool_t dmc__cobs_decode_inplace(dm_io uint8 *pu8Buf, dm_in size_t uEncLen,
+                                       dm_out size_t *puPlainLen)
 {
   size_t uRead = 0u;
   size_t uWrite = 0u;
@@ -237,22 +329,45 @@ static bool_t dmc__cobs_decode_inplace(io uint8 *pu8Buf, in size_t uEncLen, out 
   return DM_TRUE;
 }
 
-static void dmc__sync_finish_pkt(io dmc_sync_dec_st *pstDec, in dmc_sync_frame_cb pfOnFrame,
-                                 in dmc_sync_err_cb pfOnErr, in void *pvUser)
+static void dmc__sync_emit_err(dm_io dmc_sync_dec_st *pstDec, dm_in dmc_sync_err_cb pfOnErr,
+                               dm_in void *pvUser, dm_io dmc_sync_stats_st *pstStats,
+                               dm_in int iErr)
+{
+  pstDec->bHadErr = DM_TRUE;
+  if (NULL != pstStats)
+  {
+    if (DMC_ERR_CRC == iErr)
+    {
+      pstStats->u64CrcErrors++;
+    }
+    else
+    {
+      pstStats->u64WireErrors++;
+    }
+  }
+  if (NULL != pfOnErr)
+  {
+    pfOnErr(pvUser, iErr);
+  }
+  return;
+}
+
+static void dmc__sync_finish_pkt(dm_io dmc_sync_dec_st *pstDec, dm_in const dmc_sync_cbs_st *pstCbs,
+                                 dm_io dmc_sync_stats_st *pstStats)
 {
   size_t uPlain = 0u;
   dm_frame_head_st stHead;
   uint16 u16Calc = 0u;
   uint16 u16Got = 0u;
+  dmc_sync_frame_cb pfOnFrame = (NULL != pstCbs) ? pstCbs->pfOnFrame : NULL;
+  dmc_sync_err_cb pfOnErr = (NULL != pstCbs) ? pstCbs->pfOnErr : NULL;
+  void *pvUser = (NULL != pstCbs) ? pstCbs->pvUser : NULL;
 
   if (pstDec->bOverflow)
   {
     pstDec->bOverflow = DM_FALSE;
     pstDec->uLen = 0u;
-    if (NULL != pfOnErr)
-    {
-      pfOnErr(pvUser, DMC_ERR_WIRE);
-    }
+    dmc__sync_emit_err(pstDec, pfOnErr, pvUser, pstStats, DMC_ERR_WIRE);
     return;
   }
   if (0u == pstDec->uLen)
@@ -262,42 +377,39 @@ static void dmc__sync_finish_pkt(io dmc_sync_dec_st *pstDec, in dmc_sync_frame_c
   if (!dmc__cobs_decode_inplace(pstDec->pu8Buf, pstDec->uLen, &uPlain))
   {
     pstDec->uLen = 0u;
-    if (NULL != pfOnErr)
-    {
-      pfOnErr(pvUser, DMC_ERR_WIRE);
-    }
+    dmc__sync_emit_err(pstDec, pfOnErr, pvUser, pstStats, DMC_ERR_WIRE);
     return;
   }
   pstDec->uLen = 0u;
   if ((uPlain < DMC_SYNC_OVERHEAD) || (DMC_SYNC_MAGIC_0 != pstDec->pu8Buf[0]) ||
       (DMC_SYNC_MAGIC_1 != pstDec->pu8Buf[1]))
   {
-    if (NULL != pfOnErr)
-    {
-      pfOnErr(pvUser, DMC_ERR_WIRE);
-    }
+    dmc__sync_emit_err(pstDec, pfOnErr, pvUser, pstStats, DMC_ERR_WIRE);
     return;
   }
   u16Calc = dmc_crc16_ccitt(pstDec->pu8Buf, uPlain - 2u);
   u16Got = (uint16)dm_frame_rd16(pstDec->pu8Buf + uPlain - 2u);
   if (u16Calc != u16Got)
   {
-    if (NULL != pfOnErr)
-    {
-      pfOnErr(pvUser, DMC_ERR_CRC);
-    }
+    dmc__sync_emit_err(pstDec, pfOnErr, pvUser, pstStats, DMC_ERR_CRC);
     return;
   }
   dm_frame_get(pstDec->pu8Buf + 2u, &stHead);
   if ((stHead.u32Len > pstDec->u32FrameMax) ||
       ((uPlain - DMC_SYNC_OVERHEAD) != (size_t)stHead.u32Len))
   {
-    if (NULL != pfOnErr)
-    {
-      pfOnErr(pvUser, DMC_ERR_WIRE);
-    }
+    dmc__sync_emit_err(pstDec, pfOnErr, pvUser, pstStats, DMC_ERR_WIRE);
     return;
   }
+  if (NULL != pstStats)
+  {
+    pstStats->u64RxFrames++;
+    if (pstDec->bHadErr)
+    {
+      pstStats->u64ResyncCount++;
+    }
+  }
+  pstDec->bHadErr = DM_FALSE;
   if (NULL != pfOnFrame)
   {
     pfOnFrame(pvUser, &stHead, pstDec->pu8Buf + 2u + DM_FRAME_HEAD);
@@ -305,8 +417,8 @@ static void dmc__sync_finish_pkt(io dmc_sync_dec_st *pstDec, in dmc_sync_frame_c
   return;
 }
 
-void dmc_sync_dec_init(out dmc_sync_dec_st *pstDec, io uint8 *pu8WorkBuf, in size_t uWorkCap,
-                       in uint32 u32FrameMax)
+void dmc_sync_dec_init(dm_out dmc_sync_dec_st *pstDec, dm_io uint8 *pu8WorkBuf,
+                       dm_in size_t uWorkCap, dm_in uint32 u32FrameMax)
 {
   if (NULL == pstDec)
   {
@@ -319,7 +431,7 @@ void dmc_sync_dec_init(out dmc_sync_dec_st *pstDec, io uint8 *pu8WorkBuf, in siz
   return;
 }
 
-void dmc_sync_dec_reset(io dmc_sync_dec_st *pstDec)
+void dmc_sync_dec_reset(dm_io dmc_sync_dec_st *pstDec)
 {
   if (NULL == pstDec)
   {
@@ -327,12 +439,13 @@ void dmc_sync_dec_reset(io dmc_sync_dec_st *pstDec)
   }
   pstDec->uLen = 0u;
   pstDec->bOverflow = DM_FALSE;
+  pstDec->bHadErr = DM_FALSE;
   return;
 }
 
-size_t dmc_sync_dec_feed(io dmc_sync_dec_st *pstDec, in const uint8 *pu8In, in size_t uLen,
-                         in dmc_sync_frame_cb pfOnFrame, in dmc_sync_err_cb pfOnErr,
-                         in void *pvUser)
+size_t dmc_sync_dec_feed_ex(dm_io dmc_sync_dec_st *pstDec, dm_in const uint8 *pu8In,
+                            dm_in size_t uLen, dm_in const dmc_sync_cbs_st *pstCbs,
+                            dm_io dmc_sync_stats_st *pstStats)
 {
   size_t uIdx = 0u;
 
@@ -346,7 +459,7 @@ size_t dmc_sync_dec_feed(io dmc_sync_dec_st *pstDec, in const uint8 *pu8In, in s
     uint8 u8Byte = pu8In[uIdx];
     if (DMC_SYNC_DELIM == u8Byte)
     {
-      dmc__sync_finish_pkt(pstDec, pfOnFrame, pfOnErr, pvUser);
+      dmc__sync_finish_pkt(pstDec, pstCbs, pstStats);
     }
     else if (!pstDec->bOverflow)
     {
@@ -361,6 +474,12 @@ size_t dmc_sync_dec_feed(io dmc_sync_dec_st *pstDec, in const uint8 *pu8In, in s
     }
   }
   return uLen;
+}
+
+size_t dmc_sync_dec_feed(dm_io dmc_sync_dec_st *pstDec, dm_in const uint8 *pu8In, dm_in size_t uLen,
+                         dm_in const dmc_sync_cb_st *pstCb)
+{
+  return dmc_sync_dec_feed_ex(pstDec, pu8In, uLen, pstCb, NULL);
 }
 
 #ifdef __cplusplus

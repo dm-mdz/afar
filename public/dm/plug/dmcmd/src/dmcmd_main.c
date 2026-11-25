@@ -26,8 +26,30 @@ extern "C"
 #define dmcmd__isatty(fd) isatty(fd)
 #endif
 
+static void dmcmd__copy_quoted(dm_io char **ppcIn, dm_io char **ppcOut)
+{
+  char *pcIn = *ppcIn + 1;
+  char *pcOut = *ppcOut;
+
+  while (('\0' != *pcIn) && ('"' != *pcIn))
+  {
+    if (('\\' == *pcIn) && ('"' == pcIn[1]))
+    {
+      pcIn++;
+    }
+    *pcOut++ = *pcIn++;
+  }
+  if ('"' == *pcIn)
+  {
+    pcIn++;
+  }
+  *ppcIn = pcIn;
+  *ppcOut = pcOut;
+  return;
+}
+
 /* 返回参数数，超过 iMax 时返回 -1（不再静默截断，CLI-08） */
-static int dmcmd__split(io char *pcLine, out char **ppcArgv, in int iMax)
+static int dmcmd__split(dm_io char *pcLine, dm_out char **ppcArgv, dm_in int iMax)
 {
   int iArgc = 0;
   char *pcIn = pcLine;
@@ -53,19 +75,7 @@ static int dmcmd__split(io char *pcLine, out char **ppcArgv, in int iMax)
     {
       if ('"' == *pcIn)
       {
-        pcIn++;
-        while (('\0' != *pcIn) && ('"' != *pcIn))
-        {
-          if (('\\' == *pcIn) && ('"' == pcIn[1]))
-          {
-            pcIn++;
-          }
-          *pcOut++ = *pcIn++;
-        }
-        if ('"' == *pcIn)
-        {
-          pcIn++;
-        }
+        dmcmd__copy_quoted(&pcIn, &pcOut);
         continue;
       }
       *pcOut++ = *pcIn++;
@@ -79,7 +89,7 @@ static int dmcmd__split(io char *pcLine, out char **ppcArgv, in int iMax)
   return iArgc;
 }
 
-static int dmcmd__interactive(io dmc_client_st *pstCli, in const dmcmd_opt_st *pstOpt)
+static int dmcmd__interactive(dm_io dmc_client_st *pstCli, dm_in const dmcmd_opt_st *pstOpt)
 {
   char *apcArgv[DMCMD_MAX_ARGS];
   char acLine[4096];
@@ -133,8 +143,8 @@ static int dmcmd__interactive(io dmc_client_st *pstCli, in const dmcmd_opt_st *p
   return DMCMD_EXIT_OK;
 }
 
-static int dmcmd__parse_cli(io dmcmd_opt_st *pstOpt, in int argc, in char **argv,
-                            out char **ppcRest, out int *piRest)
+static int dmcmd__parse_cli(dm_io dmcmd_opt_st *pstOpt, dm_in int argc, dm_in char **argv,
+                            dm_out char **ppcRest, dm_out int *piRest)
 {
   int iIdx = 1;
   int iRest = 0;

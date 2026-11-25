@@ -23,7 +23,7 @@
 
 static _Atomic uint64 g_u64CtEqSteps = 0u;
 
-void af_auth_hex_encode(in const uint8 *pu8In, in size_t uLen, out char *pcOut)
+void af_auth_hex_encode(dm_in const uint8 *pu8In, dm_in size_t uLen, dm_out char *pcOut)
 {
   static const char acHex[] = "0123456789abcdef";
   size_t i = 0u;
@@ -36,7 +36,7 @@ void af_auth_hex_encode(in const uint8 *pu8In, in size_t uLen, out char *pcOut)
   pcOut[uLen * 2u] = '\0';
 }
 
-bool_t af_auth_ct_eq(in const uint8 *pu8A, in const uint8 *pu8B, in size_t uLen)
+bool_t af_auth_ct_eq(dm_in const uint8 *pu8A, dm_in const uint8 *pu8B, dm_in size_t uLen)
 {
   volatile uint8 u8Diff = 0u;
   uint64 u64Steps = 0u;
@@ -66,7 +66,7 @@ uint64 af_auth_ct_eq_last_steps(void)
   return atomic_load_explicit(&g_u64CtEqSteps, memory_order_relaxed);
 }
 
-void af_auth_hash_token(in const char *pcTok, in size_t uLen, out char acHexOut[65])
+void af_auth_hash_token(dm_in const char *pcTok, dm_in size_t uLen, dm_out char acHexOut[65])
 {
   uint8 au8Digest[32];
 
@@ -86,7 +86,7 @@ void af_auth_hash_token(in const char *pcTok, in size_t uLen, out char acHexOut[
   dm_secure_zero(au8Digest, sizeof(au8Digest));
 }
 
-static bool_t af__is_hex64(in const char *pcStr)
+static bool_t af__is_hex64(dm_in const char *pcStr)
 {
   size_t i = 0u;
 
@@ -104,7 +104,7 @@ static bool_t af__is_hex64(in const char *pcStr)
   return DM_TRUE;
 }
 
-static char *af__read_text_file(in const char *pcPath, out size_t *puLen)
+static char *af__read_text_file(dm_in const char *pcPath, dm_out size_t *puLen)
 {
   FILE *pf = fopen(pcPath, "rb");
   long lSz = 0;
@@ -139,7 +139,7 @@ static char *af__read_text_file(in const char *pcPath, out size_t *puLen)
   return pcBuf;
 }
 
-static void af__parse_device_item(in yyjson_val *pstItem)
+static void af__parse_device_item(dm_in yyjson_val *pstItem)
 {
   const char *pcId = NULL;
   const char *pcName = NULL;
@@ -181,7 +181,7 @@ static void af__parse_device_item(in yyjson_val *pstItem)
   }
 }
 
-int af_auth_store_load(in const char *pcDataDir)
+int af_auth_store_load(dm_in const char *pcDataDir)
 {
   char acPath[600];
   size_t uLen = 0u;
@@ -205,7 +205,7 @@ int af_auth_store_load(in const char *pcDataDir)
   {
     return DM_SUCCESS;
   }
-  pstDoc = yyjson_read(pcText, uLen, 0u);
+  pstDoc = dm_json_read(pcText, uLen, 0u, NULL);
   dm_free_tag(pcText);
   if (NULL == pstDoc)
   {
@@ -228,7 +228,7 @@ int af_auth_store_load(in const char *pcDataDir)
   return DM_SUCCESS;
 }
 
-static char *af__serialize_devices(out size_t *puLen)
+static char *af__serialize_devices(dm_out size_t *puLen)
 {
   yyjson_mut_doc *pstDoc = yyjson_mut_doc_new(dm_json_alc());
   yyjson_mut_val *pstRoot = NULL;
@@ -260,8 +260,7 @@ static char *af__serialize_devices(out size_t *puLen)
       yyjson_mut_obj_add_null(pstDoc, pstObj, "sidecar_name");
     }
     yyjson_mut_obj_add_uint(pstDoc, pstObj, "paired_at", pstD->u64PairedAt);
-    yyjson_mut_obj_add_bool(pstDoc, pstObj, "password_saved",
-                            pstD->bPasswordSaved ? true : false);
+    yyjson_mut_obj_add_bool(pstDoc, pstObj, "password_saved", pstD->bPasswordSaved ? true : false);
     yyjson_mut_arr_add_val(pstArr, pstObj);
   }
   yyjson_mut_obj_add_val(pstDoc, pstRoot, "devices", pstArr);
@@ -280,13 +279,13 @@ typedef struct af__auth_save_job
   void *pvCtx;
 } af__auth_save_job_st;
 
-static void af__auth_save_work(io void *pvArg)
+static void af__auth_save_work(dm_io void *pvArg)
 {
   af__auth_save_job_st *pstJob = (af__auth_save_job_st *)pvArg;
   pstJob->iErr = af_store_write_atomic(pstJob->acPath, pstJob->pcJson, pstJob->uLen);
 }
 
-static void af__auth_save_after(io void *pvArg, in int iStatus)
+static void af__auth_save_after(dm_io void *pvArg, dm_in int iStatus)
 {
   af__auth_save_job_st *pstJob = (af__auth_save_job_st *)pvArg;
   int iErr = (0 != iStatus) ? iStatus : pstJob->iErr;
@@ -302,7 +301,7 @@ static void af__auth_save_after(io void *pvArg, in int iStatus)
   }
 }
 
-int af_auth_store_save_async(in af_store_saved_cb pfOnDone, io void *pvCtx)
+int af_auth_store_save_async(dm_in af_store_saved_cb pfOnDone, dm_io void *pvCtx)
 {
   af__auth_save_job_st *pstJob = NULL;
   int iErr = DM_SUCCESS;
@@ -336,7 +335,7 @@ int af_auth_store_save_async(in af_store_saved_cb pfOnDone, io void *pvCtx)
   return iErr;
 }
 
-int af_auth_store_find_by_id(in const char *pcDevId)
+int af_auth_store_find_by_id(dm_in const char *pcDevId)
 {
   uint32 i = 0u;
 
@@ -354,7 +353,7 @@ int af_auth_store_find_by_id(in const char *pcDevId)
   return -1;
 }
 
-bool_t af_auth_store_remove_by_id(in const char *pcDevId, out af_device_st *pstRemoved)
+bool_t af_auth_store_remove_by_id(dm_in const char *pcDevId, dm_out af_device_st *pstRemoved)
 {
   int iIdx = af_auth_store_find_by_id(pcDevId);
 
@@ -376,15 +375,15 @@ bool_t af_auth_store_remove_by_id(in const char *pcDevId, out af_device_st *pstR
   return DM_TRUE;
 }
 
-bool_t af_auth_check_https(in const dm_https_msg_st *pstMsg, out af_device_st *pstDevOut)
+bool_t af_auth_check_https(dm_in const af_https_msg_st *pstMsg, dm_out af_device_st *pstDevOut)
 {
   const char *pcTok = NULL;
   char acHash[65];
   int iFound = -1;
   uint32 i = 0u;
 
-  if ((NULL == pstMsg) || (NULL == pstMsg->pcAuthHeader)
-      || (0 != strncmp(pstMsg->pcAuthHeader, "Bearer ", 7u)))
+  if ((NULL == pstMsg) || (NULL == pstMsg->pcAuthHeader) ||
+      (0 != strncmp(pstMsg->pcAuthHeader, "Bearer ", 7u)))
   {
     if (NULL != pstMsg)
     {

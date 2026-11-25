@@ -39,9 +39,9 @@ struct dmc_client
   int iHttpPort;
   char aacPushTopics[DMC__PUSH_TOPIC_MAX][64];
   uint uiPushTopicCount;
-  void (*pfOnPush)(in void *pvUser, in const dmc_push_st *pstPush);
-  void (*pfOnCall)(in void *pvUser, in uint16 u16Func, in uint32 u32ReqID, in const uint8 *pu8Body,
-                   in uint32 u32Len);
+  void (*pfOnPush)(dm_in void *pvUser, dm_in const dmc_push_st *pstPush);
+  void (*pfOnCall)(dm_in void *pvUser, dm_in uint16 u16Func, dm_in uint32 u32ReqID,
+                   dm_in const uint8 *pu8Body, dm_in uint32 u32Len);
   void *pvUser;
 
   dmc_transport_vtbl_st stVtbl;
@@ -54,19 +54,26 @@ struct dmc_client
   yyjson_doc *pstIfacesDoc;
 };
 
-bool_t dmc__transport_copy(in const char *pcScheme, out dmc_transport_vtbl_st *pstOut);
-void dmc__zero_mem(out void *pvBuf, in size_t uLen);
-void dmc__copy_str(out char *pcDst, in size_t uCap, in const char *pcSrc);
-int dmc__read_run_file(in const char *pcDataDir, in const char *pcWantRole, out int *piLink,
-                       out int *piHttp, out char *pcBoot, in size_t uBootCap, out char *pcRole,
-                       in size_t uRoleCap, out char *pcToken, in size_t uTokenCap);
-void dmc__cli_drop_link(io dmc_client_st *pstCli);
-void dmc__cli_clear_ifaces(io dmc_client_st *pstCli);
-int dmc__cli_pump_once(io dmc_client_st *pstCli, in int iWaitMs);
-int dmc__cli_call_raw(io dmc_client_st *pstCli, in uint16 u16LinkID, in uint8 u8Flag,
-                      in const void *pvBody, in uint32 u32Len, in uint32 u32TimeoutMs,
-                      out dmc_resp_st *pstResp);
-int dmc__cli_connect_once(io dmc_client_st *pstCli);
+bool_t dmc__transport_copy(dm_in const char *pcScheme, dm_out dmc_transport_vtbl_st *pstOut);
+void dmc__zero_mem(dm_out void *pvBuf, dm_in size_t uLen);
+void dmc__copy_str(dm_out char *pcDst, dm_in size_t uCap, dm_in const char *pcSrc);
+typedef struct dmc__run_info
+{
+  int iLinkPort;
+  int iHttpPort;
+  char acBoot[64];
+  char acRole[64];
+  char acToken[256];
+} dmc__run_info_st;
+
+int dmc__read_run_file(dm_in const char *pcDataDir, dm_in const char *pcWantRole,
+                       dm_out dmc__run_info_st *pstOut);
+void dmc__cli_drop_link(dm_io dmc_client_st *pstCli);
+void dmc__cli_clear_ifaces(dm_io dmc_client_st *pstCli);
+int dmc__cli_pump_once(dm_io dmc_client_st *pstCli, dm_in int iWaitMs);
+int dmc__cli_call_raw(dm_io dmc_client_st *pstCli, dm_in const dmc_call_id_req_st *pstReq,
+                      dm_out dmc_resp_st *pstResp);
+int dmc__cli_connect_once(dm_io dmc_client_st *pstCli);
 
 #ifdef __cplusplus
 }

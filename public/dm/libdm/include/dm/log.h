@@ -57,36 +57,45 @@ typedef enum dm_log_level
  *   iMaxFiles  : 轮换时留几个旧文件；<= 0 不留
  * 返回 DM_SUCCESS；文件打不开回 DM_IO。重复调直接返回成功。
  */
-DM_API int dm_log_init(in const char *pcDir, in const char *pcBaseName, in dm_log_level_et eLevel,
-                       in int iMaxSizeMb, in int iMaxFiles);
+DM_API int dm_log_init(dm_in const char *pcDir, dm_in const char *pcBaseName,
+                       dm_in dm_log_level_et eLevel, dm_in int iMaxSizeMb, dm_in int iMaxFiles);
 
 /* 关日志，刷盘。最近一批（dm_log_recent）也清空。程序退出前调一次 */
 DM_API void dm_log_close(void);
 
 /* 改级别、开关控制台、开关逐行刷盘（默认开，崩溃时不丢）。任何线程都能调 */
-DM_API void dm_log_set_level(in dm_log_level_et eLevel);
+DM_API void dm_log_set_level(dm_in dm_log_level_et eLevel);
 DM_API dm_log_level_et dm_log_get_level(void);
-DM_API void dm_log_set_console(in int iEnable);
-DM_API void dm_log_set_flush(in int iEnable);
+DM_API void dm_log_set_console(dm_in int iEnable);
+DM_API void dm_log_set_flush(dm_in int iEnable);
+
+/* 日志位置上下文（打包级别、模块名与源位置，保持函数参数 <= 5） */
+typedef struct dm_log_loc
+{
+  dm_log_level_et eLevel; /* 日志级别 */
+  const char *pcMod;      /* 模块名 */
+  const char *pcFile;     /* 源文件名 */
+  int iLine;              /* 源文件行号 */
+} dm_log_loc_st;
 
 /* 写一行。一般用下面的宏。任何线程都能调；没初始化时只写标准错误 */
-DM_API void dm_log_write(in dm_log_level_et eLevel, in const char *pcMod, in const char *pcFile,
-                         in int iLine, in const char *pcFmt, ...) DM_PRINTF_FMT(5, 6);
+DM_API void dm_log_write(dm_in const dm_log_loc_st *pstLoc, dm_in const char *pcFmt, ...)
+    DM_PRINTF_FMT(2, 3);
 
 /*
  * 内存里留的最近一批（最多 DM_LOG_RECENT 行，每行最多存 DM_LOG_RECENT_LINE 字节，
  * 超出的截掉）。从旧到新把最后 u32Max 行逐行交给 pfLine（行尾不带换行），
  * 返回交了几行。回调在日志锁里调，里面不许再写日志。给 dmcmd 的 dm.log.recent 用。
  */
-typedef void (*dm_log_line_cb)(in const char *pcLine, in void *pvArg);
-DM_API uint32 dm_log_recent(in uint32 u32Max, in dm_log_line_cb pfLine, in void *pvArg);
+typedef void (*dm_log_line_cb)(dm_in const char *pcLine, dm_in void *pvArg);
+DM_API uint32 dm_log_recent(dm_in uint32 u32Max, dm_in dm_log_line_cb pfLine, dm_in void *pvArg);
 
 /*
  * 只留个头：pcVal 变成「前 4 个字符…(总长度)」，例 sk-a…(51)，写进 pcBuf。
  * 不足 8 个字符的只写「…(长度)」，免得短值几乎原样露出来。返回 pcBuf。
  * 需要在日志里对一下是哪个令牌时用。
  */
-DM_API const char *dm_log_mask(in const char *pcVal, out char *pcBuf, in uint32 u32Size);
+DM_API const char *dm_log_mask(dm_in const char *pcVal, dm_out char *pcBuf, dm_in uint32 u32Size);
 
 /*
  * 按日志同一套密钥字样打码（authorization、password、api_key、secret、bearer、cookie、token
@@ -94,17 +103,19 @@ DM_API const char *dm_log_mask(in const char *pcVal, out char *pcBuf, in uint32 
  * log.c）。给要把别处来的文字拿给人看的地方用（比如子进程的命令行）。 pcOut 容量 uCap（含结尾的
  * '\0'，至少 1）；返回写了多长。哪个线程都能调
  */
-DM_API size_t dm_log_redact(in const char *pcIn, out char *pcOut, in size_t uCap);
+DM_API size_t dm_log_redact(dm_in const char *pcIn, dm_out char *pcOut, dm_in size_t uCap);
 
 /* 便捷宏：自动带上模块名、文件名和行号 */
-#define DM_LOG_DEBUG(...)                                                                          \
-  dm_log_write(DM_LOG_LEVEL_DEBUG, DM_LOG_MOD, __FILE__, __LINE__, __VA_ARGS__)
-#define DM_LOG_INFO(...)                                                                           \
-  dm_log_write(DM_LOG_LEVEL_INFO, DM_LOG_MOD, __FILE__, __LINE__, __VA_ARGS__)
-#define DM_LOG_WARN(...)                                                                           \
-  dm_log_write(DM_LOG_LEVEL_WARN, DM_LOG_MOD, __FILE__, __LINE__, __VA_ARGS__)
-#define DM_LOG_ERROR(...)                                                                          \
-  dm_log_write(DM_LOG_LEVEL_ERROR, DM_LOG_MOD, __FILE__, __LINE__, __VA_ARGS__)
+#define DM_LOG__EMIT(lvl, ...)                                                                     \
+  do                                                                                               \
+  {                                                                                                \
+    const dm_log_loc_st stDmLogLoc = {(lvl), DM_LOG_MOD, __FILE__, __LINE__};                      \
+    dm_log_write(&stDmLogLoc, __VA_ARGS__);                                                        \
+  } while (0)
+#define DM_LOG_DEBUG(...) DM_LOG__EMIT(DM_LOG_LEVEL_DEBUG, __VA_ARGS__)
+#define DM_LOG_INFO(...) DM_LOG__EMIT(DM_LOG_LEVEL_INFO, __VA_ARGS__)
+#define DM_LOG_WARN(...) DM_LOG__EMIT(DM_LOG_LEVEL_WARN, __VA_ARGS__)
+#define DM_LOG_ERROR(...) DM_LOG__EMIT(DM_LOG_LEVEL_ERROR, __VA_ARGS__)
 
 /* 日志统计快照（切断 log.c 对 dm_internal.h 的反向依赖） */
 typedef struct dm_log_stat
@@ -116,7 +127,7 @@ typedef struct dm_log_stat
   uint64 u64WriteMaxNs; /* 单次落盘最长纳秒 */
 } dm_log_stat_st;
 
-DM_API void dm_log_stat(out dm_log_stat_st *pstOut);
+DM_API void dm_log_stat(dm_out dm_log_stat_st *pstOut);
 
 #ifdef __cplusplus
 }

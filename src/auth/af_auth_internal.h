@@ -71,28 +71,28 @@ extern af_auth_ctx_st g_stAfAuth;
 uint64 af_auth_now_ms(void);
 int af_auth_rng_init(void);
 void af_auth_rng_fini(void);
-int af_auth_rng_bytes(out uint8 *pu8Out, in size_t uLen);
-int af_auth_rng_cb(io void *pvCtx, out unsigned char *pucOut, in size_t uLen);
-void af_auth_hex_encode(in const uint8 *pu8In, in size_t uLen, out char *pcOut);
-void af_auth_trunc_utf8_chars(in const char *pcSrc, out char *pcDst, in size_t uDstCap,
-                              in size_t uMaxChars);
-void af_auth_publish_ev(in af_auth_ev_kind_et eKind, in const char *pcDevId,
-                        in const char *pcDevName, in const char *pcSidecarName);
+int af_auth_rng_bytes(dm_out uint8 *pu8Out, dm_in size_t uLen);
+int af_auth_rng_cb(dm_io void *pvCtx, dm_out unsigned char *pucOut, dm_in size_t uLen);
+void af_auth_hex_encode(dm_in const uint8 *pu8In, dm_in size_t uLen, dm_out char *pcOut);
+void af_auth_trunc_utf8_chars(dm_in const char *pcSrc, dm_out char *pcDst, dm_in size_t uDstCap,
+                              dm_in size_t uMaxChars);
+void af_auth_publish_ev(dm_in af_auth_ev_kind_et eKind, dm_in const char *pcDevId,
+                        dm_in const char *pcDevName, dm_in const char *pcSidecarName);
 void af_auth_inflight_inc(void);
 void af_auth_inflight_dec(void);
 
 /* af_auth_store.c */
-int af_auth_store_load(in const char *pcDataDir);
-int af_auth_store_save_async(in af_store_saved_cb pfOnDone, io void *pvCtx);
-int af_auth_store_find_by_id(in const char *pcDevId);
-bool_t af_auth_store_remove_by_id(in const char *pcDevId, out af_device_st *pstRemoved);
+int af_auth_store_load(dm_in const char *pcDataDir);
+int af_auth_store_save_async(dm_in af_store_saved_cb pfOnDone, dm_io void *pvCtx);
+int af_auth_store_find_by_id(dm_in const char *pcDevId);
+bool_t af_auth_store_remove_by_id(dm_in const char *pcDevId, dm_out af_device_st *pstRemoved);
 
 /* af_auth_pair.c */
 void af_auth_pair_refresh(void);
 void af_auth_pair_open(void);
-void af_auth_pair_close(in bool_t bKeepLastPaired);
-void af_auth_pair_on_start(in const dm_https_msg_st *pstMsg);
-void af_auth_pair_on_finish(in const dm_https_msg_st *pstMsg);
+void af_auth_pair_close(dm_in bool_t bKeepLastPaired);
+void af_auth_pair_on_start(dm_in const af_https_msg_st *pstMsg);
+void af_auth_pair_on_finish(dm_in const af_https_msg_st *pstMsg);
 
 #ifdef __cplusplus
 }

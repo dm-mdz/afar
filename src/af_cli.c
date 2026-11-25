@@ -40,7 +40,7 @@
 
 static af_cli_ops_st g_stCliOps;
 
-void af_cli_set_ops(in const af_cli_ops_st *pstOps)
+void af_cli_set_ops(dm_in const af_cli_ops_st *pstOps)
 {
   if (NULL == pstOps)
   {
@@ -64,7 +64,7 @@ static const char *af__home_dir(void)
   }
 }
 
-void af_cli_default_data_dir(out char *pcBuf, in size_t uCap)
+void af_cli_default_data_dir(dm_out char *pcBuf, dm_in size_t uCap)
 {
   if ((NULL == pcBuf) || (0u == uCap)) { return; }
   if ((NULL != g_stCliOps.pcDataDir) && ('\0' != g_stCliOps.pcDataDir[0]))
@@ -75,7 +75,7 @@ void af_cli_default_data_dir(out char *pcBuf, in size_t uCap)
   snprintf(pcBuf, uCap, "%s/Library/Application Support/Afar", af__home_dir());
 }
 
-static void af__resolve_exe_path(in const char *pcOverride, out char *pcBuf, in size_t uCap)
+static void af__resolve_exe_path(dm_in const char *pcOverride, dm_out char *pcBuf, dm_in size_t uCap)
 {
   char acRaw[PATH_MAX];
   char acReal[PATH_MAX];
@@ -99,7 +99,7 @@ static void af__resolve_exe_path(in const char *pcOverride, out char *pcBuf, in 
   pcBuf[0] = '\0';
 }
 
-static int af__mkdir_p(in const char *pcDir)
+static int af__mkdir_p(dm_in const char *pcDir)
 {
   char acTmp[600];
   size_t uLen = 0u;
@@ -122,8 +122,8 @@ static int af__mkdir_p(in const char *pcDir)
   return DM_SUCCESS;
 }
 
-static int af__run_cmd(in const char *const *ppcArgv, out char *pcOut, in size_t uCap,
-                       in uint32 u32Ms, out int *piExit)
+static int af__run_cmd(dm_in const char *const *ppcArgv, dm_out char *pcOut, dm_in size_t uCap,
+                       dm_in uint32 u32Ms, dm_out int *piExit)
 {
   if (NULL != g_stCliOps.pfRunCmd)
   {
@@ -132,7 +132,7 @@ static int af__run_cmd(in const char *const *ppcArgv, out char *pcOut, in size_t
   return af_plat_run_cmd_cancellable(ppcArgv, NULL, NULL, pcOut, uCap, u32Ms, piExit);
 }
 
-static bool_t af__default_tcp_check(in const char *pcIp, in uint16 u16Port, in uint32 u32TimeoutMs)
+static bool_t af__default_tcp_check(dm_in const char *pcIp, dm_in uint16 u16Port, dm_in uint32 u32TimeoutMs)
 {
   struct sockaddr_in stAddr;
   int iFd = socket(AF_INET, SOCK_STREAM, 0);
@@ -168,8 +168,8 @@ static bool_t af__default_tcp_check(in const char *pcIp, in uint16 u16Port, in u
   return bOk;
 }
 
-static int af__dmc_call(in const char *pcDataDir, in const char *pcIface, in const char *pcBody,
-                        out char *pcOut, in size_t uOutCap)
+static int af__dmc_call(dm_in const char *pcDataDir, dm_in const char *pcIface, dm_in const char *pcBody,
+                        dm_out char *pcOut, dm_in size_t uOutCap)
 {
   dmc_client_opt_st stOpt;
   dmc_client_st *pstCli = NULL;
@@ -216,7 +216,7 @@ static int af__dmc_call(in const char *pcDataDir, in const char *pcIface, in con
   return iRc;
 }
 
-int af_cli_wake_existing(in const char *pcDataDir)
+int af_cli_wake_existing(dm_in const char *pcDataDir)
 {
   char acDir[512];
   char acResp[256];
@@ -232,7 +232,7 @@ int af_cli_wake_existing(in const char *pcDataDir)
 
 /* ============================ install / uninstall ============================ */
 
-static void af__xml_escape(in const char *pcIn, out char *pcOut, in size_t uCap)
+static void af__xml_escape(dm_in const char *pcIn, dm_out char *pcOut, dm_in size_t uCap)
 {
   size_t uPos = 0u;
   const char *pcP = pcIn;
@@ -261,7 +261,7 @@ static void af__xml_escape(in const char *pcIn, out char *pcOut, in size_t uCap)
   pcOut[uPos] = '\0';
 }
 
-bool_t af_cli_is_external_vol(in const char *pcPath)
+bool_t af_cli_is_external_vol(dm_in const char *pcPath)
 {
   char acReal[PATH_MAX];
 
@@ -274,7 +274,7 @@ bool_t af_cli_is_external_vol(in const char *pcPath)
   return DM_FALSE;
 }
 
-static bool_t af__is_external_vol(in const char *pcPath)
+static bool_t af__is_external_vol(dm_in const char *pcPath)
 {
   if (NULL != g_stCliOps.pfIsExternalVol)
   {
@@ -283,8 +283,8 @@ static bool_t af__is_external_vol(in const char *pcPath)
   return af_cli_is_external_vol(pcPath);
 }
 
-static void af__choose_log_path(in const char *pcExe, in const char *pcDataDir, out char *pcOut,
-                                in size_t uCap)
+static void af__choose_log_path(dm_in const char *pcExe, dm_in const char *pcDataDir, dm_out char *pcOut,
+                                dm_in size_t uCap)
 {
   const char *pcHome = af__home_dir();
   char acLogsDir[512];
@@ -302,7 +302,7 @@ static void af__choose_log_path(in const char *pcExe, in const char *pcDataDir, 
   }
 }
 
-static bool_t af__verify_agent_up(in const char *pcTarget, in uint16 u16Port, in uint32 u32MaxMs)
+static bool_t af__verify_agent_up(dm_in const char *pcTarget, dm_in uint16 u16Port, dm_in uint32 u32MaxMs)
 {
   uint64 u64Deadline = dm_hrtime() + ((uint64)u32MaxMs * 1000000ULL);
   const char *apcPrint[4] = {"/bin/launchctl", "print", pcTarget, NULL};
@@ -327,7 +327,7 @@ static bool_t af__verify_agent_up(in const char *pcTarget, in uint16 u16Port, in
   }
 }
 
-int af_cli_install_agent(in const char *pcExePath)
+int af_cli_install_agent(dm_in const char *pcExePath)
 {
   char acExe[PATH_MAX];
   char acDataDir[512];
@@ -402,7 +402,7 @@ int af_cli_install_agent(in const char *pcExePath)
   return 0;
 }
 
-static int af__escape_as_sh(in const char *pcPath, out char *pcOut, in size_t uCap)
+static int af__escape_as_sh(dm_in const char *pcPath, dm_out char *pcOut, dm_in size_t uCap)
 {
   char acSh[512];
   size_t uSh = 0u;
@@ -518,7 +518,7 @@ static int af__cmd_config(void)
   return 0;
 }
 
-static bool_t af__is_valid_bt_addr(in const char *pcAddr)
+static bool_t af__is_valid_bt_addr(dm_in const char *pcAddr)
 {
   size_t i = 0u;
 
@@ -540,7 +540,7 @@ static bool_t af__is_valid_bt_addr(in const char *pcAddr)
   return DM_TRUE;
 }
 
-static int af__cmd_bt_dump(in int argc, in char **argv)
+static int af__cmd_bt_dump(dm_in int argc, dm_in char **argv)
 {
   if (argc > 2)
   {
@@ -588,7 +588,7 @@ static int af__cmd_ipads(void)
   return 0;
 }
 
-static int af__cmd_connect(in int argc, in char **argv)
+static int af__cmd_connect(dm_in int argc, dm_in char **argv)
 {
   char acTarget[65] = {0};
   char acErr[128] = {0};
@@ -665,7 +665,7 @@ static int af__cmd_displays(void)
   return 0;
 }
 
-static int af__cmd_rpc_print(in const char *pcIface)
+static int af__cmd_rpc_print(dm_in const char *pcIface)
 {
   char acDataDir[512];
   char acResp[4096];
@@ -682,7 +682,7 @@ static int af__cmd_rpc_print(in const char *pcIface)
   return 0;
 }
 
-bool_t af_cli_is_subcommand(in const char *pcArg)
+bool_t af_cli_is_subcommand(dm_in const char *pcArg)
 {
   static const char *const apcCmds[] = {
       "--version", "-V",      "-v",         "run",        "install",   "uninstall",
@@ -700,7 +700,7 @@ bool_t af_cli_is_subcommand(in const char *pcArg)
   return DM_FALSE;
 }
 
-int af_cli_run(in int argc, in char **argv)
+int af_cli_run(dm_in int argc, dm_in char **argv)
 {
   const char *pcCmd = ((argc > 1) && (NULL != argv[1])) ? argv[1] : "";
 

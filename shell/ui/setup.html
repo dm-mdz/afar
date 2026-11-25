@@ -129,6 +129,12 @@ function row(ok, title, okText, todoText, btn, busy) {
 }
 const openBtn = (what, text) => `<button class="act" data-open="${what}">${esc(text || T('打开设置', 'Open Settings'))}</button>`;
 const oneDone = () => V.agent && V.fw && V.power;
+function permRows() {
+  const scOk = V.perm_sc !== false;
+  const axOk = V.perm_ax !== false;
+  return row(scOk, T('屏幕录制权限（日常模式）', 'Screen Recording (Daily Mode)'), T('已授权', 'Granted'), T('在「系统设置 → 隐私与安全性 → 屏幕录制」中勾选 Afar', 'Enable Afar in System Settings → Privacy & Security → Screen Recording'), openBtn('screen_capture'))
+    + row(axOk, T('辅助功能权限（日常模式）', 'Accessibility (Daily Mode)'), T('已授权', 'Granted'), T('在「系统设置 → 隐私与安全性 → 辅助功能」中勾选 Afar', 'Enable Afar in System Settings → Privacy & Security → Accessibility'), openBtn('accessibility'));
+}
 // 断电恢复：所选方案要做的几行、还差几项
 function recRows() {
   if (V.plan === 'fv') {
@@ -199,7 +205,7 @@ const SCREENS = {
       ${oneDone() ? '' : `<button class="big" data-cmd="one" ${V.busy ? 'disabled' : ''}>${V.busy === 'one' ? T('正在配置…', 'Configuring…') : T('一键配置', 'Configure Automatically')}</button>
         <div class="tip">${T('会弹出系统的密码框，输入这台 Mac 的登录密码（Afar 拿不到这个密码）', 'macOS will ask for your administrator password (Afar never sees it)')}</div>`}
       ${errBox()}
-      <div class="rows" style="margin-top:14px">${ipadRow()}</div>
+      <div class="rows" style="margin-top:14px">${ipadRow()}${permRows()}</div>
       <div class="grow"></div>
       <div class="nav">${dots(1)}<span><button class="next" data-go="w2" ${oneDone() && V.ipad ? '' : 'disabled'}>${T('下一步', 'Next')}</button></span></div>
     </div>`,
@@ -245,7 +251,7 @@ const SCREENS = {
     </div>`,
   status: () => {
     const rec = recLeft();
-    const conn = [V.agent, V.fw, V.power, !!V.ipad, V.paired > 0];
+    const conn = [V.agent, V.fw, V.power, !!V.ipad, V.paired > 0, V.perm_sc !== false, V.perm_ax !== false];
     const connLeft = conn.filter((x) => !x).length;
     const openConn = P.open.conn || connLeft > 0;
     const openRec = P.open.rec || rec > 0;
@@ -261,6 +267,7 @@ const SCREENS = {
         ${row(V.agent, T('开机自动启动 Afar', 'Launch Afar at Login'), T('正在运行', 'Running'), T('请从"应用程序"里打开 Afar', 'Open Afar from Applications'))}
         ${row(V.fw, T('允许 iPad 连进来', 'Allow Incoming iPad Connections'), T('防火墙已放行', 'Allowed in Firewall'), T('防火墙会拦住 iPad', 'Firewall may block your iPad'), `<button class="act" data-cmd="one">${T('修好', 'Fix')}</button>`, V.busy === 'one' && !V.fw)}
         ${row(V.power, T('断电后自动开机', 'Auto-Start After Power Failure'), T('已打开', 'Enabled'), T('来电后要有人按电源键', 'Requires power button after outage'), `<button class="act" data-cmd="one">${T('修好', 'Fix')}</button>`, V.busy === 'one' && !V.power)}
+        ${permRows()}
         ${ipadRow()}
         ${devRow()}
       </div>` : ''}

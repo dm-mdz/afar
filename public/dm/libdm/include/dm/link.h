@@ -17,6 +17,7 @@
 #include <stddef.h>
 #include <dm.h>
 #include <dm/type.h>
+#include <dm/event.h>
 #include <dm/frame.h>
 #include <dm/pool.h>
 
@@ -111,17 +112,18 @@ DM_API void dm_link_fini(void);
  * 同一编号重复登记是编程错误：调试版断言；发布版覆盖旧的、告警并返回 DM_LINK_ERR_REREGIST。
  * dm_main_ex 之前调回 DM_LINK_ERR_STATE。
  */
-DM_API int dm_link_register_handler(in uint uiLinkID, in dm_link_before_cb pfBefore,
-                                    in dm_link_work_cb pfWork, in dm_link_after_cb pfAfter);
+DM_API int dm_link_register_handler(dm_in uint uiLinkID, dm_in dm_link_before_cb pfBefore,
+                                    dm_in dm_link_work_cb pfWork, dm_in dm_link_after_cb pfAfter);
 
 /* 扩展登记：支持泳道指定与对称三形态 (before,NULL,NULL) / (NULL,work,after) / (before,work,after)
  */
-DM_API int dm_link_register_handler_ex(in uint uiLinkID, in dm_pool_lane_et eLane,
-                                       in dm_link_before_cb pfBefore, in dm_link_work_cb pfWork,
-                                       in dm_link_after_cb pfAfter);
+DM_API int dm_link_register_handler_ex(dm_in uint uiLinkID, dm_in dm_pool_lane_et eLane,
+                                       dm_in dm_link_before_cb pfBefore,
+                                       dm_in dm_link_work_cb pfWork,
+                                       dm_in dm_link_after_cb pfAfter);
 
 /* 查询某 linkID 是否已登记处理项（仅主线程） */
-DM_API bool_t dm_link_has_handler(in uint uiLinkID);
+DM_API bool_t dm_link_has_handler(dm_in uint uiLinkID);
 
 /* ---- 交给别的处理项 ---------------------------------------------------------- */
 /*
@@ -132,7 +134,7 @@ DM_API bool_t dm_link_has_handler(in uint uiLinkID);
  * DM_SRC_LOCAL。pvPriv 不带（一个请求只归第一段答）。 编号没登记的当场回
  * DM_LINK_ERR_NOT_FOUND；拆除阶段回 DM_SHUTTING_DOWN。
  */
-DM_API int dm_link_dispatch(in uint uiLinkID, in const dm_link_msg_st *pstMsg);
+DM_API int dm_link_dispatch(dm_in uint uiLinkID, dm_in const dm_link_msg_st *pstMsg);
 
 /* ---- 线程池 ------------------------------------------------------------ */
 /*
@@ -141,20 +143,100 @@ DM_API int dm_link_dispatch(in uint uiLinkID, in const dm_link_msg_st *pstMsg);
  * 主线程调；拆除阶段回 DM_SHUTTING_DOWN。排着队还没开始的在拆除时被取消，after 收到
  * DM_ECANCELED。
  */
-DM_API int dm_link_work_submit(in dm_link_msg_st *pstMsg, in void *pvArg);
+DM_API int dm_link_work_submit(dm_in dm_link_msg_st *pstMsg, dm_in void *pvArg);
 
 /* 向指定泳道提交慢活（绕过 pstMsg->eLane 默认泳道） */
-DM_API int dm_link_work_submit_lane(in dm_pool_lane_et eLane, in dm_link_msg_st *pstMsg,
-                                    in void *pvArg);
+DM_API int dm_link_work_submit_lane(dm_in dm_pool_lane_et eLane, dm_in dm_link_msg_st *pstMsg,
+                                    dm_in void *pvArg);
 
 /* 无状态直通 (NULL, work, after) 在主线程 pfAfter 内合法发送 RPC 应答的公开辅助接口；
  * 发送后清零 pstJob->bHasReply 防重发；非请求或已应答返回 DM_NOT_FOUND */
-DM_API int dm_stateless_reply_send(io dm_stateless_job_st *pstJob, in int iStatus,
-                                   in const void *pvBody, in uint32 u32Len);
+DM_API int dm_stateless_reply_send(dm_io dm_stateless_job_st *pstJob, dm_in int iStatus,
+                                   dm_in const void *pvBody, dm_in uint32 u32Len);
 
 /* 跨线程安全投递消息并唤醒主循环（AUD-11：供常驻外部线程在不暴露 <uv.h> 下安全唤醒主循环）。
  * 任意线程可调用；积压超过总队列 64MB 背压上限返回 DM_BUSY；拆除期或未启动返回 DM_SHUTTING_DOWN */
-DM_API int dm_queue_post_async(in uint uiLinkID, in const void *pvData, in uint32 u32Len);
+DM_API int dm_queue_post_async(dm_in uint uiLinkID, dm_in const void *pvData, dm_in uint32 u32Len);
+
+/* ---- 双向 Peer 与移动端原生 fd 纳管（DD-18 §1.1, DD-19 §6.1，零 <uv.h>） ---- */
+
+/* 跨节点 Peer HELLO 验签回调（返回 DM_SUCCESS 放行并将 dm_malloc_tag 分配的应答 JSON 写入
+ * *ppcAckJson，由 libdm 发送完毕后 dm_secure_zero + dm_free_tag；返回负错码则拒连） */
+typedef int (*dm_peer_hello_verify_cb)(dm_in const char *pcConnPeerID, dm_in const uint8 *pu8Body,
+                                       dm_in uint32 u32Len, dm_in void *pvCtx,
+                                       dm_out char **ppcAckJson);
+
+/* 已认证 DM_ROLE_PEER 连接收到对端入站 DM_FRAME_T_PUSH 帧负载 */
+typedef struct dm_peer_push_msg
+{
+  const char *pcPeerID;
+  uint16 u16Topic;
+  uint64 u64Key;
+  const uint8 *pu8Val;
+  uint32 u32Len;
+} dm_peer_push_msg_st;
+
+typedef void (*dm_peer_push_cb)(dm_in const dm_peer_push_msg_st *pstMsg, dm_in void *pvCtx);
+
+/* 主动出站 Peer 发送首帧签名 HELLO 的打包入参 */
+typedef struct dm_peer_hello_req
+{
+  const char *pcPeerID;
+  uint64 u64ConnGen;
+  const void *pvBody;
+  uint32 u32Len;
+  uint uiReplyLinkID;
+  uint64 u64Tag;
+  uint32 u32TimeoutMs;
+} dm_peer_hello_req_st;
+
+DM_API int dm_link_set_peer_hello_verifier(dm_in dm_peer_hello_verify_cb pfVerify,
+                                           dm_in void *pvCtx);
+DM_API int dm_link_set_peer_push_cb(dm_in dm_peer_push_cb pfPush, dm_in void *pvCtx);
+
+/* 纳管外部已完成前导校验的原生流描述符为 DM_ROLE_PEER 连接：
+ * 返回 DM_SUCCESS 时 tFd 所有权移交 libdm；返回错误码时调用方仍保有 tFd 所有权。 */
+DM_API int dm_link_adopt_peer_fd(dm_in dm_peer_fd_t tFd, dm_in const char *pcPeerID,
+                                 dm_in uint64 u64ConnGen, dm_in bool_t bIsPipe,
+                                 dm_in bool_t bIsInitiator);
+
+DM_API int dm_link_peer_send_hello(dm_in const dm_peer_hello_req_st *pstReq);
+
+DM_API int dm_link_peer_mark_ready(dm_in const char *pcPeerID, dm_in uint64 u64ConnGen,
+                                   dm_in const char *pcRemotePushJson);
+
+/* 移动端最小权限连接（DM_ROLE_MOBILE）验签入参/出参与纳管（DD-19 §6.1） */
+typedef struct dm_mobile_hello_in
+{
+  const char *pcHintPeerID; /* Path A 为预设 peer_id；Path B LAN TLS 可为 NULL（延迟绑定） */
+  const uint8 *pu8Body;
+  uint32 u32Len;
+  const char *pcResume; /* 由 libdm 预计算："ok" | "full" | "none" */
+  uint64 u64CurSeq;     /* 由 dm_push_seq() 预采集 */
+} dm_mobile_hello_in_st;
+
+typedef struct dm_mobile_hello_out
+{
+  char *pcAckJson; /* dm_malloc_tag 分配，由 libdm 发送后擦零释放 */
+  char acVerifiedPeerID[DM_PEER_ID_MAX];
+  uint64 u64VerifiedConnGen;
+} dm_mobile_hello_out_st;
+
+typedef int (*dm_mobile_hello_verify_cb)(dm_in const dm_mobile_hello_in_st *pstIn,
+                                         dm_in void *pvCtx, dm_out dm_mobile_hello_out_st *pstOut);
+
+DM_API int dm_link_set_mobile_hello_verifier(dm_in dm_mobile_hello_verify_cb pfVerify,
+                                             dm_in void *pvCtx);
+
+DM_API int dm_link_adopt_mobile_fd(dm_in dm_peer_fd_t tFd, dm_in const char *pcHintPeerID,
+                                   dm_in uint64 u64ConnGen, dm_in bool_t bIsPipe);
+
+/* 主动断开指定 peer_id 且角色匹配 u32RoleMask 的所有活跃连接（返回断开条数；仅主线程） */
+DM_API uint32 dm_link_disconnect_peer(dm_in const char *pcPeerID, dm_in uint32 u32RoleMask);
+
+/* 查询消息来源连接已认证的 peer_id（连接有效且已认证返回 DM_SUCCESS，否则返回 DM_NOT_FOUND） */
+DM_API int dm_link_msg_peer_id(dm_in const dm_link_msg_st *pstMsg, dm_out char *pcBuf,
+                               dm_in size_t uCap);
 
 struct dm_ext_hooks;
 DM_API const struct dm_ext_hooks *dm_net_hooks(void);

@@ -97,12 +97,12 @@ static bool_t g_bDmcTrInited = DM_FALSE;
 
 /* ============================ 工具函数 ============================ */
 
-static unsigned char dmc__ascii_lower(in unsigned char u8Ch)
+static unsigned char dmc__ascii_lower(dm_in unsigned char u8Ch)
 {
   return ((u8Ch >= 'A') && (u8Ch <= 'Z')) ? (unsigned char)(u8Ch - 'A' + 'a') : u8Ch;
 }
 
-static bool_t dmc__scheme_eq(in const char *pcA, in const char *pcB)
+static bool_t dmc__scheme_eq(dm_in const char *pcA, dm_in const char *pcB)
 {
   size_t uIdx = 0u;
   if ((NULL == pcA) || (NULL == pcB))
@@ -120,7 +120,7 @@ static bool_t dmc__scheme_eq(in const char *pcA, in const char *pcB)
   return (pcA[uIdx] == pcB[uIdx]) ? DM_TRUE : DM_FALSE;
 }
 
-static int dmc__clamp_ms(in uint32 u32Ms)
+static int dmc__clamp_ms(dm_in uint32 u32Ms)
 {
   return (u32Ms > (uint32)INT_MAX) ? INT_MAX : (int)u32Ms;
 }
@@ -140,7 +140,7 @@ static int dmc__net_init(void)
 #endif
 }
 
-static void dmc__sock_close(in dmc__sock_t iSock)
+static void dmc__sock_close(dm_in dmc__sock_t iSock)
 {
   if (DMC__SOCK_BAD == iSock)
   {
@@ -154,7 +154,7 @@ static void dmc__sock_close(in dmc__sock_t iSock)
   return;
 }
 
-static void dmc__sock_set_nonblock(in dmc__sock_t iSock)
+static void dmc__sock_set_nonblock(dm_in dmc__sock_t iSock)
 {
 #ifdef _WIN32
   u_long ulMode = 1u;
@@ -169,7 +169,7 @@ static void dmc__sock_set_nonblock(in dmc__sock_t iSock)
   return;
 }
 
-static void dmc__sock_set_timeouts(in dmc__sock_t iSock, in int iMs)
+static void dmc__sock_set_timeouts(dm_in dmc__sock_t iSock, dm_in int iMs)
 {
 #ifdef _WIN32
   DWORD dwMs = (DWORD)((iMs > 0) ? iMs : 5000);
@@ -187,7 +187,7 @@ static void dmc__sock_set_timeouts(in dmc__sock_t iSock, in int iMs)
 }
 
 /* 等可读或可写（支持 POSIX EINTR 余量续等）：回 1 就绪，0 超时，-1 错误 */
-static int dmc__sock_wait(in dmc__sock_t iSock, in bool_t bWrite, in int iMs)
+static int dmc__sock_wait(dm_in dmc__sock_t iSock, dm_in bool_t bWrite, dm_in int iMs)
 {
   uint64 u64End = (iMs > 0) ? (dmc_now_ms() + (uint64)iMs) : 0u;
   for (;;)
@@ -251,8 +251,9 @@ static int dmc__sock_wait(in dmc__sock_t iSock, in bool_t bWrite, in int iMs)
 }
 
 /* 解析 "scheme://host:port" 或 "scheme://[ipv6]:port"，端口严检纯数字 1..65535 */
-static bool_t dmc__parse_host_port(in const char *pcUri, out char *pcHost, in size_t uHostCap,
-                                   out char *pcPort, in size_t uPortCap)
+static bool_t dmc__parse_host_port(dm_in const char *pcUri, dm_out char *pcHost,
+                                   dm_in size_t uHostCap, dm_out char *pcPort,
+                                   dm_in size_t uPortCap)
 {
   const char *pcSep = NULL;
   const char *pcAuth = NULL;
@@ -332,7 +333,7 @@ static bool_t dmc__parse_host_port(in const char *pcUri, out char *pcHost, in si
   return DM_TRUE;
 }
 
-static dmc__sock_t dmc__tcp_connect_one(in const struct addrinfo *pstAi, in int iTimeoutMs)
+static dmc__sock_t dmc__tcp_connect_one(dm_in const struct addrinfo *pstAi, dm_in int iTimeoutMs)
 {
   dmc__sock_t iSock = DMC__SOCK_BAD;
   int iErr = 0;
@@ -385,7 +386,8 @@ static dmc__sock_t dmc__tcp_connect_one(in const struct addrinfo *pstAi, in int 
   return iSock;
 }
 
-static int dmc__tcp_open(in const char *pcUri, in uint32 u32TimeoutMs, out void **ppvHandle)
+static int dmc__tcp_open(dm_in const char *pcUri, dm_in uint32 u32TimeoutMs,
+                         dm_out void **ppvHandle)
 {
   char acHost[256];
   char acPort[16];
@@ -449,7 +451,8 @@ static int dmc__tcp_open(in const char *pcUri, in uint32 u32TimeoutMs, out void 
   return DMC_OK;
 }
 
-static int dmc__tcp_read(io void *pvHandle, out void *pvBuf, in size_t uCap, in int iTimeoutMs)
+static int dmc__tcp_read(dm_io void *pvHandle, dm_out void *pvBuf, dm_in size_t uCap,
+                         dm_in int iTimeoutMs)
 {
   dmc__tcp_handle_st *pstHandle = (dmc__tcp_handle_st *)pvHandle;
   uint64 u64End = (iTimeoutMs > 0) ? (dmc_now_ms() + (uint64)iTimeoutMs) : 0u;
@@ -519,7 +522,7 @@ static int dmc__tcp_read(io void *pvHandle, out void *pvBuf, in size_t uCap, in 
   }
 }
 
-static int dmc__tcp_write(io void *pvHandle, in const void *pvBuf, in size_t uLen)
+static int dmc__tcp_write(dm_io void *pvHandle, dm_in const void *pvBuf, dm_in size_t uLen)
 {
   dmc__tcp_handle_st *pstHandle = (dmc__tcp_handle_st *)pvHandle;
   const char *pc = (const char *)pvBuf;
@@ -533,7 +536,7 @@ static int dmc__tcp_write(io void *pvHandle, in const void *pvBuf, in size_t uLe
   int iFlags = 0;
 #endif
 
-  if (NULL == pstHandle)
+  if ((NULL == pstHandle) || ((NULL == pvBuf) && (uLen > 0u)))
   {
     return -1;
   }
@@ -592,7 +595,7 @@ static int dmc__tcp_write(io void *pvHandle, in const void *pvBuf, in size_t uLe
   return 0;
 }
 
-static void dmc__tcp_close(io void *pvHandle)
+static void dmc__tcp_close(dm_io void *pvHandle)
 {
   dmc__tcp_handle_st *pstHandle = (dmc__tcp_handle_st *)pvHandle;
   if (NULL == pstHandle)
@@ -607,7 +610,8 @@ static void dmc__tcp_close(io void *pvHandle)
 /* ============================ 预留未实现传输桩（ws:// / serial://） ============================
  */
 
-static int dmc__stub_open(in const char *pcUri, in uint32 u32TimeoutMs, out void **ppvHandle)
+static int dmc__stub_open(dm_in const char *pcUri, dm_in uint32 u32TimeoutMs,
+                          dm_out void **ppvHandle)
 {
   (void)pcUri;
   (void)u32TimeoutMs;
@@ -618,7 +622,8 @@ static int dmc__stub_open(in const char *pcUri, in uint32 u32TimeoutMs, out void
   return DMC_ERR_UNSUPPORTED;
 }
 
-static int dmc__stub_read(io void *pvHandle, out void *pvBuf, in size_t uCap, in int iTimeoutMs)
+static int dmc__stub_read(dm_io void *pvHandle, dm_out void *pvBuf, dm_in size_t uCap,
+                          dm_in int iTimeoutMs)
 {
   (void)pvHandle;
   (void)pvBuf;
@@ -627,7 +632,7 @@ static int dmc__stub_read(io void *pvHandle, out void *pvBuf, in size_t uCap, in
   return -1;
 }
 
-static int dmc__stub_write(io void *pvHandle, in const void *pvBuf, in size_t uLen)
+static int dmc__stub_write(dm_io void *pvHandle, dm_in const void *pvBuf, dm_in size_t uLen)
 {
   (void)pvHandle;
   (void)pvBuf;
@@ -635,7 +640,7 @@ static int dmc__stub_write(io void *pvHandle, in const void *pvBuf, in size_t uL
   return -1;
 }
 
-static void dmc__stub_close(io void *pvHandle)
+static void dmc__stub_close(dm_io void *pvHandle)
 {
   (void)pvHandle;
   return;
@@ -643,7 +648,7 @@ static void dmc__stub_close(io void *pvHandle)
 
 /* ============================ 线程安全传输注册表 ============================ */
 
-static void dmc__tr_store_locked(in uint uiIdx, in const dmc_transport_vtbl_st *pstVtbl)
+static void dmc__tr_store_locked(dm_in uint uiIdx, dm_in const dmc_transport_vtbl_st *pstVtbl)
 {
   size_t uLen = strlen(pstVtbl->pcScheme);
   if (uLen >= DMC__SCHEME_MAX)
@@ -657,13 +662,14 @@ static void dmc__tr_store_locked(in uint uiIdx, in const dmc_transport_vtbl_st *
   return;
 }
 
+extern const dmc_transport_vtbl_st *dmc__serial_vtbl(void);
+
 static void dmc__tr_ensure_builtins_locked(void)
 {
   static const dmc_transport_vtbl_st astBuiltins[] = {
       {"local", dmc__tcp_open, dmc__tcp_read, dmc__tcp_write, dmc__tcp_close},
       {"tcp", dmc__tcp_open, dmc__tcp_read, dmc__tcp_write, dmc__tcp_close},
       {"ws", dmc__stub_open, dmc__stub_read, dmc__stub_write, dmc__stub_close},
-      {"serial", dmc__stub_open, dmc__stub_read, dmc__stub_write, dmc__stub_close},
   };
   uint uiIdx = 0u;
 
@@ -676,10 +682,11 @@ static void dmc__tr_ensure_builtins_locked(void)
   {
     dmc__tr_store_locked(g_uiDmcTrCount++, &astBuiltins[uiIdx]);
   }
+  dmc__tr_store_locked(g_uiDmcTrCount++, dmc__serial_vtbl());
   return;
 }
 
-int dmc_transport_register(in const dmc_transport_vtbl_st *pstVtbl)
+int dmc_transport_register(dm_in const dmc_transport_vtbl_st *pstVtbl)
 {
   uint uiIdx = 0u;
   int iRc = DMC_OK;
@@ -713,7 +720,7 @@ int dmc_transport_register(in const dmc_transport_vtbl_st *pstVtbl)
   return iRc;
 }
 
-const dmc_transport_vtbl_st *dmc_transport_find(in const char *pcScheme)
+const dmc_transport_vtbl_st *dmc_transport_find(dm_in const char *pcScheme)
 {
   uint uiIdx = 0u;
   const dmc_transport_vtbl_st *pstFound = NULL;
@@ -736,7 +743,7 @@ const dmc_transport_vtbl_st *dmc_transport_find(in const char *pcScheme)
   return pstFound;
 }
 
-bool_t dmc__transport_copy(in const char *pcScheme, out dmc_transport_vtbl_st *pstOut)
+bool_t dmc__transport_copy(dm_in const char *pcScheme, dm_out dmc_transport_vtbl_st *pstOut)
 {
   uint uiIdx = 0u;
   bool_t bFound = DM_FALSE;

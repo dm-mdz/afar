@@ -26,7 +26,8 @@ static dm_once_flag_st g_stOsBinDirOnce = DM_ONCE_FLAG_INIT;
 
 /* ============================ 常见可执行目录与分隔符 ============================ */
 
-static void dm__os_dir_add(io uint32 *pu32Count, in const char *pcBase, in const char *pcTail)
+static void dm__os_dir_add(dm_io uint32 *pu32Count, dm_in const char *pcBase,
+                           dm_in const char *pcTail)
 {
   int iN = 0;
   if ((*pu32Count >= DM__OS_DIRS_MAX) || (NULL == pcBase) || ('\0' == pcBase[0]))
@@ -45,7 +46,7 @@ static void dm__os_dir_add(io uint32 *pu32Count, in const char *pcBase, in const
   return;
 }
 
-static void dm__os_env_read(in const char *pcName, out char *pcBuf, in size_t uCap)
+static void dm__os_env_read(dm_in const char *pcName, dm_out char *pcBuf, dm_in size_t uCap)
 {
   size_t uSize = uCap;
   if ((NULL == pcBuf) || (0u == uCap))
@@ -140,8 +141,8 @@ bool_t dm_os_env_nocase(void)
 
 /* ============================ 无环 BFS 子孙枚举 ============================ */
 
-static bool_t dm__os_pid_emitted(in const dm__os_node_st *pastAll, in const uint32 *pau32Idx,
-                                 in uint32 u32Count, in int iPid)
+static bool_t dm__os_pid_emitted(dm_in const dm__os_node_st *pastAll, dm_in const uint32 *pau32Idx,
+                                 dm_in uint32 u32Count, dm_in int iPid)
 {
   uint32 u32I = 0u;
   for (u32I = 0u; u32I < u32Count; u32I++)
@@ -155,9 +156,9 @@ static bool_t dm__os_pid_emitted(in const dm__os_node_st *pastAll, in const uint
 }
 
 /* 无环 BFS 子孙枚举（FIX-05/06）：显式 abVisited[] 防环 + PID 去重 + 启动时间戳防 PID 复用 */
-uint32 dm__os_walk_descendants_ex(io dm__os_node_st *pastAll, in uint32 u32All, in int iRootPid,
-                                  out uint32 *pau32Idx, in uint32 u32Cap,
-                                  in dm__os_start_fn pfResolve, io void *pvUser)
+uint32 dm__os_walk_descendants_ex(dm_io dm__os_node_st *pastAll, dm_in uint32 u32All,
+                                  dm_in int iRootPid, dm_out uint32 *pau32Idx, dm_in uint32 u32Cap,
+                                  dm_in dm__os_start_fn pfResolve, dm_io void *pvUser)
 {
   bool_t *pbVisited = NULL;
   uint64 u64RootStart = 0u;
@@ -258,8 +259,8 @@ uint32 dm__os_walk_descendants_ex(io dm__os_node_st *pastAll, in uint32 u32All, 
   return u32Count;
 }
 
-uint32 dm__os_walk_descendants(in const dm__os_node_st *pastAll, in uint32 u32All, in int iRootPid,
-                               out uint32 *pau32Idx, in uint32 u32Cap)
+uint32 dm__os_walk_descendants(dm_in const dm__os_node_st *pastAll, dm_in uint32 u32All,
+                               dm_in int iRootPid, dm_out uint32 *pau32Idx, dm_in uint32 u32Cap)
 {
   /* 只读封装：pfResolve == NULL 时不会修改 pastAll */
   return dm__os_walk_descendants_ex((dm__os_node_st *)(uintptr_t)pastAll, u32All, iRootPid,
@@ -268,8 +269,9 @@ uint32 dm__os_walk_descendants(in const dm__os_node_st *pastAll, in uint32 u32Al
 
 /* ============================ 冲突环境变量扫描 ============================ */
 
-int dm_os_env_conflicts(in const char *const *ppcNames, in uint32 u32NameCount,
-                        out dm_os_env_conflict_st *pastOut, in uint32 u32Cap, out uint32 *pu32Count)
+int dm_os_env_conflicts(dm_in const char *const *ppcNames, dm_in uint32 u32NameCount,
+                        dm_out dm_os_env_conflict_st *pastOut, dm_in uint32 u32Cap,
+                        dm_out uint32 *pu32Count)
 {
   uint32 u32Idx = 0u;
   uint32 u32Found = 0u;

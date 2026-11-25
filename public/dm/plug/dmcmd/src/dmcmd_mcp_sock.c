@@ -27,7 +27,7 @@ extern "C"
 #include <limits.h>
 #include <string.h>
 
-void dmcmd_mcp_sock_close(in dmcmd_mcp_sock_t iSock)
+void dmcmd_mcp_sock_close(dm_in dmcmd_mcp_sock_t iSock)
 {
   if (DMCMD_MCP_SOCK_BAD == iSock)
   {
@@ -41,7 +41,7 @@ void dmcmd_mcp_sock_close(in dmcmd_mcp_sock_t iSock)
   return;
 }
 
-static void dmcmd__mcp_set_timeouts(in dmcmd_mcp_sock_t iSock, in int iMs)
+static void dmcmd__mcp_set_timeouts(dm_in dmcmd_mcp_sock_t iSock, dm_in int iMs)
 {
   int iUse = (iMs > 0) ? iMs : 5000;
 #ifdef _WIN32
@@ -58,7 +58,7 @@ static void dmcmd__mcp_set_timeouts(in dmcmd_mcp_sock_t iSock, in int iMs)
   return;
 }
 
-static int dmcmd__mcp_wait_sock(in dmcmd_mcp_sock_t iSock, in bool_t bWrite, in int iMs)
+static int dmcmd__mcp_wait_sock(dm_in dmcmd_mcp_sock_t iSock, dm_in bool_t bWrite, dm_in int iMs)
 {
   uint64 u64End = (iMs > 0) ? (dmc_now_ms() + (uint64)iMs) : 0u;
 
@@ -122,7 +122,7 @@ static int dmcmd__mcp_wait_sock(in dmcmd_mcp_sock_t iSock, in bool_t bWrite, in 
   }
 }
 
-static dmcmd_mcp_sock_t dmcmd__mcp_connect_one(in const struct addrinfo *pstAi, in int iMs)
+static dmcmd_mcp_sock_t dmcmd__mcp_connect_one(dm_in const struct addrinfo *pstAi, dm_in int iMs)
 {
   dmcmd_mcp_sock_t iSock = DMCMD_MCP_SOCK_BAD;
   int iErr = 0;
@@ -180,7 +180,7 @@ static dmcmd_mcp_sock_t dmcmd__mcp_connect_one(in const struct addrinfo *pstAi, 
   return iSock;
 }
 
-dmcmd_mcp_sock_t dmcmd_mcp_connect(in const char *pcHost, in int iPort, in uint32 u32Ms)
+dmcmd_mcp_sock_t dmcmd_mcp_connect(dm_in const char *pcHost, dm_in int iPort, dm_in uint32 u32Ms)
 {
   char acPort[16];
   struct addrinfo stHints;
@@ -217,8 +217,8 @@ dmcmd_mcp_sock_t dmcmd_mcp_connect(in const char *pcHost, in int iPort, in uint3
   return iSock;
 }
 
-int dmcmd_mcp_send_all(in dmcmd_mcp_sock_t iSock, in const void *pvBuf, in size_t uLen,
-                       in int iTimeoutMs)
+int dmcmd_mcp_send_all(dm_in dmcmd_mcp_sock_t iSock, dm_in const void *pvBuf, dm_in size_t uLen,
+                       dm_in int iTimeoutMs)
 {
   const char *pc = (const char *)pvBuf;
   int iLim = (iTimeoutMs > 0) ? iTimeoutMs : 5000;
@@ -283,7 +283,8 @@ int dmcmd_mcp_send_all(in dmcmd_mcp_sock_t iSock, in const void *pvBuf, in size_
   return 0;
 }
 
-int dmcmd_mcp_recv_idle(in dmcmd_mcp_sock_t iSock, out void *pvBuf, in size_t uCap, in int iIdleMs)
+int dmcmd_mcp_recv_idle(dm_in dmcmd_mcp_sock_t iSock, dm_out void *pvBuf, dm_in size_t uCap,
+                        dm_in int iIdleMs)
 {
   uint64 u64End = (iIdleMs > 0) ? (dmc_now_ms() + (uint64)iIdleMs) : 0u;
   size_t uWant = (uCap > (size_t)0x40000000u) ? (size_t)0x40000000u : uCap;

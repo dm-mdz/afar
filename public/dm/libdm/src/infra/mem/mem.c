@@ -84,6 +84,10 @@ static const char *g_apcTagName[DM_MEM_TAG_MAXID] = {
     [DM_MEM_TAG_POOL] = "pool",
     [DM_MEM_TAG_SECRET] = "secret",
     [DM_MEM_TAG_HTTPC] = "httpc",
+    [DM_MEM_TAG_THREAD] = "thread",
+    [DM_MEM_TAG_LOOP] = "loop",
+    [DM_MEM_TAG_SOCK] = "sock",
+    [DM_MEM_TAG_FS] = "fs",
 };
 
 /* 越界 tag 归入兜底,避免数组越界 */
@@ -96,7 +100,7 @@ static int dm__mem_tag_clamp(int iTag)
   return iTag;
 }
 
-void dm_mem_tag_name(in int iTag, in const char *pcName)
+void dm_mem_tag_name(dm_in int iTag, dm_in const char *pcName)
 {
   if ((iTag >= 0) && (iTag < DM_MEM_TAG_MAXID))
   {
@@ -229,7 +233,7 @@ size_t dm_mem_tag_count(void)
   return (size_t)atomic_load(&g_u64LiveBlocks);
 }
 
-void dm_mem_tag_stat(in int iTag, out uint64 *pu64Blocks, out uint64 *pu64Bytes)
+void dm_mem_tag_stat(dm_in int iTag, dm_out uint64 *pu64Blocks, dm_out uint64 *pu64Bytes)
 {
   uint64 u64Blocks = 0u;
   uint64 u64Bytes = 0u;
@@ -326,33 +330,33 @@ static dm_mem_rec_st *g_pstRecTab = NULL;
 static size_t g_uRecCap = 0;
 static size_t g_uRecCount = 0; /* LIVE 槽数 */
 static size_t g_uRecUsed = 0;  /* LIVE + TOMB 槽数 */
-static dm_mutex_t g_stMutex;
-static dm_once_t g_stInitOnce = DM_ONCE_INIT;
+static dm_uv_mutex_t g_stMutex;
+static dm_uv_once_t g_stInitOnce = DM_UV_ONCE_INIT;
 static dm_mem_free_hook_fn g_pfFreeHook = NULL;
 static _Atomic uint64 g_u64GuardHits = 0;
 
 static void dm__mem_lock(void)
 {
-  dm_mutex_lock(&g_stMutex);
+  dm_uv_mutex_lock(&g_stMutex);
   return;
 }
 
 static void dm__mem_unlock(void)
 {
-  dm_mutex_unlock(&g_stMutex);
+  dm_uv_mutex_unlock(&g_stMutex);
   return;
 }
 
 static void dm__mem_init_once(void)
 {
-  dm_mutex_init(&g_stMutex);
+  dm_uv_mutex_init(&g_stMutex);
   return;
 }
 
 /* 多线程首次分配可能并发进来:用 dm_once 保证锁只初始化一次 */
 static void dm__mem_ensure_init(void)
 {
-  dm_once(&g_stInitOnce, dm__mem_init_once);
+  dm_uv_once(&g_stInitOnce, dm__mem_init_once);
   return;
 }
 
@@ -556,7 +560,7 @@ void dm_mem_debug_init(void)
   return;
 }
 
-void dm_mem_debug_set_free_hook(in dm_mem_free_hook_fn pfHook)
+void dm_mem_debug_set_free_hook(dm_in dm_mem_free_hook_fn pfHook)
 {
   dm__mem_ensure_init();
   dm__mem_lock();
@@ -576,7 +580,7 @@ void dm_mem_debug_reset_guard_hits(void)
   return;
 }
 
-void *dm_mem_debug_alloc_tag(size_t uSize, int iTag, in const char *pcFile, in int iLine)
+void *dm_mem_debug_alloc_tag(size_t uSize, int iTag, dm_in const char *pcFile, dm_in int iLine)
 {
   uint8 *pu8Raw = NULL;
   uint8 *pu8Data = NULL;
@@ -619,13 +623,13 @@ void *dm_mem_debug_alloc_tag(size_t uSize, int iTag, in const char *pcFile, in i
   return pu8Data;
 }
 
-void *dm_mem_debug_alloc(size_t uSize, in const char *pcFile, in int iLine)
+void *dm_mem_debug_alloc(size_t uSize, dm_in const char *pcFile, dm_in int iLine)
 {
   return dm_mem_debug_alloc_tag(uSize, DM_MEM_TAG_UV_OTHER, pcFile, iLine);
 }
 
-void *dm_mem_debug_calloc_tag(size_t uCount, size_t uSize, int iTag, in const char *pcFile,
-                              in int iLine)
+void *dm_mem_debug_calloc_tag(size_t uCount, size_t uSize, int iTag, dm_in const char *pcFile,
+                              dm_in int iLine)
 {
   void *pvPtr = NULL;
 
@@ -641,12 +645,12 @@ void *dm_mem_debug_calloc_tag(size_t uCount, size_t uSize, int iTag, in const ch
   return pvPtr;
 }
 
-void *dm_mem_debug_calloc(size_t uCount, size_t uSize, in const char *pcFile, in int iLine)
+void *dm_mem_debug_calloc(size_t uCount, size_t uSize, dm_in const char *pcFile, dm_in int iLine)
 {
   return dm_mem_debug_calloc_tag(uCount, uSize, DM_MEM_TAG_UV_OTHER, pcFile, iLine);
 }
 
-void *dm_mem_debug_realloc(void *pvPtr, size_t uSize, in const char *pcFile, in int iLine)
+void *dm_mem_debug_realloc(void *pvPtr, size_t uSize, dm_in const char *pcFile, dm_in int iLine)
 {
   uint8 *pu8NewRaw = NULL;
   uint8 *pu8NewData = NULL;
@@ -896,7 +900,7 @@ void dm_mem_debug_dump(void)
 /* ============================ 安全擦零（AUD-06） ============================ */
 
 /* 防编译器死存储消除（DSE）的安全擦零（AUD-06） */
-void dm_secure_zero(out void *pvBuf, in size_t uLen)
+void dm_secure_zero(dm_out void *pvBuf, dm_in size_t uLen)
 {
   if ((NULL == pvBuf) || (0u == uLen))
   {

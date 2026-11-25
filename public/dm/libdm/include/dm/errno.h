@@ -43,6 +43,16 @@
 #define DM__TOO_BIG (DM_ERRNO_BASE - 19)       /* 超过上限 */
 #define DM__WRONG_THREAD (DM_ERRNO_BASE - 20)  /* 在不该调的线程上调了 */
 #define DM__LOOP_DETECTED (DM_ERRNO_BASE - 21) /* 派发跳数超限（死循环熔断） */
+#define DM__UNSUPPORTED (DM_ERRNO_BASE - 22)   /* 操作不支持（如平台原生不具备该能力） */
+#define DM__EXDEV (DM_ERRNO_BASE - 23)         /* 跨文件系统/跨卷链接不支持 */
+#define DM__AGAIN (DM_ERRNO_BASE - 24)         /* 资源暂不可用，稍后重试（trylock/try_send 等） */
+#define DM__EOF (DM_ERRNO_BASE - 25)           /* 流或文件结束 */
+#define DM__CANCELED (DM_ERRNO_BASE - 26)      /* 异步操作已取消 */
+#define DM__ADDR_IN_USE (DM_ERRNO_BASE - 27)   /* 地址或端口已被占用 */
+#define DM__CONN_REFUSED (DM_ERRNO_BASE - 28)  /* 连接被对端拒绝 */
+#define DM__DNS_FAIL (DM_ERRNO_BASE - 29)      /* 域名解析失败 */
+#define DM__NOT_DIR (DM_ERRNO_BASE - 30)       /* 路径分量非目录 */
+#define DM__IS_DIR (DM_ERRNO_BASE - 31)        /* 目标是目录 */
 
 /* DM 本体占 -100000 ~ -100999；别的模块用 dm_errno_register 登记自己的段（详设 1.4） */
 #define DM_ERRNO_SPAN 1000

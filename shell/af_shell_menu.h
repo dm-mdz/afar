@@ -17,12 +17,12 @@ extern "C"
 #endif
 
 void af_shell_menu_init(void);
-void af_shell_menu_update(in const af_menu_snap_st *pstSnap);
+void af_shell_menu_update(dm_in const af_menu_snap_st *pstSnap);
 void af_shell_menu_destroy(void);
 void af_shell_menu_trigger_quit(void);
 void af_shell_menu_refresh_lang(void);
 bool_t af_shell_lang_is_zh(void);
-void af_shell_lang_set(in const char *pcLang);
+void af_shell_lang_set(dm_in const char *pcLang);
 
 #ifdef __cplusplus
 }

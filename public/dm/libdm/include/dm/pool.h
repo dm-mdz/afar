@@ -44,19 +44,19 @@ typedef struct dm_pool_stat
   uint64 u64RunMaxNs;
 } dm_pool_stat_st;
 
-typedef void (*dm_pool_work_fn)(io void *pvArg);
-typedef void (*dm_pool_after_fn)(io void *pvArg, in int iStatus);
+typedef void (*dm_pool_work_fn)(dm_io void *pvArg);
+typedef void (*dm_pool_after_fn)(dm_io void *pvArg, dm_in int iStatus);
 
 /* 配置指定泳道参数（须在 dm_main_ex 启动线程池之前于主线程调用；运行中调用回 DM_LINK_ERR_STATE；
  * pstCfg == NULL 恢复该泳道默认配置；u32IdleMs 须 <= 0x7FFFFFFFu，0 表示保持默认） */
-DM_API int dm_pool_set_lane(in dm_pool_lane_et eLane, in const dm_pool_lane_cfg_st *pstCfg);
+DM_API int dm_pool_set_lane(dm_in dm_pool_lane_et eLane, dm_in const dm_pool_lane_cfg_st *pstCfg);
 
 /* 向指定泳道提交异步任务（仅主循环线程调用；完工回调经总队列回到主线程执行） */
-DM_API int dm_pool_submit(in dm_pool_lane_et eLane, in dm_pool_work_fn pfWork,
-                          in dm_pool_after_fn pfAfter, in void *pvArg);
+DM_API int dm_pool_submit(dm_in dm_pool_lane_et eLane, dm_in dm_pool_work_fn pfWork,
+                          dm_in dm_pool_after_fn pfAfter, dm_in void *pvArg);
 
 /* 查询指定泳道实时统计快照（仅主循环线程或在 dm_main_ex 之外调用） */
-DM_API int dm_pool_stat(in dm_pool_lane_et eLane, out dm_pool_stat_st *pstOut);
+DM_API int dm_pool_stat(dm_in dm_pool_lane_et eLane, dm_out dm_pool_stat_st *pstOut);
 
 /* 累计经主线程 thread_join 回收的已退出工作线程数（原子读取，用于诊断与 T-DM-03 校验） */
 DM_API uint64 dm_pool_reaped_threads(void);

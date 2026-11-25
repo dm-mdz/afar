@@ -33,7 +33,7 @@ extern "C"
 
 /* ============================ 进程查询与进程树终止 ============================ */
 
-static int dm__os_mac_bsdinfo(in int iPid, out struct proc_bsdinfo *pstInfo)
+static int dm__os_mac_bsdinfo(dm_in int iPid, dm_out struct proc_bsdinfo *pstInfo)
 {
   int iRet = proc_pidinfo(iPid, PROC_PIDTBSDINFO, 0, pstInfo, (int)sizeof(*pstInfo));
   if (iRet == (int)sizeof(*pstInfo))
@@ -47,7 +47,7 @@ static int dm__os_mac_bsdinfo(in int iPid, out struct proc_bsdinfo *pstInfo)
   return DM_NOT_FOUND;
 }
 
-static void dm__os_mac_cmdline(in int iPid, out char *pcOut, in size_t uCap)
+static void dm__os_mac_cmdline(dm_in int iPid, dm_out char *pcOut, dm_in size_t uCap)
 {
   int aiMibArg[2] = {CTL_KERN, KERN_ARGMAX};
   int aiMib[3] = {CTL_KERN, KERN_PROCARGS2, iPid};
@@ -115,7 +115,7 @@ static void dm__os_mac_cmdline(in int iPid, out char *pcOut, in size_t uCap)
   return;
 }
 
-int dm_os_proc_start_ms(in int iPid, out uint64 *pu64StartMs)
+int dm_os_proc_start_ms(dm_in int iPid, dm_out uint64 *pu64StartMs)
 {
   struct proc_bsdinfo stInfo = {0};
   int iRc = DM_SUCCESS;
@@ -136,8 +136,8 @@ int dm_os_proc_start_ms(in int iPid, out uint64 *pu64StartMs)
   return DM_SUCCESS;
 }
 
-int dm_os_proc_descendants(in int iRootPid, out dm_os_proc_st *pastOut, in uint32 u32Cap,
-                           out uint32 *pu32Count)
+int dm_os_proc_descendants(dm_in int iRootPid, dm_out dm_os_proc_st *pastOut, dm_in uint32 u32Cap,
+                           dm_out uint32 *pu32Count)
 {
   int iBytes = proc_listallpids(NULL, 0);
   int iSlots = 0;
@@ -224,7 +224,7 @@ int dm_os_proc_descendants(in int iRootPid, out dm_os_proc_st *pastOut, in uint3
   return DM_SUCCESS;
 }
 
-static int dm__os_mac_kill_one(in int iPid)
+static int dm__os_mac_kill_one(dm_in int iPid)
 {
   if (0 == kill((pid_t)iPid, SIGKILL))
   {
@@ -233,7 +233,7 @@ static int dm__os_mac_kill_one(in int iPid)
   return (EPERM == errno) ? DM_PERM : DM_NOT_FOUND;
 }
 
-int dm_os_proc_kill_tree(in int iPid)
+int dm_os_proc_kill_tree(dm_in int iPid)
 {
   dm_os_proc_st *pastDesc = NULL;
   uint32 u32Count = 0u;
@@ -278,7 +278,7 @@ int dm_os_proc_kill_tree(in int iPid)
 
 /* ============================ 文件可执行性与目录链接 ============================ */
 
-bool_t dm_os_is_exec(in const char *pcPathUtf8)
+bool_t dm_os_is_exec(dm_in const char *pcPathUtf8)
 {
   struct stat stSt = {0};
   return ((NULL != pcPathUtf8) && (0 == stat(pcPathUtf8, &stSt)) && S_ISREG(stSt.st_mode) &&
@@ -287,8 +287,8 @@ bool_t dm_os_is_exec(in const char *pcPathUtf8)
              : DM_FALSE;
 }
 
-int dm_os_dir_link(in const char *pcLinkPathUtf8, in const char *pcTargetPathUtf8,
-                   out bool_t *pbUsedCopy)
+int dm_os_dir_link(dm_in const char *pcLinkPathUtf8, dm_in const char *pcTargetPathUtf8,
+                   dm_out bool_t *pbUsedCopy)
 {
   struct stat stTarget = {0};
   char acAbsTarget[PATH_MAX] = {0};
@@ -319,7 +319,7 @@ int dm_os_dir_link(in const char *pcLinkPathUtf8, in const char *pcTargetPathUtf
   return DM_SUCCESS;
 }
 
-static int dm__os_mac_rm_recursive(in const char *pcPath, in uint32 u32Depth)
+static int dm__os_mac_rm_recursive(dm_in const char *pcPath, dm_in uint32 u32Depth)
 {
   struct stat stSt = {0};
   DIR *pstDir = NULL;
@@ -361,7 +361,7 @@ static int dm__os_mac_rm_recursive(in const char *pcPath, in uint32 u32Depth)
   return (0 == rmdir(pcPath)) ? DM_SUCCESS : DM_IO;
 }
 
-int dm_os_dir_unlink(in const char *pcLinkPathUtf8)
+int dm_os_dir_unlink(dm_in const char *pcLinkPathUtf8)
 {
   DM_ASSERT_SLOW();
   if ((NULL == pcLinkPathUtf8) || ('\0' == pcLinkPathUtf8[0]))

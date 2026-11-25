@@ -34,10 +34,13 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define AF_ENV_POLL_MS       60000u
-#define AF_ENV_CMD_TIMEOUT   5000u
-#define AF_ENV_TCP_TIMEOUT   2000u
-#define AF_ENV_OUT_CAP       8192u
+#define AF_ENV_POLL_MS        60000u
+#define AF_ENV_FAST_POLL_MS   2500u
+#define AF_ENV_FAST_WIN_MS    120000u
+#define AF_ENV_CMD_TIMEOUT    5000u
+#define AF_ENV_TCP_TIMEOUT    2000u
+#define AF_ENV_OUT_CAP        8192u
+#define AF_ENV_LINK_FAST_PERM DM_MOD_LINKID(AF_MOD_ENV, 0x02u)
 
 typedef struct af__env_job
 {
@@ -55,11 +58,13 @@ static bool_t g_bEnvProbing = DM_FALSE;
 static bool_t g_bEnvNeedReprobe = DM_FALSE;
 static bool_t g_bEnvDraining = DM_FALSE;
 static uint32 g_u32EnvTimerId = 0u;
+static uint32 g_u32EnvFastTimerId = 0u;
+static uint64 g_u64EnvFastUntilMs = 0u;
 static int g_iEnvDrainHold = -1;
 
 /* ============================ 纯解析函数 ============================ */
 
-static const char *af__strcasestr(in const char *pcHay, in const char *pcNeedle)
+static const char *af__strcasestr(dm_in const char *pcHay, dm_in const char *pcNeedle)
 {
   size_t uNLen = 0u;
 
@@ -75,8 +80,7 @@ static const char *af__strcasestr(in const char *pcHay, in const char *pcNeedle)
   while ('\0' != *pcHay)
   {
     size_t i = 0u;
-    while ((i < uNLen)
-           && (tolower((unsigned char)pcHay[i]) == tolower((unsigned char)pcNeedle[i])))
+    while ((i < uNLen) && (tolower((unsigned char)pcHay[i]) == tolower((unsigned char)pcNeedle[i])))
     {
       i++;
     }
@@ -89,7 +93,7 @@ static const char *af__strcasestr(in const char *pcHay, in const char *pcNeedle)
   return NULL;
 }
 
-bool_t af_env_parse_agent_plist(in const char *pcXml, in const char *pcExePath)
+bool_t af_env_parse_agent_plist(dm_in const char *pcXml, dm_in const char *pcExePath)
 {
   const char *pcKey = NULL;
   const char *pcArr = NULL;
@@ -117,8 +121,14 @@ bool_t af_env_parse_agent_plist(in const char *pcXml, in const char *pcExePath)
   {
     return DM_FALSE;
   }
-  while ((pcS < pcE) && (0 != isspace((unsigned char)*pcS))) { pcS++; }
-  while ((pcE > pcS) && (0 != isspace((unsigned char)pcE[-1]))) { pcE--; }
+  while ((pcS < pcE) && (0 != isspace((unsigned char)*pcS)))
+  {
+    pcS++;
+  }
+  while ((pcE > pcS) && (0 != isspace((unsigned char)pcE[-1])))
+  {
+    pcE--;
+  }
   uLen = (size_t)(pcE - pcS);
   if ((0u == uLen) || (uLen >= sizeof(acFound)))
   {
@@ -137,7 +147,7 @@ bool_t af_env_parse_agent_plist(in const char *pcXml, in const char *pcExePath)
   return DM_FALSE;
 }
 
-bool_t af_env_parse_launchctl_ok(in int iExitCode, in const char *pcOut)
+bool_t af_env_parse_launchctl_ok(dm_in int iExitCode, dm_in const char *pcOut)
 {
   if (0 != iExitCode)
   {
@@ -150,7 +160,7 @@ bool_t af_env_parse_launchctl_ok(in int iExitCode, in const char *pcOut)
   return DM_TRUE;
 }
 
-bool_t af_env_parse_fw_global_off(in int iExitCode, in const char *pcOut)
+bool_t af_env_parse_fw_global_off(dm_in int iExitCode, dm_in const char *pcOut)
 {
   if ((0 != iExitCode) || (NULL == pcOut))
   {
@@ -163,19 +173,19 @@ bool_t af_env_parse_fw_global_off(in int iExitCode, in const char *pcOut)
   return DM_FALSE;
 }
 
-bool_t af_env_parse_fw_app_permitted(in int iExitCode, in const char *pcOut)
+bool_t af_env_parse_fw_app_permitted(dm_in int iExitCode, dm_in const char *pcOut)
 {
   if ((0 != iExitCode) || (NULL == pcOut))
   {
     return DM_FALSE;
   }
-  return ((NULL != af__strcasestr(pcOut, "permitted"))
-          && (NULL == af__strcasestr(pcOut, "blocked")))
+  return ((NULL != af__strcasestr(pcOut, "permitted")) &&
+          (NULL == af__strcasestr(pcOut, "blocked")))
              ? DM_TRUE
              : DM_FALSE;
 }
 
-bool_t af_env_parse_pmset_autorestart(in const char *pcOut)
+bool_t af_env_parse_pmset_autorestart(dm_in const char *pcOut)
 {
   const char *pcLine = pcOut;
 
@@ -187,25 +197,33 @@ bool_t af_env_parse_pmset_autorestart(in const char *pcOut)
   {
     const char *pcP = pcLine;
     const char *pcNext = strchr(pcLine, '\n');
-    while ((' ' == *pcP) || ('\t' == *pcP)) { pcP++; }
+    while ((' ' == *pcP) || ('\t' == *pcP))
+    {
+      pcP++;
+    }
     if ((0 == strncmp(pcP, "autorestart", 11u)) && ((' ' == pcP[11]) || ('\t' == pcP[11])))
     {
       pcP += 11;
-      while ((' ' == *pcP) || ('\t' == *pcP)) { pcP++; }
-      if (('1' == pcP[0])
-          && (('\0' == pcP[1]) || ('\r' == pcP[1]) || ('\n' == pcP[1]) || (' ' == pcP[1])
-              || ('\t' == pcP[1])))
+      while ((' ' == *pcP) || ('\t' == *pcP))
+      {
+        pcP++;
+      }
+      if (('1' == pcP[0]) && (('\0' == pcP[1]) || ('\r' == pcP[1]) || ('\n' == pcP[1]) ||
+                              (' ' == pcP[1]) || ('\t' == pcP[1])))
       {
         return DM_TRUE;
       }
     }
-    if (NULL == pcNext) { break; }
+    if (NULL == pcNext)
+    {
+      break;
+    }
     pcLine = pcNext + 1;
   }
   return DM_FALSE;
 }
 
-bool_t af_env_parse_filevault(in int iExitCode, in const char *pcOut)
+bool_t af_env_parse_filevault(dm_in int iExitCode, dm_in const char *pcOut)
 {
   if ((0 != iExitCode) || (NULL == pcOut))
   {
@@ -216,7 +234,7 @@ bool_t af_env_parse_filevault(in int iExitCode, in const char *pcOut)
              : DM_FALSE;
 }
 
-bool_t af_env_parse_autologin(in int iExitCode, in const char *pcOut)
+bool_t af_env_parse_autologin(dm_in int iExitCode, dm_in const char *pcOut)
 {
   const char *pcP = pcOut;
 
@@ -231,8 +249,8 @@ bool_t af_env_parse_autologin(in int iExitCode, in const char *pcOut)
   return ('\0' != *pcP) ? DM_TRUE : DM_FALSE;
 }
 
-uint32 af_env_parse_ssh_pub(in const char *pcText, out char aacOut[][AF_SSH_KEY_LEN],
-                            io uint32 *pu32Cnt, in uint32 u32Cap)
+uint32 af_env_parse_ssh_pub(dm_in const char *pcText, dm_out char aacOut[][AF_SSH_KEY_LEN],
+                            dm_io uint32 *pu32Cnt, dm_in uint32 u32Cap)
 {
   const char *pcLine = pcText;
   uint32 u32Added = 0u;
@@ -250,15 +268,27 @@ uint32 af_env_parse_ssh_pub(in const char *pcText, out char aacOut[][AF_SSH_KEY_
     const char *pcT2 = NULL;
     const char *pcT2End = NULL;
 
-    while ((pcT1 < pcEnd) && ((' ' == *pcT1) || ('\t' == *pcT1) || ('\r' == *pcT1))) { pcT1++; }
+    while ((pcT1 < pcEnd) && ((' ' == *pcT1) || ('\t' == *pcT1) || ('\r' == *pcT1)))
+    {
+      pcT1++;
+    }
     if ((pcT1 < pcEnd) && ('#' != *pcT1))
     {
       pcT1End = pcT1;
-      while ((pcT1End < pcEnd) && (0 == isspace((unsigned char)*pcT1End))) { pcT1End++; }
+      while ((pcT1End < pcEnd) && (0 == isspace((unsigned char)*pcT1End)))
+      {
+        pcT1End++;
+      }
       pcT2 = pcT1End;
-      while ((pcT2 < pcEnd) && ((' ' == *pcT2) || ('\t' == *pcT2))) { pcT2++; }
+      while ((pcT2 < pcEnd) && ((' ' == *pcT2) || ('\t' == *pcT2)))
+      {
+        pcT2++;
+      }
       pcT2End = pcT2;
-      while ((pcT2End < pcEnd) && (0 == isspace((unsigned char)*pcT2End))) { pcT2End++; }
+      while ((pcT2End < pcEnd) && (0 == isspace((unsigned char)*pcT2End)))
+      {
+        pcT2End++;
+      }
       if ((pcT1End > pcT1) && (pcT2End > pcT2))
       {
         size_t uL1 = (size_t)(pcT1End - pcT1);
@@ -274,7 +304,10 @@ uint32 af_env_parse_ssh_pub(in const char *pcText, out char aacOut[][AF_SSH_KEY_
         }
       }
     }
-    if (NULL == pcNext) { break; }
+    if (NULL == pcNext)
+    {
+      break;
+    }
     pcLine = pcNext + 1;
   }
   return u32Added;
@@ -282,16 +315,17 @@ uint32 af_env_parse_ssh_pub(in const char *pcText, out char aacOut[][AF_SSH_KEY_
 
 /* ============================ 底层命令与探测执行 ============================ */
 
-static int af__default_run_cmd(in const char *const *ppcArgv, in const _Atomic bool_t *pbCancel,
-                               out char *pcOut, in size_t uOutCap, in uint32 u32TimeoutMs,
-                               out int *piExitCode)
+static int af__default_run_cmd(dm_in const char *const *ppcArgv,
+                               dm_in const _Atomic bool_t *pbCancel, dm_out char *pcOut,
+                               dm_in size_t uOutCap, dm_in uint32 u32TimeoutMs,
+                               dm_out int *piExitCode)
 {
   return af_plat_run_cmd_cancellable(ppcArgv, NULL, pbCancel, pcOut, uOutCap, u32TimeoutMs,
                                      piExitCode);
 }
 
-static bool_t af__default_tcp_probe(in const char *pcIp, in uint16 u16Port, in uint32 u32TimeoutMs,
-                                    in const _Atomic bool_t *pbCancel)
+static bool_t af__default_tcp_probe(dm_in const char *pcIp, dm_in uint16 u16Port,
+                                    dm_in uint32 u32TimeoutMs, dm_in const _Atomic bool_t *pbCancel)
 {
   struct sockaddr_in stAddr;
   int iFd = -1;
@@ -346,7 +380,10 @@ static bool_t af__default_tcp_probe(in const char *pcIp, in uint16 u16Port, in u
     }
     if (iPr < 0)
     {
-      if (EINTR == errno) { continue; }
+      if (EINTR == errno)
+      {
+        continue;
+      }
       break;
     }
   }
@@ -354,14 +391,17 @@ static bool_t af__default_tcp_probe(in const char *pcIp, in uint16 u16Port, in u
   return bOk;
 }
 
-static bool_t af__read_small_file(in const char *pcPath, out char *pcBuf, in size_t uCap)
+static bool_t af__read_small_file(dm_in const char *pcPath, dm_out char *pcBuf, dm_in size_t uCap)
 {
   FILE *pf = fopen(pcPath, "rb");
   size_t uRead = 0u;
 
   if ((NULL == pf) || (NULL == pcBuf) || (uCap < 2u))
   {
-    if (NULL != pf) { fclose(pf); }
+    if (NULL != pf)
+    {
+      fclose(pf);
+    }
     return DM_FALSE;
   }
   uRead = fread(pcBuf, 1u, uCap - 1u, pf);
@@ -370,8 +410,8 @@ static bool_t af__read_small_file(in const char *pcPath, out char *pcBuf, in siz
   return (uRead > 0u) ? DM_TRUE : DM_FALSE;
 }
 
-static bool_t af__probe_agent(in const af__env_job_st *pstJob, in af_env_cmd_fn pfCmd,
-                              out char *pcBuf, in size_t uBufCap)
+static bool_t af__probe_agent(dm_in const af__env_job_st *pstJob, dm_in af_env_cmd_fn pfCmd,
+                              dm_out char *pcBuf, dm_in size_t uBufCap)
 {
   char acTarget[64];
   int iExit = -1;
@@ -382,10 +422,11 @@ static bool_t af__probe_agent(in const af__env_job_st *pstJob, in af_env_cmd_fn 
     bPlistOk = af_env_parse_agent_plist(pcBuf, pstJob->acExePath);
     if ((!bPlistOk) && (0 == strncmp(pcBuf, "bplist", 6u)))
     {
-      const char *apcPl[] = {"/usr/bin/plutil", "-convert", "xml1", "-o", "-",
+      const char *apcPl[] = {"/usr/bin/plutil",   "-convert", "xml1", "-o", "-",
                              pstJob->acPlistPath, NULL};
-      if ((DM_SUCCESS == pfCmd(apcPl, &g_bAfQuitting, pcBuf, uBufCap, AF_ENV_CMD_TIMEOUT, &iExit))
-          && (0 == iExit))
+      if ((DM_SUCCESS ==
+           pfCmd(apcPl, &g_bAfQuitting, pcBuf, uBufCap, AF_ENV_CMD_TIMEOUT, &iExit)) &&
+          (0 == iExit))
       {
         bPlistOk = af_env_parse_agent_plist(pcBuf, pstJob->acExePath);
       }
@@ -406,8 +447,8 @@ static bool_t af__probe_agent(in const af__env_job_st *pstJob, in af_env_cmd_fn 
   return af_env_parse_launchctl_ok(iExit, pcBuf);
 }
 
-static bool_t af__probe_fw(in const af__env_job_st *pstJob, in af_env_cmd_fn pfCmd, out char *pcBuf,
-                           in size_t uBufCap)
+static bool_t af__probe_fw(dm_in const af__env_job_st *pstJob, dm_in af_env_cmd_fn pfCmd,
+                           dm_out char *pcBuf, dm_in size_t uBufCap)
 {
   int iExit = -1;
   const char *apcGlobal[] = {"/usr/libexec/ApplicationFirewall/socketfilterfw", "--getglobalstate",
@@ -434,14 +475,11 @@ static bool_t af__probe_fw(in const af__env_job_st *pstJob, in af_env_cmd_fn pfC
   return af_env_parse_fw_app_permitted(iExit, pcBuf);
 }
 
-static void af__probe_ssh_keys(in const char *pcSshDir, io af_env_snap_st *pstSnap, out char *pcBuf,
-                               in size_t uBufCap)
+static void af__probe_ssh_keys(dm_in const char *pcSshDir, dm_io af_env_snap_st *pstSnap,
+                               dm_out char *pcBuf, dm_in size_t uBufCap)
 {
-  static const char *const apcFiles[3] = {
-      "ssh_host_ecdsa_key.pub",
-      "ssh_host_rsa_key.pub",
-      "ssh_host_ed25519_key.pub"
-  };
+  static const char *const apcFiles[3] = {"ssh_host_ecdsa_key.pub", "ssh_host_rsa_key.pub",
+                                          "ssh_host_ed25519_key.pub"};
   char acPath[600];
   int i = 0;
 
@@ -456,7 +494,7 @@ static void af__probe_ssh_keys(in const char *pcSshDir, io af_env_snap_st *pstSn
   }
 }
 
-static void af__env_work(io void *pvArg)
+static void af__env_work(dm_io void *pvArg)
 {
   af__env_job_st *pstJob = (af__env_job_st *)pvArg;
   af_env_cmd_fn pfCmd =
@@ -484,9 +522,9 @@ static void af__env_work(io void *pvArg)
   if (!atomic_load(&g_bAfQuitting))
   {
     const char *apcPm[] = {"/usr/bin/pmset", "-g", NULL};
-    if ((DM_SUCCESS == pfCmd(apcPm, &g_bAfQuitting, pcBuf, AF_ENV_OUT_CAP, AF_ENV_CMD_TIMEOUT,
-                             &iExit))
-        && (0 == iExit))
+    if ((DM_SUCCESS ==
+         pfCmd(apcPm, &g_bAfQuitting, pcBuf, AF_ENV_OUT_CAP, AF_ENV_CMD_TIMEOUT, &iExit)) &&
+        (0 == iExit))
     {
       pstJob->stSnap.bAutoRestart = af_env_parse_pmset_autorestart(pcBuf);
     }
@@ -494,18 +532,18 @@ static void af__env_work(io void *pvArg)
   if (!atomic_load(&g_bAfQuitting))
   {
     const char *apcFv[] = {"/usr/bin/fdesetup", "isactive", NULL};
-    if (DM_SUCCESS == pfCmd(apcFv, &g_bAfQuitting, pcBuf, AF_ENV_OUT_CAP, AF_ENV_CMD_TIMEOUT,
-                            &iExit))
+    if (DM_SUCCESS ==
+        pfCmd(apcFv, &g_bAfQuitting, pcBuf, AF_ENV_OUT_CAP, AF_ENV_CMD_TIMEOUT, &iExit))
     {
       pstJob->stSnap.bFileVault = af_env_parse_filevault(iExit, pcBuf);
     }
   }
   if (!atomic_load(&g_bAfQuitting))
   {
-    const char *apcAl[] = {"/usr/bin/defaults", "read", "/Library/Preferences/com.apple.loginwindow",
-                           "autoLoginUser", NULL};
-    if (DM_SUCCESS == pfCmd(apcAl, &g_bAfQuitting, pcBuf, AF_ENV_OUT_CAP, AF_ENV_CMD_TIMEOUT,
-                            &iExit))
+    const char *apcAl[] = {"/usr/bin/defaults", "read",
+                           "/Library/Preferences/com.apple.loginwindow", "autoLoginUser", NULL};
+    if (DM_SUCCESS ==
+        pfCmd(apcAl, &g_bAfQuitting, pcBuf, AF_ENV_OUT_CAP, AF_ENV_CMD_TIMEOUT, &iExit))
     {
       pstJob->stSnap.bAutoLogin = af_env_parse_autologin(iExit, pcBuf);
     }
@@ -517,16 +555,32 @@ static void af__env_work(io void *pvArg)
   if (!atomic_load(&g_bAfQuitting))
   {
     af__probe_ssh_keys(pstJob->acSshDir, &pstJob->stSnap, pcBuf, AF_ENV_OUT_CAP);
+    pstJob->stSnap.bPermSc = (NULL != pstJob->stHooks.pfPermSc)
+                                 ? pstJob->stHooks.pfPermSc()
+                                 : af_plat_perm_screen_capture();
+    pstJob->stSnap.bPermAx = (NULL != pstJob->stHooks.pfPermAx)
+                                 ? pstJob->stHooks.pfPermAx()
+                                 : af_plat_perm_accessibility();
   }
   pstJob->bCancelled = atomic_load(&g_bAfQuitting);
   dm_free_tag(pcBuf);
 }
 
-static void af__env_after(io void *pvArg, in int iStatus)
+static void af__env_stop_fast_poll(void)
+{
+  if (0u != g_u32EnvFastTimerId)
+  {
+    (void)dm_timer_cancel(g_u32EnvFastTimerId);
+    g_u32EnvFastTimerId = 0u;
+  }
+  g_u64EnvFastUntilMs = 0u;
+}
+
+static void af__env_after(dm_io void *pvArg, dm_in int iStatus)
 {
   af__env_job_st *pstJob = (af__env_job_st *)pvArg;
-  bool_t bOk = ((0 == iStatus) && (!pstJob->bCancelled) && (!atomic_load(&g_bAfQuitting))
-                && (!g_bEnvDraining))
+  bool_t bOk = ((0 == iStatus) && (!pstJob->bCancelled) && (!atomic_load(&g_bAfQuitting)) &&
+                (!g_bEnvDraining))
                    ? DM_TRUE
                    : DM_FALSE;
 
@@ -535,6 +589,10 @@ static void af__env_after(io void *pvArg, in int iStatus)
   {
     g_stEnvSnap = pstJob->stSnap;
     g_stEnvSnap.bReady = DM_TRUE;
+    if (g_stEnvSnap.bPermSc && g_stEnvSnap.bPermAx)
+    {
+      af__env_stop_fast_poll();
+    }
     (void)dm_event_publish(AF_EV_ENV_UPDATED, &g_stEnvSnap, (uint32)sizeof(g_stEnvSnap));
   }
   dm_free_tag(pstJob);
@@ -552,7 +610,7 @@ static void af__env_after(io void *pvArg, in int iStatus)
   }
 }
 
-static void af__fill_job_paths(out af__env_job_st *pstJob)
+static void af__fill_job_paths(dm_out af__env_job_st *pstJob)
 {
   char acHome[384];
   size_t uHomeCap = sizeof(acHome);
@@ -587,7 +645,7 @@ static void af__fill_job_paths(out af__env_job_st *pstJob)
 
 /* ============================ 公开 API 与 DM 模块 ============================ */
 
-void af_env_get_snapshot(out af_env_snap_st *pstOut)
+void af_env_get_snapshot(dm_out af_env_snap_st *pstOut)
 {
   if (NULL != pstOut)
   {
@@ -595,7 +653,7 @@ void af_env_get_snapshot(out af_env_snap_st *pstOut)
   }
 }
 
-void af_env_set_hooks(in const af_env_hooks_st *pstHooks)
+void af_env_set_hooks(dm_in const af_env_hooks_st *pstHooks)
 {
   if (NULL == pstHooks)
   {
@@ -635,14 +693,49 @@ void af_env_probe_now(void)
   }
 }
 
-static int af__on_env_probe_link(io void *pvArg)
+static bool_t af__env_poll_perms_once(void)
+{
+  bool_t bSc = (NULL != g_stEnvHooks.pfPermSc) ? g_stEnvHooks.pfPermSc()
+                                               : af_plat_perm_screen_capture();
+  bool_t bAx = (NULL != g_stEnvHooks.pfPermAx) ? g_stEnvHooks.pfPermAx()
+                                               : af_plat_perm_accessibility();
+  if ((bSc != g_stEnvSnap.bPermSc) || (bAx != g_stEnvSnap.bPermAx))
+  {
+    g_stEnvSnap.bPermSc = bSc;
+    g_stEnvSnap.bPermAx = bAx;
+    (void)dm_event_publish(AF_EV_ENV_UPDATED, &g_stEnvSnap, (uint32)sizeof(g_stEnvSnap));
+  }
+  return (bSc && bAx) ? DM_TRUE : DM_FALSE;
+}
+
+void af_env_start_fast_perm_poll(dm_in uint32 u32WindowMs)
+{
+  uint32 u32Win = (u32WindowMs > 0u) ? u32WindowMs : AF_ENV_FAST_WIN_MS;
+  uint32 u32Step = (g_stEnvHooks.u32FastPollMs > 0u) ? g_stEnvHooks.u32FastPollMs
+                                                     : AF_ENV_FAST_POLL_MS;
+  if (g_bEnvDraining || atomic_load(&g_bAfQuitting)) { return; }
+  if (af__env_poll_perms_once()) { af__env_stop_fast_poll(); return; }
+  g_u64EnvFastUntilMs = (dm_hrtime() / 1000000ULL) + (uint64)u32Win;
+  if (0u == g_u32EnvFastTimerId)
+  {
+    (void)dm_timer_add(u32Step, u32Step, AF_ENV_LINK_FAST_PERM, 0u, &g_u32EnvFastTimerId);
+  }
+}
+
+static int af__on_env_fast_perm(dm_io void *pvArg)
 {
   (void)pvArg;
-  af_env_probe_now();
+  if (g_bEnvDraining || atomic_load(&g_bAfQuitting)) { af__env_stop_fast_poll(); return DM_SUCCESS; }
+  if (af__env_poll_perms_once() || ((dm_hrtime() / 1000000ULL) >= g_u64EnvFastUntilMs))
+  {
+    af__env_stop_fast_poll();
+  }
   return DM_SUCCESS;
 }
 
-static int af__on_env_ready(io void *pvArg)
+static int af__on_env_probe_link(dm_io void *pvArg) { (void)pvArg; af_env_probe_now(); return DM_SUCCESS; }
+
+static int af__on_env_ready(dm_io void *pvArg)
 {
   (void)pvArg;
   (void)dm_timer_add(AF_ENV_POLL_MS, AF_ENV_POLL_MS, AF_LINK_ENV_PROBE, 0u, &g_u32EnvTimerId);
@@ -650,16 +743,18 @@ static int af__on_env_ready(io void *pvArg)
   return DM_SUCCESS;
 }
 
-static int af__env_init(void)
+static void af__env_reset_state(void)
 {
   memset(&g_stEnvSnap, 0, sizeof(g_stEnvSnap));
-  g_bEnvProbing = DM_FALSE;
-  g_bEnvNeedReprobe = DM_FALSE;
-  g_bEnvDraining = DM_FALSE;
-  g_u32EnvTimerId = 0u;
-  g_iEnvDrainHold = -1;
+  g_bEnvProbing = DM_FALSE; g_bEnvNeedReprobe = DM_FALSE; g_bEnvDraining = DM_FALSE;
+  g_u32EnvTimerId = 0u; g_u32EnvFastTimerId = 0u; g_u64EnvFastUntilMs = 0u; g_iEnvDrainHold = -1;
+}
 
+static int af__env_init(void)
+{
+  af__env_reset_state();
   if ((DM_SUCCESS != dm_link_register_handler(AF_LINK_ENV_PROBE, af__on_env_probe_link, NULL, NULL))
+      || (DM_SUCCESS != dm_link_register_handler(AF_ENV_LINK_FAST_PERM, af__on_env_fast_perm, NULL, NULL))
       || (DM_SUCCESS != dm_event_subscribe(DM_EV_READY, af__on_env_ready, NULL, NULL)))
   {
     return DM_FAILD;
@@ -667,41 +762,19 @@ static int af__env_init(void)
   return DM_SUCCESS;
 }
 
-static void af__env_drain(io dm_drain_st *pstDrain)
+static void af__env_drain(dm_io dm_drain_st *pstDrain)
 {
   g_bEnvDraining = DM_TRUE;
   g_bEnvNeedReprobe = DM_FALSE;
-  if (0u != g_u32EnvTimerId)
-  {
-    (void)dm_timer_cancel(g_u32EnvTimerId);
-    g_u32EnvTimerId = 0u;
-  }
-  if (g_bEnvProbing)
-  {
-    g_iEnvDrainHold = dm_drain_hold(pstDrain);
-  }
+  af__env_stop_fast_poll();
+  if (0u != g_u32EnvTimerId) { (void)dm_timer_cancel(g_u32EnvTimerId); g_u32EnvTimerId = 0u; }
+  if (g_bEnvProbing) { g_iEnvDrainHold = dm_drain_hold(pstDrain); }
 }
 
-static void af__env_fini(void)
-{
-  memset(&g_stEnvSnap, 0, sizeof(g_stEnvSnap));
-  g_bEnvProbing = DM_FALSE;
-  g_bEnvNeedReprobe = DM_FALSE;
-  g_bEnvDraining = DM_FALSE;
-  g_u32EnvTimerId = 0u;
-  g_iEnvDrainHold = -1;
-}
+static void af__env_fini(void) { af__env_reset_state(); }
 
-const dm_module_st g_stAfEnvMod = {
-    .u16ModID = AF_MOD_ENV,
-    .pcName = "af_env",
-    .pfInit = af__env_init,
-    .pfDrain = af__env_drain,
-    .pfFini = af__env_fini,
-    .pastErrMap = NULL
-};
+const dm_module_st g_stAfEnvMod = {.u16ModID = AF_MOD_ENV, .pcName = "af_env",
+                                   .pfInit = af__env_init, .pfDrain = af__env_drain,
+                                   .pfFini = af__env_fini, .pastErrMap = NULL};
 
-const dm_module_st *af_env_module(void)
-{
-  return &g_stAfEnvMod;
-}
+const dm_module_st *af_env_module(void) { return &g_stAfEnvMod; }

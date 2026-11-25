@@ -59,7 +59,7 @@ static bool_t dm__ev_can_unsubscribe(void)
   return ((DM__PHASE_END == ePhase) || (DM__PHASE_NONE == ePhase)) ? DM_TRUE : DM_FALSE;
 }
 
-static dm__ev_list_st *dm__ev_find(in uint uiEventID)
+static dm__ev_list_st *dm__ev_find(dm_in uint uiEventID)
 {
   if (NULL == g_stEvTable.pstBuckets)
   {
@@ -68,9 +68,7 @@ static dm__ev_list_st *dm__ev_find(in uint uiEventID)
   return (dm__ev_list_st *)dm_hash_find(&g_stEvTable, uiEventID);
 }
 
-int dm_event_subscribe_ex(in uint uiEventID, in dm_pool_lane_et eLane,
-                          in dm_link_before_cb pfBefore, in dm_link_work_cb pfWork,
-                          in dm_link_after_cb pfAfter, out uint32 *pu32SubID)
+int dm_event_subscribe_ex(dm_in const dm_event_sub_opt_st *pstOpt, dm_out uint32 *pu32SubID)
 {
   dm__ev_list_st *pstList = NULL;
   dm__ev_sub_st *pastNew = NULL;
@@ -78,13 +76,14 @@ int dm_event_subscribe_ex(in uint uiEventID, in dm_pool_lane_et eLane,
   uint32 u32ID = 0;
 
   DM__CHECK_LOOP();
-  if (((NULL == pfBefore) && (NULL == pfWork)) || ((uint)eLane >= (uint)DM_LANE_MAX))
+  if ((NULL == pstOpt) || ((NULL == pstOpt->pfBefore) && (NULL == pstOpt->pfWork)) ||
+      ((uint)pstOpt->eLane >= (uint)DM_LANE_MAX))
   {
     return DM_INVALID;
   }
   if (!dm__ev_can_subscribe())
   {
-    DM_LOG_ERROR("dm_event_subscribe(0x%04x) outside init", uiEventID);
+    DM_LOG_ERROR("dm_event_subscribe(0x%04x) outside init", pstOpt->uiEventID);
     return DM_INVALID;
   }
   if ((NULL == g_stEvTable.pstBuckets) &&
@@ -92,7 +91,7 @@ int dm_event_subscribe_ex(in uint uiEventID, in dm_pool_lane_et eLane,
   {
     return DM_ALLOC;
   }
-  pstList = dm__ev_find(uiEventID);
+  pstList = dm__ev_find(pstOpt->uiEventID);
   if (NULL == pstList)
   {
     pstList = (dm__ev_list_st *)dm_calloc_tag(1u, sizeof(dm__ev_list_st), DM_MEM_TAG_EVENT);
@@ -100,8 +99,8 @@ int dm_event_subscribe_ex(in uint uiEventID, in dm_pool_lane_et eLane,
     {
       return DM_ALLOC;
     }
-    pstList->uiEventID = uiEventID;
-    if (DM_SUCCESS != dm_hash_add(&g_stEvTable, uiEventID, pstList))
+    pstList->uiEventID = pstOpt->uiEventID;
+    if (DM_SUCCESS != dm_hash_add(&g_stEvTable, pstOpt->uiEventID, pstList))
     {
       dm_free_tag(pstList);
       return DM_ALLOC;
@@ -110,8 +109,8 @@ int dm_event_subscribe_ex(in uint uiEventID, in dm_pool_lane_et eLane,
   /* AUD-08：按 (pfBefore, pfWork) 二元组判重，允许多个不同的 (NULL, work_i, after_i) 共存 */
   for (uiIdx = 0; uiIdx < pstList->uiCount; uiIdx++)
   {
-    if ((pfBefore == pstList->pastSub[uiIdx].pfBefore) &&
-        (pfWork == pstList->pastSub[uiIdx].pfWork))
+    if ((pstOpt->pfBefore == pstList->pastSub[uiIdx].pfBefore) &&
+        (pstOpt->pfWork == pstList->pastSub[uiIdx].pfWork))
     {
       return DM_EXISTS;
     }
@@ -138,10 +137,10 @@ int dm_event_subscribe_ex(in uint uiEventID, in dm_pool_lane_et eLane,
     u32ID = ++g_u32EvSubSeq;
   }
   pstList->pastSub[pstList->uiCount].u32SubID = u32ID;
-  pstList->pastSub[pstList->uiCount].eLane = eLane;
-  pstList->pastSub[pstList->uiCount].pfBefore = pfBefore;
-  pstList->pastSub[pstList->uiCount].pfWork = pfWork;
-  pstList->pastSub[pstList->uiCount].pfAfter = pfAfter;
+  pstList->pastSub[pstList->uiCount].eLane = pstOpt->eLane;
+  pstList->pastSub[pstList->uiCount].pfBefore = pstOpt->pfBefore;
+  pstList->pastSub[pstList->uiCount].pfWork = pstOpt->pfWork;
+  pstList->pastSub[pstList->uiCount].pfAfter = pstOpt->pfAfter;
   pstList->uiCount++;
   if (NULL != pu32SubID)
   {
@@ -150,13 +149,21 @@ int dm_event_subscribe_ex(in uint uiEventID, in dm_pool_lane_et eLane,
   return DM_SUCCESS;
 }
 
-int dm_event_subscribe(in uint uiEventID, in dm_link_before_cb pfBefore, in dm_link_work_cb pfWork,
-                       in dm_link_after_cb pfAfter)
+int dm_event_subscribe(dm_in uint uiEventID, dm_in dm_link_before_cb pfBefore,
+                       dm_in dm_link_work_cb pfWork, dm_in dm_link_after_cb pfAfter)
 {
-  return dm_event_subscribe_ex(uiEventID, DM_LANE_DEFAULT, pfBefore, pfWork, pfAfter, NULL);
+  dm_event_sub_opt_st stOpt;
+
+  memset(&stOpt, 0, sizeof(stOpt));
+  stOpt.uiEventID = uiEventID;
+  stOpt.eLane = DM_LANE_DEFAULT;
+  stOpt.pfBefore = pfBefore;
+  stOpt.pfWork = pfWork;
+  stOpt.pfAfter = pfAfter;
+  return dm_event_subscribe_ex(&stOpt, NULL);
 }
 
-int dm_event_unsubscribe(in uint uiEventID, in dm_link_before_cb pfBefore)
+int dm_event_unsubscribe(dm_in uint uiEventID, dm_in dm_link_before_cb pfBefore)
 {
   dm__ev_list_st *pstList = NULL;
   uint uiIdx = 0;
@@ -189,7 +196,7 @@ int dm_event_unsubscribe(in uint uiEventID, in dm_link_before_cb pfBefore)
   return DM_NOT_FOUND;
 }
 
-int dm_event_unsubscribe_id(in uint uiEventID, in uint32 u32SubID)
+int dm_event_unsubscribe_id(dm_in uint uiEventID, dm_in uint32 u32SubID)
 {
   dm__ev_list_st *pstList = NULL;
   uint uiIdx = 0;
@@ -222,7 +229,7 @@ int dm_event_unsubscribe_id(in uint uiEventID, in uint32 u32SubID)
   return DM_NOT_FOUND;
 }
 
-int dm_event_publish(in uint uiEventID, in const void *pv, in uint32 u32Len)
+int dm_event_publish(dm_in uint uiEventID, dm_in const void *pv, dm_in uint32 u32Len)
 {
   dm__ev_list_st *pstList = NULL;
   dm__qbuf_st *pstBuf = NULL;
@@ -308,7 +315,7 @@ int dm_event_publish(in uint uiEventID, in const void *pv, in uint32 u32Len)
   return iPushed;
 }
 
-static void dm__ev_list_free(in void *pvValue)
+static void dm__ev_list_free(dm_in void *pvValue)
 {
   dm__ev_list_st *pstList = (dm__ev_list_st *)pvValue;
   dm_free_tag(pstList->pastSub);

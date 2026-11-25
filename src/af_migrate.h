@@ -3,7 +3,8 @@
  * @file    af_migrate.h
  * @author  Afar_C
  * @version 1.0.0
- * @brief   老版本 Rust 0.4.12 无损幂等迁移接口（config.toml / state.json / devices.json / 旧钥匙串）。
+ * @brief   老版本 Rust 0.4.12 无损幂等迁移接口（config.toml / state.json / devices.json /
+ * 旧钥匙串）。
  ******************************************************************************
  */
 #ifndef AF_MIGRATE_H
@@ -23,8 +24,8 @@ typedef struct af_migrate_ops
   void (*pfKeychainDelLegacyPw)(void);
 } af_migrate_ops_st;
 
-void af_migrate_set_ops(in const af_migrate_ops_st *pstOps);
-int af_migrate_run(in const char *pcDataDir);
+void af_migrate_set_ops(dm_in const af_migrate_ops_st *pstOps);
+int af_migrate_run(dm_in const char *pcDataDir);
 
 #ifdef __cplusplus
 }

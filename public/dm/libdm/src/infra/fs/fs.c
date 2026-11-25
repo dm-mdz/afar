@@ -48,13 +48,13 @@ static int g_iLockFd = -1;
 /* ============================ 目录与数据目录独占锁 ============================ */
 
 /* 递归建目录；已存在不算错 */
-void dm__mkdirs(in const char *pcPath)
+void dm__mkdirs(dm_in const char *pcPath)
 {
   char acTmp[512] = {0};
   size_t uLen = 0;
   size_t uIdx = 0;
   char cSaved = '\0';
-  dm_fs_st stReq = {0};
+  dm_uv_fs_st stReq = {0};
 
   uLen = strlen(pcPath);
   if ((0u == uLen) || (uLen >= sizeof(acTmp)))
@@ -69,8 +69,8 @@ void dm__mkdirs(in const char *pcPath)
       cSaved = acTmp[uIdx];
       acTmp[uIdx] = '\0';
       memset(&stReq, 0, sizeof(stReq));
-      (void)dm_fs_mkdir(NULL, &stReq, acTmp, 0700, NULL); /* 已存在会失败，不用管 */
-      dm_fs_req_cleanup(&stReq);
+      (void)dm_uv_fs_mkdir(NULL, &stReq, acTmp, 0700, NULL); /* 已存在会失败，不用管 */
+      dm_uv_fs_req_cleanup(&stReq);
       acTmp[uIdx] = cSaved;
     }
   }
@@ -78,12 +78,26 @@ void dm__mkdirs(in const char *pcPath)
 }
 
 /* 拿数据目录的独占锁。拿不到说明同一个目录已经有一个核心在跑 */
-int dm__lock_take(in const char *pcDir, in const char *pcLockName)
+int dm__lock_take(dm_in const char *pcDir, dm_in const char *pcLockName)
 {
   char acPath[600] = {0};
-  const char *pcName = ((NULL != pcLockName) && ('\0' != pcLockName[0])) ? pcLockName : "dm.lock";
+  const char *pcName = "dm.lock";
   int iPathLen = 0;
 
+  if ((NULL == pcDir) || ('\0' == pcDir[0]))
+  {
+    return DM_INVALID;
+  }
+  if ((NULL != pcLockName) && ('\0' != pcLockName[0]))
+  {
+    /* AUD-V21-P2-04：严禁锁文件名含路径分隔符或父目录穿越段 */
+    if ((NULL != strchr(pcLockName, '/')) || (NULL != strchr(pcLockName, '\\')) ||
+        (NULL != strstr(pcLockName, "..")) || ('.' == pcLockName[0] && '\0' == pcLockName[1]))
+    {
+      return DM_INVALID;
+    }
+    pcName = pcLockName;
+  }
   iPathLen = snprintf(acPath, sizeof(acPath), "%s/%s", pcDir, pcName);
   if ((iPathLen < 0) || ((size_t)iPathLen >= sizeof(acPath)))
   {
@@ -139,7 +153,7 @@ void dm__lock_release(void)
 
 /* ============================ 标准输入读行与安全口令 ============================ */
 
-int dm_stdin_line(out char *pcBuf, in uint uiSize)
+int dm_stdin_line(dm_out char *pcBuf, dm_in uint uiSize)
 {
   uint uiLen = 0;
   char c = '\0';
@@ -184,7 +198,7 @@ int dm_stdin_line(out char *pcBuf, in uint uiSize)
   return (int)uiLen;
 }
 
-int dm_token_make(out char *pcBuf, in uint uiSize)
+int dm_token_make(dm_out char *pcBuf, dm_in uint uiSize)
 {
   static const char acHex[] = "0123456789abcdef";
   uint8 au8Rand[32] = {0};
@@ -195,7 +209,8 @@ int dm_token_make(out char *pcBuf, in uint uiSize)
   {
     return DM_OVERFLOW;
   }
-  iErrCode = dm_random(NULL, NULL, au8Rand, sizeof(au8Rand), 0, NULL); /* 同步、系统的安全随机数 */
+  iErrCode =
+      dm_uv_random(NULL, NULL, au8Rand, sizeof(au8Rand), 0, NULL); /* 同步、系统的安全随机数 */
   if (DM_SUCCESS != iErrCode)
   {
     return iErrCode;
@@ -213,7 +228,7 @@ int dm_token_make(out char *pcBuf, in uint uiSize)
 
 /* 文件路径一律按 UTF-8：走适配层同步文件调用（Windows 内部转宽字符） */
 #ifdef _WIN32
-static bool_t dm__win_path_is_dir(in const char *pcPath)
+static bool_t dm__win_path_is_dir(dm_in const char *pcPath)
 {
   WCHAR awcPath[1024] = {0};
   DWORD dwAttr = INVALID_FILE_ATTRIBUTES;
@@ -229,9 +244,9 @@ static bool_t dm__win_path_is_dir(in const char *pcPath)
 }
 #endif
 
-int dm__fs_replace(in const char *pcFrom, in const char *pcTo)
+int dm__fs_replace(dm_in const char *pcFrom, dm_in const char *pcTo)
 {
-  dm_fs_st stReq = {0};
+  dm_uv_fs_st stReq = {0};
   int iRet = 0;
 #ifdef _WIN32
   int iTry = 0;
@@ -239,13 +254,13 @@ int dm__fs_replace(in const char *pcFrom, in const char *pcTo)
   for (iTry = 0; iTry < 6; iTry++)
   {
     memset(&stReq, 0, sizeof(stReq));
-    iRet = dm_fs_rename(NULL, &stReq, pcFrom, pcTo, NULL); /* 目标已有就替换 */
-    dm_fs_req_cleanup(&stReq);
+    iRet = dm_uv_fs_rename(NULL, &stReq, pcFrom, pcTo, NULL); /* 目标已有就替换 */
+    dm_uv_fs_req_cleanup(&stReq);
     if (0 == iRet)
     {
       return DM_SUCCESS;
     }
-    if (((DM_EACCES != iRet) && (DM_EPERM != iRet) && (DM_EBUSY != iRet)) ||
+    if (((DM_UV_EACCES != iRet) && (DM_UV_EPERM != iRet) && (DM_UV_EBUSY != iRet)) ||
         dm__win_path_is_dir(pcTo))
     {
       break;
@@ -259,31 +274,31 @@ int dm__fs_replace(in const char *pcFrom, in const char *pcTo)
   return DM_IO;
 #else
   memset(&stReq, 0, sizeof(stReq));
-  iRet = dm_fs_rename(NULL, &stReq, pcFrom, pcTo, NULL); /* 目标已有就替换 */
-  dm_fs_req_cleanup(&stReq);
+  iRet = dm_uv_fs_rename(NULL, &stReq, pcFrom, pcTo, NULL); /* 目标已有就替换 */
+  dm_uv_fs_req_cleanup(&stReq);
   return (0 == iRet) ? DM_SUCCESS : DM_IO;
 #endif
 }
 
-char *dm__file_read_all(in const char *pcPath, in size_t uMax, out size_t *puLen)
+char *dm__file_read_all(dm_in const char *pcPath, dm_in size_t uMax, dm_out size_t *puLen)
 {
-  dm_fs_st stReq = {0};
-  dm_file iFd = -1;
+  dm_uv_fs_st stReq = {0};
+  dm_uv_file iFd = -1;
   char *pcText = NULL;
   size_t uLen = 0;
   size_t uCap = 0;
 
   *puLen = 0;
   memset(&stReq, 0, sizeof(stReq));
-  iFd = (dm_file)dm_fs_open(dm_default_loop(), &stReq, pcPath, DM_FS_O_RDONLY, 0, NULL);
-  dm_fs_req_cleanup(&stReq);
+  iFd = (dm_uv_file)dm_uv_fs_open(dm_uv_default_loop(), &stReq, pcPath, DM_UV_FS_O_RDONLY, 0, NULL);
+  dm_uv_fs_req_cleanup(&stReq);
   if (iFd < 0)
   {
     return NULL;
   }
   for (;;)
   {
-    dm_buf_st stBuf = {0};
+    dm_uv_buf_st stBuf = {0};
     int iGot = 0;
     if (uLen >= uMax)
     {
@@ -303,10 +318,10 @@ char *dm__file_read_all(in const char *pcPath, in size_t uMax, out size_t *puLen
       pcText = pcNew;
       uCap = uNew;
     }
-    stBuf = dm_buf_init(pcText + uLen, (unsigned int)(uCap - 1u - uLen));
+    stBuf = dm_uv_buf_init(pcText + uLen, (unsigned int)(uCap - 1u - uLen));
     memset(&stReq, 0, sizeof(stReq));
-    iGot = dm_fs_read(dm_default_loop(), &stReq, iFd, &stBuf, 1u, -1, NULL);
-    dm_fs_req_cleanup(&stReq);
+    iGot = dm_uv_fs_read(dm_uv_default_loop(), &stReq, iFd, &stBuf, 1u, -1, NULL);
+    dm_uv_fs_req_cleanup(&stReq);
     if (iGot <= 0)
     {
       break;
@@ -314,8 +329,8 @@ char *dm__file_read_all(in const char *pcPath, in size_t uMax, out size_t *puLen
     uLen += (size_t)iGot;
   }
   memset(&stReq, 0, sizeof(stReq));
-  (void)dm_fs_close(dm_default_loop(), &stReq, iFd, NULL);
-  dm_fs_req_cleanup(&stReq);
+  (void)dm_uv_fs_close(dm_uv_default_loop(), &stReq, iFd, NULL);
+  dm_uv_fs_req_cleanup(&stReq);
   if (NULL != pcText)
   {
     pcText[uLen] = '\0';
@@ -326,20 +341,20 @@ char *dm__file_read_all(in const char *pcPath, in size_t uMax, out size_t *puLen
 
 static _Atomic uint64 g_u64AtomicSeq = 0;
 
-static void dm__fs_unlink_quiet(in const char *pcPath)
+static void dm__fs_unlink_quiet(dm_in const char *pcPath)
 {
-  dm_fs_st stReq = {0};
+  dm_uv_fs_st stReq = {0};
   memset(&stReq, 0, sizeof(stReq));
-  (void)dm_fs_unlink(NULL, &stReq, pcPath, NULL);
-  dm_fs_req_cleanup(&stReq);
+  (void)dm_uv_fs_unlink(NULL, &stReq, pcPath, NULL);
+  dm_uv_fs_req_cleanup(&stReq);
   return;
 }
 
-int dm_fs_write_atomic(in const char *pcPath, in const void *pvData, in size_t uLen)
+int dm_fs_write_atomic(dm_in const char *pcPath, dm_in const void *pvData, dm_in size_t uLen)
 {
   char acTmp[1024] = {0};
-  dm_fs_st stReq = {0};
-  dm_file iFd = -1;
+  dm_uv_fs_st stReq = {0};
+  dm_uv_file iFd = -1;
   uint64 u64Seq = 0;
   int iPathLen = 0;
   size_t uWritten = 0;
@@ -360,9 +375,9 @@ int dm_fs_write_atomic(in const char *pcPath, in const void *pvData, in size_t u
     return DM_TOO_BIG;
   }
   memset(&stReq, 0, sizeof(stReq));
-  iFd = (dm_file)dm_fs_open(NULL, &stReq, acTmp, DM_FS_O_WRONLY | DM_FS_O_CREAT | DM_FS_O_EXCL,
-                            0600, NULL);
-  dm_fs_req_cleanup(&stReq);
+  iFd = (dm_uv_file)dm_uv_fs_open(
+      NULL, &stReq, acTmp, DM_UV_FS_O_WRONLY | DM_UV_FS_O_CREAT | DM_UV_FS_O_EXCL, 0600, NULL);
+  dm_uv_fs_req_cleanup(&stReq);
   if (iFd < 0)
   {
     return DM_IO;
@@ -372,12 +387,12 @@ int dm_fs_write_atomic(in const char *pcPath, in const void *pvData, in size_t u
   {
     size_t uLeft = uLen - uWritten;
     unsigned int uiChunk = (uLeft > 0x7FFFFFFFu) ? 0x7FFFFFFFu : (unsigned int)uLeft;
-    dm_buf_st stBuf = dm_buf_init((char *)((const uint8 *)pvData + uWritten), uiChunk);
+    dm_uv_buf_st stBuf = dm_uv_buf_init((char *)((const uint8 *)pvData + uWritten), uiChunk);
     int iGot = 0;
 
     memset(&stReq, 0, sizeof(stReq));
-    iGot = dm_fs_write(NULL, &stReq, iFd, &stBuf, 1u, -1, NULL);
-    dm_fs_req_cleanup(&stReq);
+    iGot = dm_uv_fs_write(NULL, &stReq, iFd, &stBuf, 1u, -1, NULL);
+    dm_uv_fs_req_cleanup(&stReq);
     if (iGot <= 0)
     {
       bOk = DM_FALSE;
@@ -388,16 +403,16 @@ int dm_fs_write_atomic(in const char *pcPath, in const void *pvData, in size_t u
   if (bOk)
   {
     memset(&stReq, 0, sizeof(stReq));
-    iSyncRet = dm_fs_fsync(NULL, &stReq, iFd, NULL);
-    dm_fs_req_cleanup(&stReq);
+    iSyncRet = dm_uv_fs_fsync(NULL, &stReq, iFd, NULL);
+    dm_uv_fs_req_cleanup(&stReq);
     if (0 != iSyncRet)
     {
       bOk = DM_FALSE;
     }
   }
   memset(&stReq, 0, sizeof(stReq));
-  iCloseRet = dm_fs_close(NULL, &stReq, iFd, NULL);
-  dm_fs_req_cleanup(&stReq);
+  iCloseRet = dm_uv_fs_close(NULL, &stReq, iFd, NULL);
+  dm_uv_fs_req_cleanup(&stReq);
   if (0 != iCloseRet)
   {
     bOk = DM_FALSE;
@@ -416,7 +431,7 @@ int dm_fs_write_atomic(in const char *pcPath, in const void *pvData, in size_t u
   return DM_SUCCESS;
 }
 
-int dm__file_write_atomic(in const char *pcPath, in const char *pcText, in size_t uLen)
+int dm__file_write_atomic(dm_in const char *pcPath, dm_in const char *pcText, dm_in size_t uLen)
 {
   return dm_fs_write_atomic(pcPath, pcText, uLen);
 }

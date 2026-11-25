@@ -39,9 +39,9 @@ extern "C"
 
 typedef struct dm__ws
 {
-  dm_timer_st stPing;   /* 首成员：保活 */
-  dm__conn_st *pstConn; /* 连接断了就是 NULL（等定时器关完再释放） */
-  uint8 *pu8In;         /* 收进来还没解完的字节 */
+  dm_uv_timer_st stPing; /* 首成员：保活 */
+  dm__conn_st *pstConn;  /* 连接断了就是 NULL（等定时器关完再释放） */
+  uint8 *pu8In;          /* 收进来还没解完的字节 */
   uint32 u32InLen;
   uint32 u32InCap;
   uint8 *pu8Msg; /* 分片拼到一半的消息 */
@@ -56,7 +56,7 @@ typedef struct dm__ws
 
 #define DM__ROL(v, n) (((v) << (n)) | ((v) >> (32u - (n))))
 
-static void dm__sha1_block(io uint32 *pu32H, in const uint8 *pu8Blk)
+static void dm__sha1_block(dm_io uint32 *pu32H, dm_in const uint8 *pu8Blk)
 {
   uint32 au32W[80] = {0};
   uint32 u32A = pu32H[0];
@@ -117,7 +117,7 @@ static void dm__sha1_block(io uint32 *pu32H, in const uint8 *pu8Blk)
   return;
 }
 
-void dm__sha1(in const void *pv, in size_t uLen, out uint8 au8Out[20])
+void dm__sha1(dm_in const void *pv, dm_in size_t uLen, dm_out uint8 au8Out[20])
 {
   uint32 au32H[5] = {0x67452301u, 0xEFCDAB89u, 0x98BADCFEu, 0x10325476u, 0xC3D2E1F0u};
   const uint8 *pu8 = (const uint8 *)pv;
@@ -153,7 +153,7 @@ void dm__sha1(in const void *pv, in size_t uLen, out uint8 au8Out[20])
 }
 
 /* Base64 编码；pcOut 至少 (uLen + 2) / 3 * 4 + 1 字节 */
-void dm__base64(in const uint8 *pu8, in size_t uLen, out char *pcOut)
+void dm__base64(dm_in const uint8 *pu8, dm_in size_t uLen, dm_out char *pcOut)
 {
   static const char acTab[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
   size_t uIdx = 0;
@@ -184,7 +184,7 @@ void dm__base64(in const uint8 *pu8, in size_t uLen, out char *pcOut)
 }
 
 /* Sec-WebSocket-Accept = Base64(SHA-1(key + GUID)) */
-void dm__ws_accept_key(in const char *pcKey, out char acOut[32])
+void dm__ws_accept_key(dm_in const char *pcKey, dm_out char acOut[32])
 {
   char acCat[128] = {0};
   uint8 au8Sum[20] = {0};
@@ -202,7 +202,7 @@ void dm__ws_accept_key(in const char *pcKey, out char acOut[32])
 
 /* ============================ 发 ============================ */
 
-uint32 dm__ws_head(out uint8 *pu8Out, in uint8 u8Op, in uint64 u64Len)
+uint32 dm__ws_head(dm_out uint8 *pu8Out, dm_in uint8 u8Op, dm_in uint64 u64Len)
 {
   pu8Out[0] = (uint8)(0x80u | u8Op); /* FIN，不分片 */
   if (u64Len < 126u)
@@ -221,8 +221,8 @@ uint32 dm__ws_head(out uint8 *pu8Out, in uint8 u8Op, in uint64 u64Len)
   return 10u;
 }
 
-static void dm__ws_send_ctl(io dm__conn_st *pstConn, in uint8 u8Op, in const uint8 *pu8,
-                            in uint32 u32Len)
+static void dm__ws_send_ctl(dm_io dm__conn_st *pstConn, dm_in uint8 u8Op, dm_in const uint8 *pu8,
+                            dm_in uint32 u32Len)
 {
   uint8 au8Frame[2 + 125] = {0};
   uint32 u32Head = dm__ws_head(au8Frame, u8Op, u32Len);
@@ -239,7 +239,7 @@ static void dm__ws_send_ctl(io dm__conn_st *pstConn, in uint8 u8Op, in const uin
 }
 
 /* 回一个关闭码，写完再断 */
-static void dm__ws_close(io dm__conn_st *pstConn, in uint32 u32Code, in const char *pcWhy)
+static void dm__ws_close(dm_io dm__conn_st *pstConn, dm_in uint32 u32Code, dm_in const char *pcWhy)
 {
   uint8 au8Code[2] = {0};
   DM_LOG_DEBUG("conn %u: websocket closing with %u (%s)", pstConn->u32Id, (unsigned)u32Code, pcWhy);
@@ -257,7 +257,7 @@ static uint64 dm__ws_now_ms(void)
 }
 
 /* 一条完整的二进制消息：恰好一帧 */
-static int dm__ws_message(io dm__conn_st *pstConn, io uint8 *pu8Msg, in uint32 u32Len)
+static int dm__ws_message(dm_io dm__conn_st *pstConn, dm_io uint8 *pu8Msg, dm_in uint32 u32Len)
 {
   dm_frame_head_st stHead = {0};
   bool_t bSens = DM_FALSE;
@@ -298,8 +298,8 @@ static int dm__ws_message(io dm__conn_st *pstConn, io uint8 *pu8Msg, in uint32 u
   return iRet;
 }
 
-static int dm__ws_grow_ex(io uint8 **ppu8, io uint32 *pu32Cap, in uint32 u32UsedLen,
-                          in uint32 u32Need, in bool_t bSecure)
+static int dm__ws_grow_ex(dm_io uint8 **ppu8, dm_io uint32 *pu32Cap, dm_in uint32 u32UsedLen,
+                          dm_in uint32 u32Need, dm_in bool_t bSecure)
 {
   uint8 *pu8New = NULL;
   uint32 u32OldCap = *pu32Cap;
@@ -349,13 +349,13 @@ static int dm__ws_grow_ex(io uint8 **ppu8, io uint32 *pu32Cap, in uint32 u32Used
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((unused))
 #endif
-static int dm__ws_grow(io uint8 **ppu8, io uint32 *pu32Cap, in uint32 u32Need)
+static int dm__ws_grow(dm_io uint8 **ppu8, dm_io uint32 *pu32Cap, dm_in uint32 u32Need)
 {
   return dm__ws_grow_ex(ppu8, pu32Cap, *pu32Cap, u32Need, DM_TRUE);
 }
 
 /* 解一帧；返回用掉的字节数，0 = 还不够一帧，负数 = 连接开始关了 */
-static int64 dm__ws_one(io dm__ws_st *pstWs, in const uint8 *pu8, in uint32 u32Have)
+static int64 dm__ws_one(dm_io dm__ws_st *pstWs, dm_in const uint8 *pu8, dm_in uint32 u32Have)
 {
   dm__conn_st *pstConn = pstWs->pstConn;
   uint8 u8Op = 0;
@@ -500,7 +500,7 @@ static int64 dm__ws_one(io dm__ws_st *pstWs, in const uint8 *pu8, in uint32 u32H
   return (int64)(u32Off + u64Len);
 }
 
-void dm__ws_conn_data(io dm__conn_st *pstConn, in const uint8 *pu8, in uint32 u32Len)
+void dm__ws_conn_data(dm_io dm__conn_st *pstConn, dm_in const uint8 *pu8, dm_in uint32 u32Len)
 {
   dm__ws_st *pstWs = (dm__ws_st *)pstConn->pvWs;
   uint32 u32Off = 0;
@@ -565,7 +565,7 @@ void dm__ws_conn_data(io dm__conn_st *pstConn, in const uint8 *pu8, in uint32 u3
 
 /* ============================ 升级、保活、收尾 ============================ */
 
-static void dm__ws_on_ping(in dm_timer_st *pstTimer)
+static void dm__ws_on_ping(dm_in dm_uv_timer_st *pstTimer)
 {
   dm__ws_st *pstWs = (dm__ws_st *)pstTimer;
   if (NULL == pstWs->pstConn)
@@ -583,8 +583,8 @@ static void dm__ws_on_ping(in dm_timer_st *pstTimer)
 }
 
 /* http.c 用：回 101、这条连接改成 WebSocket、开始走 link 的规矩；跟着请求一起到的字节接着解 */
-int dm__ws_upgrade(io dm__conn_st *pstConn, in const char *pcKey, in const uint8 *pu8Rest,
-                   in uint32 u32Rest)
+int dm__ws_upgrade(dm_io dm__conn_st *pstConn, dm_in const char *pcKey, dm_in const uint8 *pu8Rest,
+                   dm_in uint32 u32Rest)
 {
   dm__ws_st *pstWs = NULL;
   char acAccept[32] = {0};
@@ -609,8 +609,8 @@ int dm__ws_upgrade(io dm__conn_st *pstConn, in const char *pcKey, in const uint8
   pstWs->u64LastPongMs = dm__ws_now_ms();
   pstConn->pvWs = pstWs;
   pstConn->u8Kind = DM__CONN_WS;
-  (void)dm_timer_init(dm_default_loop(), &pstWs->stPing);
-  (void)dm_timer_start(&pstWs->stPing, dm__ws_on_ping, DM_WS_PING_MS, DM_WS_PING_MS);
+  (void)dm_uv_timer_init(dm_uv_default_loop(), &pstWs->stPing);
+  (void)dm_uv_timer_start(&pstWs->stPing, dm__ws_on_ping, DM_WS_PING_MS, DM_WS_PING_MS);
   dm__conn_start_link(pstConn);
   if (u32Rest > 0u)
   {
@@ -619,7 +619,7 @@ int dm__ws_upgrade(io dm__conn_st *pstConn, in const char *pcKey, in const uint8
   return DM_SUCCESS;
 }
 
-static void dm__ws_on_closed(in dm_handle_st *pstHandle)
+static void dm__ws_on_closed(dm_in dm_uv_handle_st *pstHandle)
 {
   dm__ws_st *pstWs = (dm__ws_st *)pstHandle;
   /* AUD-06 冷路径兜底：连接关闭时无条件擦零 WS 缓冲（覆盖半帧断连/超限拒帧/预鉴权残帧） */
@@ -637,13 +637,13 @@ static void dm__ws_on_closed(in dm_handle_st *pstHandle)
   return;
 }
 
-void dm__ws_conn_gone(io dm__conn_st *pstConn)
+void dm__ws_conn_gone(dm_io dm__conn_st *pstConn)
 {
   dm__ws_st *pstWs = (dm__ws_st *)pstConn->pvWs;
   pstConn->pvWs = NULL;
   pstWs->pstConn = NULL;
-  (void)dm_timer_stop(&pstWs->stPing);
-  dm_close((dm_handle_st *)&pstWs->stPing, dm__ws_on_closed);
+  (void)dm_uv_timer_stop(&pstWs->stPing);
+  dm_uv_close((dm_uv_handle_st *)&pstWs->stPing, dm__ws_on_closed);
   return;
 }
 

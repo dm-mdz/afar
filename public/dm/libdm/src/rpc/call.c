@@ -32,8 +32,8 @@ extern "C"
 
 typedef struct dm__call
 {
-  dm_timer_st stTimer; /* 首成员：超时 */
-  uint32 u32CallID;    /* 帧里的请求号（核心这一头从 1 往上编） */
+  dm_uv_timer_st stTimer; /* 首成员：超时 */
+  uint32 u32CallID;       /* 帧里的请求号（核心这一头从 1 往上编） */
   uint32 u32ConnID;
   uint uiReplyLinkID;
   uint64 u64Tag;
@@ -45,20 +45,20 @@ static uint32 g_u32CallNext = 0;
 
 /* ============================ 内部清理与完成 ============================ */
 
-static void dm__call_on_closed(in dm_handle_st *pstHandle)
+static void dm__call_on_closed(dm_in dm_uv_handle_st *pstHandle)
 {
   dm_free_tag(pstHandle);
   return;
 }
 
 /* 摘表、关定时器、释放（定时器关完才释放） */
-static void dm__call_free(io dm__call_st *pstCall)
+static void dm__call_free(dm_io dm__call_st *pstCall)
 {
   (void)dm_hash_del(&g_stCallTable, pstCall->u32CallID, NULL);
   if (pstCall->bTimer)
   {
-    (void)dm_timer_stop(&pstCall->stTimer);
-    dm_close((dm_handle_st *)&pstCall->stTimer, dm__call_on_closed);
+    (void)dm_uv_timer_stop(&pstCall->stTimer);
+    dm_uv_close((dm_uv_handle_st *)&pstCall->stTimer, dm__call_on_closed);
     return;
   }
   dm_free_tag(pstCall);
@@ -66,8 +66,9 @@ static void dm__call_free(io dm__call_st *pstCall)
 }
 
 /* 把结果交给应答处理项（进总队列），然后放掉这次调用 */
-static void dm__call_finish(io dm__call_st *pstCall, in int iStatus, in const uint8 *pu8Body,
-                            in uint32 u32Len, in uint8 u8Flags, in bool_t bExternal)
+static void dm__call_finish(dm_io dm__call_st *pstCall, dm_in int iStatus,
+                            dm_in const uint8 *pu8Body, dm_in uint32 u32Len, dm_in uint8 u8Flags,
+                            dm_in bool_t bExternal)
 {
   dm_link_msg_st stMsg = {0};
 
@@ -85,7 +86,7 @@ static void dm__call_finish(io dm__call_st *pstCall, in int iStatus, in const ui
   return;
 }
 
-static void dm__call_on_timeout(in dm_timer_st *pstTimer)
+static void dm__call_on_timeout(dm_in dm_uv_timer_st *pstTimer)
 {
   dm__call_st *pstCall = (dm__call_st *)pstTimer;
   DM_LOG_DEBUG("call %u to conn %u timed out", pstCall->u32CallID, pstCall->u32ConnID);
@@ -95,9 +96,8 @@ static void dm__call_on_timeout(in dm_timer_st *pstTimer)
 
 /* ============================ 反向调用接口 ============================ */
 
-int dm_call_peer_ex(in const char *pcPeerID, in uint32 u32Role, in uint uiFunc,
-                    in uint8 u8ExtraFlags, in const void *pvBody, in uint32 u32Len,
-                    in uint uiReplyLinkID, in uint64 u64Tag, in uint32 u32TimeoutMs)
+int dm_call_peer_ex(dm_in const char *pcPeerID, dm_in uint8 u8ExtraFlags,
+                    dm_in const dm_call_req_st *pstReq)
 {
   dm__call_st *pstCall = NULL;
   dm_frame_head_st stHead = {0};
@@ -105,12 +105,12 @@ int dm_call_peer_ex(in const char *pcPeerID, in uint32 u32Role, in uint uiFunc,
   int iErrCode = DM_SUCCESS;
 
   DM__CHECK_LOOP();
-  if (((NULL != pcPeerID) && ('\0' == pcPeerID[0])) || ((NULL == pvBody) && (u32Len > 0u)) ||
-      (uiFunc > 0xFFFFu))
+  if ((NULL == pstReq) || ((NULL != pcPeerID) && ('\0' == pcPeerID[0])) ||
+      ((NULL == pstReq->pvBody) && (pstReq->u32Len > 0u)) || (pstReq->uiFunc > 0xFFFFu))
   {
     return DM_INVALID;
   }
-  if (u32Len > dm__link_frame_max())
+  if (pstReq->u32Len > dm__link_frame_max())
   {
     return DM_TOO_BIG; /* 超出单帧上限 */
   }
@@ -118,11 +118,11 @@ int dm_call_peer_ex(in const char *pcPeerID, in uint32 u32Role, in uint uiFunc,
   {
     return DM_SHUTTING_DOWN;
   }
-  if (NULL == dm__link_lookup(uiReplyLinkID))
+  if (NULL == dm__link_lookup(pstReq->uiReplyLinkID))
   {
     return DM_LINK_ERR_NOT_FOUND;
   }
-  u32ConnID = dm__conn_pick_peer(pcPeerID, u32Role);
+  u32ConnID = dm__conn_pick_peer(pcPeerID, pstReq->u32Role);
   if (0u == u32ConnID)
   {
     return DM_CONN_GONE;
@@ -144,51 +144,56 @@ int dm_call_peer_ex(in const char *pcPeerID, in uint32 u32Role, in uint uiFunc,
   }
   pstCall->u32CallID = g_u32CallNext;
   pstCall->u32ConnID = u32ConnID;
-  pstCall->uiReplyLinkID = uiReplyLinkID;
-  pstCall->u64Tag = u64Tag;
+  pstCall->uiReplyLinkID = pstReq->uiReplyLinkID;
+  pstCall->u64Tag = pstReq->u64Tag;
   if (DM_SUCCESS != dm_hash_add(&g_stCallTable, pstCall->u32CallID, pstCall))
   {
     dm_free_tag(pstCall);
     return DM_ALLOC;
   }
   memset(&stHead, 0, sizeof(stHead));
-  stHead.u16LinkID = (uint16)uiFunc;
+  stHead.u16LinkID = (uint16)pstReq->uiFunc;
   stHead.u8Type = DM_FRAME_T_REQ;
-  stHead.u8Flag =
-      (uint8)(((u32Len > 0u) ? DM_FRAME_F_JSON : 0u) | (u8ExtraFlags & DM_FRAME_F_SENSITIVE));
+  stHead.u8Flag = (uint8)(((pstReq->u32Len > 0u) ? DM_FRAME_F_JSON : 0u) |
+                          (u8ExtraFlags & DM_FRAME_F_SENSITIVE));
   stHead.u32ReqID = pstCall->u32CallID;
-  stHead.u32Len = u32Len;
-  iErrCode = dm__conn_send(u32ConnID, &stHead, pvBody);
+  stHead.u32Len = pstReq->u32Len;
+  iErrCode = dm__conn_send(u32ConnID, &stHead, pstReq->pvBody);
   if (DM_SUCCESS != iErrCode)
   {
     dm__call_free(pstCall);
     return iErrCode;
   }
-  if (0u != u32TimeoutMs)
+  if (0u != pstReq->u32TimeoutMs)
   {
-    (void)dm_timer_init(dm_default_loop(), &pstCall->stTimer);
+    (void)dm_uv_timer_init(dm_uv_default_loop(), &pstCall->stTimer);
     pstCall->bTimer = DM_TRUE;
-    (void)dm_timer_start(&pstCall->stTimer, dm__call_on_timeout, u32TimeoutMs, 0);
+    (void)dm_uv_timer_start(&pstCall->stTimer, dm__call_on_timeout, pstReq->u32TimeoutMs, 0);
   }
   return DM_SUCCESS;
 }
 
-int dm_call_peer(in const char *pcPeerID, in uint32 u32Role, in uint uiFunc, in const void *pvBody,
-                 in uint32 u32Len, in uint uiReplyLinkID, in uint64 u64Tag, in uint32 u32TimeoutMs)
+int dm_call_peer(dm_in const char *pcPeerID, dm_in const dm_call_req_st *pstReq)
 {
-  return dm_call_peer_ex(pcPeerID, u32Role, uiFunc, 0u, pvBody, u32Len, uiReplyLinkID, u64Tag,
-                         u32TimeoutMs);
+  if (NULL == pstReq)
+  {
+    return DM_INVALID;
+  }
+  return dm_call_peer_ex(pcPeerID, pstReq->u8ExtraFlags, pstReq);
 }
 
-int dm_call(in uint32 u32Role, in uint uiFunc, in const void *pvBody, in uint32 u32Len,
-            in uint uiReplyLinkID, in uint64 u64Tag, in uint32 u32TimeoutMs)
+int dm_call(dm_in const dm_call_req_st *pstReq)
 {
-  return dm_call_peer(NULL, u32Role, uiFunc, pvBody, u32Len, uiReplyLinkID, u64Tag, u32TimeoutMs);
+  if (NULL == pstReq)
+  {
+    return DM_INVALID;
+  }
+  return dm_call_peer_ex(pstReq->pcPeerID, pstReq->u8ExtraFlags, pstReq);
 }
 
 /* 连接上来一条应答帧：是不是在等的。是就交出去，返回 DM_TRUE */
-bool_t dm__call_reply(in uint32 u32ConnID, in const dm_frame_head_st *pstHead,
-                      in const uint8 *pu8Body)
+bool_t dm__call_reply(dm_in uint32 u32ConnID, dm_in const dm_frame_head_st *pstHead,
+                      dm_in const uint8 *pu8Body)
 {
   dm__call_st *pstCall = NULL;
 
@@ -207,7 +212,7 @@ bool_t dm__call_reply(in uint32 u32ConnID, in const dm_frame_head_st *pstHead,
 }
 
 /* 一条连接断了：发给它、还在等的，各交一次 DM_CONN_GONE */
-void dm__call_conn_gone(in uint32 u32ConnID)
+void dm__call_conn_gone(dm_in uint32 u32ConnID)
 {
   uint32 u32Idx = 0;
   dm_list_node_st *pstNode = NULL;
@@ -236,7 +241,7 @@ uint32 dm__call_pending(void)
   return (NULL != g_stCallTable.pstBuckets) ? g_stCallTable.count : 0u;
 }
 
-void dm__call_set_next_req_id(in uint32 u32Next)
+void dm__call_set_next_req_id(dm_in uint32 u32Next)
 {
   g_u32CallNext = u32Next;
   return;

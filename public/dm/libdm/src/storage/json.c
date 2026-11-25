@@ -143,8 +143,9 @@ const yyjson_alc *dm_json_alc_sensitive(void)
 
 /* ============================ 解析、取值与序列化 ============================ */
 
-static yyjson_doc *dm__json_read_with(in const char *pcText, in size_t uLen, in size_t uMax,
-                                      in const yyjson_alc *pstAlc, out int *piErr)
+static yyjson_doc *dm__json_read_with(dm_in const char *pcText, dm_in size_t uLen,
+                                      dm_in size_t uMax, dm_in const yyjson_alc *pstAlc,
+                                      dm_out int *piErr)
 {
   yyjson_doc *pstDoc = NULL;
   yyjson_read_err stErr = {0};
@@ -170,30 +171,32 @@ static yyjson_doc *dm__json_read_with(in const char *pcText, in size_t uLen, in 
   return pstDoc;
 }
 
-yyjson_doc *dm_json_read(in const char *pcText, in size_t uLen, in size_t uMax, out int *piErr)
+yyjson_doc *dm_json_read(dm_in const char *pcText, dm_in size_t uLen, dm_in size_t uMax,
+                         dm_out int *piErr)
 {
   return dm__json_read_with(pcText, uLen, uMax, &g_stJsonAlc, piErr);
 }
 
-yyjson_doc *dm_json_read_sensitive(in const char *pcText, in size_t uLen, in size_t uMax,
-                                   out int *piErr)
+yyjson_doc *dm_json_read_sensitive(dm_in const char *pcText, dm_in size_t uLen, dm_in size_t uMax,
+                                   dm_out int *piErr)
 {
   return dm__json_read_with(pcText, uLen, uMax, &g_stJsonSensAlc, piErr);
 }
 
-const char *dm_json_str(in yyjson_val *pstRoot, in const char *pcPath, in const char *pcDef)
+const char *dm_json_str(dm_in yyjson_val *pstRoot, dm_in const char *pcPath,
+                        dm_in const char *pcDef)
 {
   yyjson_val *pstVal = (NULL != pstRoot) ? yyjson_ptr_get(pstRoot, pcPath) : NULL;
   return yyjson_is_str(pstVal) ? yyjson_get_str(pstVal) : pcDef;
 }
 
-int64 dm_json_int(in yyjson_val *pstRoot, in const char *pcPath, in int64 i64Def)
+int64 dm_json_int(dm_in yyjson_val *pstRoot, dm_in const char *pcPath, dm_in int64 i64Def)
 {
   yyjson_val *pstVal = (NULL != pstRoot) ? yyjson_ptr_get(pstRoot, pcPath) : NULL;
   return yyjson_is_int(pstVal) ? (int64)yyjson_get_sint(pstVal) : i64Def;
 }
 
-bool_t dm_json_bool(in yyjson_val *pstRoot, in const char *pcPath, in bool_t bDef)
+bool_t dm_json_bool(dm_in yyjson_val *pstRoot, dm_in const char *pcPath, dm_in bool_t bDef)
 {
   yyjson_val *pstVal = (NULL != pstRoot) ? yyjson_ptr_get(pstRoot, pcPath) : NULL;
   if (!yyjson_is_bool(pstVal))
@@ -203,23 +206,23 @@ bool_t dm_json_bool(in yyjson_val *pstRoot, in const char *pcPath, in bool_t bDe
   return yyjson_get_bool(pstVal) ? DM_TRUE : DM_FALSE;
 }
 
-char *dm_json_write_mut(in const yyjson_mut_doc *pstDoc, out size_t *puLen)
+char *dm_json_write_mut(dm_in const yyjson_mut_doc *pstDoc, dm_out size_t *puLen)
 {
   return yyjson_mut_write_opts(pstDoc, YYJSON_WRITE_NOFLAG, &g_stJsonAlc, puLen, NULL);
 }
 
-void dm_json_free_str(in char *pcText)
+void dm_json_free_str(dm_in char *pcText)
 {
   dm_free_tag(pcText);
   return;
 }
 
-char *dm_json_write_mut_sensitive(in const yyjson_mut_doc *pstDoc, out size_t *puLen)
+char *dm_json_write_mut_sensitive(dm_in const yyjson_mut_doc *pstDoc, dm_out size_t *puLen)
 {
   return yyjson_mut_write_opts(pstDoc, YYJSON_WRITE_NOFLAG, &g_stJsonSensAlc, puLen, NULL);
 }
 
-void dm_json_free_str_sensitive(io char *pcText)
+void dm_json_free_str_sensitive(dm_io char *pcText)
 {
   dm__json_sens_free(NULL, pcText);
   return;

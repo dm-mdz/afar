@@ -14,9 +14,9 @@
 #include "af_store.h"
 #include "plat/af_plat.h"
 
+#include <dm/json.h>
 #include <dm/log.h>
 #include <dm/mem.h>
-#include <yyjson.h>
 
 #include <ctype.h>
 #include <errno.h>
@@ -29,7 +29,7 @@
 
 static af_migrate_ops_st g_stMigOps;
 
-void af_migrate_set_ops(in const af_migrate_ops_st *pstOps)
+void af_migrate_set_ops(dm_in const af_migrate_ops_st *pstOps)
 {
   if (NULL == pstOps)
   {
@@ -41,20 +41,23 @@ void af_migrate_set_ops(in const af_migrate_ops_st *pstOps)
   }
 }
 
-static bool_t af__file_exists(in const char *pcPath)
+static bool_t af__file_exists(dm_in const char *pcPath)
 {
   struct stat stSb;
   return (0 == stat(pcPath, &stSb)) ? DM_TRUE : DM_FALSE;
 }
 
-static char *af__read_all(in const char *pcPath, out size_t *puLen)
+static char *af__read_all(dm_in const char *pcPath, dm_out size_t *puLen)
 {
   FILE *pf = fopen(pcPath, "rb");
   long lSz = 0;
   char *pcBuf = NULL;
 
   *puLen = 0u;
-  if (NULL == pf) { return NULL; }
+  if (NULL == pf)
+  {
+    return NULL;
+  }
   if ((0 != fseek(pf, 0, SEEK_END)) || ((lSz = ftell(pf)) < 0) || (lSz > (1024L * 1024L)))
   {
     fclose(pf);
@@ -81,7 +84,7 @@ static char *af__read_all(in const char *pcPath, out size_t *puLen)
 
 /* ============================ 1. config.toml -> config.json ============================ */
 
-static const char *af__skip_ws(in const char *pcP)
+static const char *af__skip_ws(dm_in const char *pcP)
 {
   while (('\0' != *pcP) && ((' ' == *pcP) || ('\t' == *pcP) || ('\r' == *pcP)))
   {
@@ -90,7 +93,7 @@ static const char *af__skip_ws(in const char *pcP)
   return pcP;
 }
 
-static bool_t af__parse_toml_str(in const char *pcVal, out char *pcOut, in size_t uCap)
+static bool_t af__parse_toml_str(dm_in const char *pcVal, dm_out char *pcOut, dm_in size_t uCap)
 {
   char cQ = '\0';
   size_t uPos = 0u;
@@ -121,8 +124,8 @@ static bool_t af__parse_toml_str(in const char *pcVal, out char *pcOut, in size_
   return DM_TRUE;
 }
 
-static bool_t af__parse_u32_pair(in const char *pcS, out const char **ppcEnd, out uint32 *pu32A,
-                                 out uint32 *pu32B)
+static bool_t af__parse_u32_pair(dm_in const char *pcS, dm_out const char **ppcEnd,
+                                 dm_out uint32 *pu32A, dm_out uint32 *pu32B)
 {
   char *pcE1 = NULL;
   char *pcE2 = NULL;
@@ -130,36 +133,78 @@ static bool_t af__parse_u32_pair(in const char *pcS, out const char **ppcEnd, ou
   unsigned long ulB = 0ul;
   const char *pcP = pcS;
 
-  while (('\0' != *pcP) && ('[' != *pcP)) { pcP++; }
-  if ('[' != *pcP) { return DM_FALSE; }
+  while (('\0' != *pcP) && ('[' != *pcP))
+  {
+    pcP++;
+  }
+  if ('[' != *pcP)
+  {
+    return DM_FALSE;
+  }
   pcP++;
-  while (('\0' != *pcP) && (0 != isspace((unsigned char)*pcP))) { pcP++; }
-  if (0 == isdigit((unsigned char)*pcP)) { return DM_FALSE; }
+  while (('\0' != *pcP) && (0 != isspace((unsigned char)*pcP)))
+  {
+    pcP++;
+  }
+  if (0 == isdigit((unsigned char)*pcP))
+  {
+    return DM_FALSE;
+  }
   errno = 0;
   ulA = strtoul(pcP, &pcE1, 10);
-  if ((ERANGE == errno) || (ulA > UINT32_MAX)) { return DM_FALSE; }
+  if ((ERANGE == errno) || (ulA > UINT32_MAX))
+  {
+    return DM_FALSE;
+  }
   pcP = pcE1;
-  while (('\0' != *pcP) && (0 != isspace((unsigned char)*pcP))) { pcP++; }
-  if (',' != *pcP) { return DM_FALSE; }
+  while (('\0' != *pcP) && (0 != isspace((unsigned char)*pcP)))
+  {
+    pcP++;
+  }
+  if (',' != *pcP)
+  {
+    return DM_FALSE;
+  }
   pcP++;
-  while (('\0' != *pcP) && (0 != isspace((unsigned char)*pcP))) { pcP++; }
-  if (0 == isdigit((unsigned char)*pcP)) { return DM_FALSE; }
+  while (('\0' != *pcP) && (0 != isspace((unsigned char)*pcP)))
+  {
+    pcP++;
+  }
+  if (0 == isdigit((unsigned char)*pcP))
+  {
+    return DM_FALSE;
+  }
   errno = 0;
   ulB = strtoul(pcP, &pcE2, 10);
-  if ((ERANGE == errno) || (ulB > UINT32_MAX)) { return DM_FALSE; }
+  if ((ERANGE == errno) || (ulB > UINT32_MAX))
+  {
+    return DM_FALSE;
+  }
   pcP = pcE2;
-  while (('\0' != *pcP) && (0 != isspace((unsigned char)*pcP))) { pcP++; }
-  if (']' != *pcP) { return DM_FALSE; }
+  while (('\0' != *pcP) && (0 != isspace((unsigned char)*pcP)))
+  {
+    pcP++;
+  }
+  if (']' != *pcP)
+  {
+    return DM_FALSE;
+  }
   *pu32A = (uint32)ulA;
   *pu32B = (uint32)ulB;
-  if (NULL != ppcEnd) { *ppcEnd = pcP + 1; }
+  if (NULL != ppcEnd)
+  {
+    *ppcEnd = pcP + 1;
+  }
   return DM_TRUE;
 }
 
-static void af__parse_extra_sizes(in const char *pcVal, io af_config_st *pstCfg)
+static void af__parse_extra_sizes(dm_in const char *pcVal, dm_io af_config_st *pstCfg)
 {
   const char *pcP = strchr(pcVal, '[');
-  if (NULL == pcP) { return; }
+  if (NULL == pcP)
+  {
+    return;
+  }
   pcP++;
   while (('\0' != *pcP) && (']' != *pcP) && (pstCfg->u32ExtraCnt < 16u))
   {
@@ -172,8 +217,8 @@ static void af__parse_extra_sizes(in const char *pcVal, io af_config_st *pstCfg)
       {
         break;
       }
-      if ((u32W >= 640u) && (u32W <= 7680u) && (u32H >= 480u) && (u32H <= 4320u)
-          && (0u == (u32W % 2u)) && (0u == (u32H % 2u)))
+      if ((u32W >= 640u) && (u32W <= 7680u) && (u32H >= 480u) && (u32H <= 4320u) &&
+          (0u == (u32W % 2u)) && (0u == (u32H % 2u)))
       {
         pstCfg->aau32Extra[pstCfg->u32ExtraCnt][0] = u32W;
         pstCfg->aau32Extra[pstCfg->u32ExtraCnt][1] = u32H;
@@ -188,7 +233,8 @@ static void af__parse_extra_sizes(in const char *pcVal, io af_config_st *pstCfg)
   }
 }
 
-static void af__apply_toml_kv(in const char *pcKey, in const char *pcVal, io af_config_st *pstCfg)
+static void af__apply_toml_kv(dm_in const char *pcKey, dm_in const char *pcVal,
+                              dm_io af_config_st *pstCfg)
 {
   char acBuf[128];
 
@@ -201,22 +247,34 @@ static void af__apply_toml_kv(in const char *pcKey, in const char *pcVal, io af_
   }
   else if (0 == strcmp(pcKey, "scale"))
   {
-    if (af__parse_toml_str(pcVal, acBuf, sizeof(acBuf))
-        && ((0 == strcmp(acBuf, "auto")) || (0 == strcmp(acBuf, "larger"))
-            || (0 == strcmp(acBuf, "default")) || (0 == strcmp(acBuf, "more"))))
+    if (af__parse_toml_str(pcVal, acBuf, sizeof(acBuf)) &&
+        ((0 == strcmp(acBuf, "auto")) || (0 == strcmp(acBuf, "larger")) ||
+         (0 == strcmp(acBuf, "default")) || (0 == strcmp(acBuf, "more"))))
     {
       snprintf(pstCfg->acScale, sizeof(pstCfg->acScale), "%s", acBuf);
     }
   }
   else if (0 == strcmp(pcKey, "auto_connect"))
   {
-    if (0 == strncmp(pcVal, "true", 4u)) { pstCfg->bAutoConnect = DM_TRUE; }
-    else if (0 == strncmp(pcVal, "false", 5u)) { pstCfg->bAutoConnect = DM_FALSE; }
+    if (0 == strncmp(pcVal, "true", 4u))
+    {
+      pstCfg->bAutoConnect = DM_TRUE;
+    }
+    else if (0 == strncmp(pcVal, "false", 5u))
+    {
+      pstCfg->bAutoConnect = DM_FALSE;
+    }
   }
   else if (0 == strcmp(pcKey, "mirror"))
   {
-    if (0 == strncmp(pcVal, "true", 4u)) { pstCfg->bMirror = DM_TRUE; }
-    else if (0 == strncmp(pcVal, "false", 5u)) { pstCfg->bMirror = DM_FALSE; }
+    if (0 == strncmp(pcVal, "true", 4u))
+    {
+      pstCfg->bMirror = DM_TRUE;
+    }
+    else if (0 == strncmp(pcVal, "false", 5u))
+    {
+      pstCfg->bMirror = DM_FALSE;
+    }
   }
   else if (0 == strcmp(pcKey, "port"))
   {
@@ -230,8 +288,8 @@ static void af__apply_toml_kv(in const char *pcKey, in const char *pcVal, io af_
   {
     uint32 u32W = 0u;
     uint32 u32H = 0u;
-    if (af__parse_u32_pair(pcVal, NULL, &u32W, &u32H) && (u32W >= 400u) && (u32W <= 8000u)
-        && (u32H >= 400u) && (u32H <= 8000u))
+    if (af__parse_u32_pair(pcVal, NULL, &u32W, &u32H) && (u32W >= 400u) && (u32W <= 8000u) &&
+        (u32H >= 400u) && (u32H <= 8000u))
     {
       pstCfg->au32IpadPixels[0] = u32W;
       pstCfg->au32IpadPixels[1] = u32H;
@@ -243,7 +301,7 @@ static void af__apply_toml_kv(in const char *pcKey, in const char *pcVal, io af_
   }
 }
 
-static void af__parse_config_toml_text(in const char *pcText, out af_config_st *pstCfg)
+static void af__parse_config_toml_text(dm_in const char *pcText, dm_out af_config_st *pstCfg)
 {
   const char *pcP = pcText;
 
@@ -265,7 +323,10 @@ static void af__parse_config_toml_text(in const char *pcText, out af_config_st *
 
     if (('\0' == *pcLine) || ('\n' == *pcLine) || ('#' == *pcLine) || ('[' == *pcLine))
     {
-      if (NULL == pcNl) { break; }
+      if (NULL == pcNl)
+      {
+        break;
+      }
       pcP = pcNl + 1;
       continue;
     }
@@ -273,13 +334,19 @@ static void af__parse_config_toml_text(in const char *pcText, out af_config_st *
     if ((NULL == pcEq) || ((NULL != pcNl) && (pcEq > pcNl)))
     {
       DM_LOG_WARN("ignoring malformed config.toml line");
-      if (NULL == pcNl) { break; }
+      if (NULL == pcNl)
+      {
+        break;
+      }
       pcP = pcNl + 1;
       continue;
     }
     {
       const char *pcKe = pcEq;
-      while ((pcKe > pcLine) && ((' ' == pcKe[-1]) || ('\t' == pcKe[-1]))) { pcKe--; }
+      while ((pcKe > pcLine) && ((' ' == pcKe[-1]) || ('\t' == pcKe[-1])))
+      {
+        pcKe--;
+      }
       uKLen = (size_t)(pcKe - pcLine);
       if ((uKLen > 0u) && (uKLen < sizeof(acKey)))
       {
@@ -289,14 +356,17 @@ static void af__parse_config_toml_text(in const char *pcText, out af_config_st *
         af__apply_toml_kv(acKey, pcVal, pstCfg);
       }
     }
-    if (NULL == pcNl) { break; }
+    if (NULL == pcNl)
+    {
+      break;
+    }
     pcP = pcNl + 1;
   }
 }
 
-static int af__write_config_json(in const char *pcPath, in const af_config_st *pstCfg)
+static int af__write_config_json(dm_in const char *pcPath, dm_in const af_config_st *pstCfg)
 {
-  yyjson_mut_doc *pstDoc = yyjson_mut_doc_new(NULL);
+  yyjson_mut_doc *pstDoc = yyjson_mut_doc_new(dm_json_alc());
   yyjson_mut_val *pstRoot = NULL;
   yyjson_mut_val *pstPx = NULL;
   yyjson_mut_val *pstEx = NULL;
@@ -305,7 +375,10 @@ static int af__write_config_json(in const char *pcPath, in const af_config_st *p
   uint32 i = 0u;
   int iRc = DM_SUCCESS;
 
-  if (NULL == pstDoc) { return DM_ALLOC; }
+  if (NULL == pstDoc)
+  {
+    return DM_ALLOC;
+  }
   pstRoot = yyjson_mut_obj(pstDoc);
   yyjson_mut_doc_set_root(pstDoc, pstRoot);
   yyjson_mut_obj_add_str(pstDoc, pstRoot, "ipad_name", pstCfg->acIpadName);
@@ -326,15 +399,18 @@ static int af__write_config_json(in const char *pcPath, in const af_config_st *p
     yyjson_mut_arr_add_val(pstEx, pstPair);
   }
   yyjson_mut_obj_add_val(pstDoc, pstRoot, "extra_sizes", pstEx);
-  pcJson = yyjson_mut_write(pstDoc, YYJSON_WRITE_PRETTY, &uLen);
+  pcJson = yyjson_mut_write_opts(pstDoc, YYJSON_WRITE_PRETTY, dm_json_alc(), &uLen, NULL);
   yyjson_mut_doc_free(pstDoc);
-  if (NULL == pcJson) { return DM_ALLOC; }
+  if (NULL == pcJson)
+  {
+    return DM_ALLOC;
+  }
   iRc = af_store_write_atomic(pcPath, pcJson, uLen);
-  free(pcJson);
+  dm_json_free_str(pcJson);
   return iRc;
 }
 
-static bool_t af__migrate_config_toml(in const char *pcDataDir, out bool_t *pbAutoConnect)
+static bool_t af__migrate_config_toml(dm_in const char *pcDataDir, dm_out bool_t *pbAutoConnect)
 {
   char acToml[600];
   char acJson[600];
@@ -375,8 +451,9 @@ static bool_t af__migrate_config_toml(in const char *pcDataDir, out bool_t *pbAu
 
 /* ============================ 2. state.json 14 键兼容与开关合并 ============================ */
 
-static void af__add_scale_key_if_missing(io yyjson_mut_doc *pstDoc, io yyjson_mut_val *pstScales,
-                                         in const char *pcIpad, in const char *pcScale)
+static void af__add_scale_key_if_missing(dm_io yyjson_mut_doc *pstDoc,
+                                         dm_io yyjson_mut_val *pstScales, dm_in const char *pcIpad,
+                                         dm_in const char *pcScale)
 {
   if ((NULL == pcIpad) || ('\0' == pcIpad[0]))
   {
@@ -388,16 +465,15 @@ static void af__add_scale_key_if_missing(io yyjson_mut_doc *pstDoc, io yyjson_mu
   }
 }
 
-static bool_t af__populate_ipad_scales(io yyjson_mut_doc *pstDoc, io yyjson_mut_val *pstRoot)
+static bool_t af__populate_ipad_scales(dm_io yyjson_mut_doc *pstDoc, dm_io yyjson_mut_val *pstRoot)
 {
   yyjson_mut_val *pstScaleVal = yyjson_mut_obj_get(pstRoot, "scale");
   yyjson_mut_val *pstScales = yyjson_mut_obj_get(pstRoot, "ipad_scales");
   const char *pcScale = (NULL != pstScaleVal) ? yyjson_mut_get_str(pstScaleVal) : NULL;
   bool_t bNeed = DM_FALSE;
 
-  if ((NULL == pcScale)
-      || ((0 != strcmp(pcScale, "larger")) && (0 != strcmp(pcScale, "default"))
-          && (0 != strcmp(pcScale, "more"))))
+  if ((NULL == pcScale) || ((0 != strcmp(pcScale, "larger")) && (0 != strcmp(pcScale, "default")) &&
+                            (0 != strcmp(pcScale, "more"))))
   {
     return DM_FALSE;
   }
@@ -443,8 +519,8 @@ static bool_t af__populate_ipad_scales(io yyjson_mut_doc *pstDoc, io yyjson_mut_
   return bNeed;
 }
 
-static void af__migrate_state_json(in const char *pcDataDir, in bool_t bMigratedCfg,
-                                   in bool_t bCfgAutoConnect)
+static void af__migrate_state_json(dm_in const char *pcDataDir, dm_in bool_t bMigratedCfg,
+                                   dm_in bool_t bCfgAutoConnect)
 {
   char acPath[600];
   size_t uLen = 0u;
@@ -465,17 +541,23 @@ static void af__migrate_state_json(in const char *pcDataDir, in bool_t bMigrated
     }
     return;
   }
-  pstDoc = yyjson_read(pcText, uLen, 0u);
+  pstDoc = dm_json_read(pcText, uLen, 0u, NULL);
   dm_free_tag(pcText);
   if ((NULL == pstDoc) || (!yyjson_is_obj(yyjson_doc_get_root(pstDoc))))
   {
     DM_LOG_WARN("corrupt state.json during migration, skipping");
-    if (NULL != pstDoc) { yyjson_doc_free(pstDoc); }
+    if (NULL != pstDoc)
+    {
+      yyjson_doc_free(pstDoc);
+    }
     return;
   }
-  pstMDoc = yyjson_doc_mut_copy(pstDoc, NULL);
+  pstMDoc = yyjson_doc_mut_copy(pstDoc, dm_json_alc());
   yyjson_doc_free(pstDoc);
-  if (NULL == pstMDoc) { return; }
+  if (NULL == pstMDoc)
+  {
+    return;
+  }
   pstRoot = yyjson_mut_doc_get_root(pstMDoc);
   if (bMigratedCfg && (!bCfgAutoConnect))
   {
@@ -494,11 +576,12 @@ static void af__migrate_state_json(in const char *pcDataDir, in bool_t bMigrated
   if (bDirty)
   {
     size_t uOutLen = 0u;
-    char *pcOut = yyjson_mut_write(pstMDoc, YYJSON_WRITE_PRETTY, &uOutLen);
+    char *pcOut =
+        yyjson_mut_write_opts(pstMDoc, YYJSON_WRITE_PRETTY, dm_json_alc(), &uOutLen, NULL);
     if (NULL != pcOut)
     {
       (void)af_store_write_atomic(acPath, pcOut, uOutLen);
-      free(pcOut);
+      dm_json_free_str(pcOut);
     }
   }
   yyjson_mut_doc_free(pstMDoc);
@@ -518,10 +601,10 @@ static void af__del_legacy_keychain(void)
   }
 }
 
-static int af__rewrite_devices_arr(in const char *pcPath, in yyjson_val *pstArr,
-                                   in bool_t bForceWrite, in bool_t bHasLegacy)
+static int af__rewrite_devices_arr(dm_in const char *pcPath, dm_in yyjson_val *pstArr,
+                                   dm_in bool_t bForceWrite, dm_in bool_t bHasLegacy)
 {
-  yyjson_mut_doc *pstMDoc = yyjson_mut_doc_new(NULL);
+  yyjson_mut_doc *pstMDoc = yyjson_mut_doc_new(dm_json_alc());
   yyjson_mut_val *pstMRoot = NULL;
   yyjson_mut_val *pstMArr = NULL;
   yyjson_val *pstItem = NULL;
@@ -530,7 +613,10 @@ static int af__rewrite_devices_arr(in const char *pcPath, in yyjson_val *pstArr,
   bool_t bNeedWrite = bForceWrite;
   int iRc = DM_SUCCESS;
 
-  if (NULL == pstMDoc) { return DM_ALLOC; }
+  if (NULL == pstMDoc)
+  {
+    return DM_ALLOC;
+  }
   pstMRoot = yyjson_mut_obj(pstMDoc);
   pstMArr = yyjson_mut_arr(pstMDoc);
   yyjson_mut_doc_set_root(pstMDoc, pstMRoot);
@@ -559,7 +645,8 @@ static int af__rewrite_devices_arr(in const char *pcPath, in yyjson_val *pstArr,
   if (bNeedWrite)
   {
     size_t uOutLen = 0u;
-    char *pcOut = yyjson_mut_write(pstMDoc, YYJSON_WRITE_PRETTY, &uOutLen);
+    char *pcOut =
+        yyjson_mut_write_opts(pstMDoc, YYJSON_WRITE_PRETTY, dm_json_alc(), &uOutLen, NULL);
     if (NULL == pcOut)
     {
       iRc = DM_ALLOC;
@@ -567,14 +654,14 @@ static int af__rewrite_devices_arr(in const char *pcPath, in yyjson_val *pstArr,
     else
     {
       iRc = af_store_write_atomic(pcPath, pcOut, uOutLen);
-      free(pcOut);
+      dm_json_free_str(pcOut);
     }
   }
   yyjson_mut_doc_free(pstMDoc);
   return iRc;
 }
 
-static void af__migrate_devices_and_keychain(in const char *pcDataDir)
+static void af__migrate_devices_and_keychain(dm_in const char *pcDataDir)
 {
   bool_t bHasLegacy = (NULL != g_stMigOps.pfKeychainHasLegacyPw)
                           ? g_stMigOps.pfKeychainHasLegacyPw()
@@ -588,7 +675,7 @@ static void af__migrate_devices_and_keychain(in const char *pcDataDir)
   pcText = af__read_all(acPath, &uLen);
   if (NULL != pcText)
   {
-    yyjson_doc *pstDoc = yyjson_read(pcText, uLen, 0u);
+    yyjson_doc *pstDoc = dm_json_read(pcText, uLen, 0u, NULL);
     dm_free_tag(pcText);
     if (NULL == pstDoc)
     {
@@ -616,7 +703,7 @@ static void af__migrate_devices_and_keychain(in const char *pcDataDir)
   }
 }
 
-int af_migrate_run(in const char *pcDataDir)
+int af_migrate_run(dm_in const char *pcDataDir)
 {
   bool_t bAutoConn = DM_TRUE;
   bool_t bMigCfg = DM_FALSE;

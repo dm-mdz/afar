@@ -42,11 +42,28 @@ struct dmc
   uint8 *pu8Rx; /* 未凑齐整帧的缓冲 */
   size_t uRxLen;
   size_t uRxCap;
+  bool_t bRxHasSensitive; /* AUD-06 / DD-19 §6.3：收过敏感帧/HELLO，消费/移位/断连/释放强制擦零 */
 };
+
+static void dmc__proto_zero(dm_out void *pvBuf, dm_in size_t uLen)
+{
+  volatile uint8 *pu8 = (volatile uint8 *)pvBuf;
+  size_t uIdx = 0u;
+
+  if (NULL == pvBuf)
+  {
+    return;
+  }
+  for (uIdx = 0u; uIdx < uLen; uIdx++)
+  {
+    pu8[uIdx] = 0u;
+  }
+  return;
+}
 
 /* ============================ 错误码文本 ============================ */
 
-const char *dmc_err_str(in int iErr)
+const char *dmc_err_str(dm_in int iErr)
 {
   switch (iErr)
   {
@@ -105,7 +122,7 @@ const char *dmc_err_str(in int iErr)
 
 /* ============================ 可插拔内存钩子 ============================ */
 
-static void *dmc__alloc(in const dmc_host_st *pstHost, in size_t uSize)
+static void *dmc__alloc(dm_in const dmc_host_st *pstHost, dm_in size_t uSize)
 {
   if (NULL != pstHost->pfAlloc)
   {
@@ -114,7 +131,7 @@ static void *dmc__alloc(in const dmc_host_st *pstHost, in size_t uSize)
   return malloc(uSize);
 }
 
-static void dmc__free_with(in const dmc_host_st *pstHost, io void *pvPtr)
+static void dmc__free_with(dm_in const dmc_host_st *pstHost, dm_io void *pvPtr)
 {
   if (NULL == pvPtr)
   {
@@ -129,12 +146,12 @@ static void dmc__free_with(in const dmc_host_st *pstHost, io void *pvPtr)
   return;
 }
 
-static void *dmc__realloc_rx(io dmc_st *pstDmc, in size_t uNewCap)
+static void *dmc__realloc_rx(dm_io dmc_st *pstDmc, dm_in size_t uNewCap)
 {
   if (NULL != pstDmc->stHost.pfAlloc)
   {
     void *pvNew = NULL;
-    if (NULL != pstDmc->stHost.pfRealloc)
+    if ((NULL != pstDmc->stHost.pfRealloc) && (!pstDmc->bRxHasSensitive))
     {
       return pstDmc->stHost.pfRealloc(pstDmc->stHost.pvUser, pstDmc->pu8Rx, uNewCap);
     }
@@ -147,7 +164,29 @@ static void *dmc__realloc_rx(io dmc_st *pstDmc, in size_t uNewCap)
     {
       memcpy(pvNew, pstDmc->pu8Rx, pstDmc->uRxLen);
     }
+    if (pstDmc->bRxHasSensitive && (NULL != pstDmc->pu8Rx) && (pstDmc->uRxCap > 0u))
+    {
+      dmc__proto_zero(pstDmc->pu8Rx, pstDmc->uRxCap);
+    }
     dmc__free_with(&pstDmc->stHost, pstDmc->pu8Rx);
+    return pvNew;
+  }
+  if (pstDmc->bRxHasSensitive && (NULL != pstDmc->pu8Rx))
+  {
+    void *pvNew = malloc(uNewCap);
+    if (NULL == pvNew)
+    {
+      return NULL;
+    }
+    if (pstDmc->uRxLen > 0u)
+    {
+      memcpy(pvNew, pstDmc->pu8Rx, pstDmc->uRxLen);
+    }
+    if (pstDmc->uRxCap > 0u)
+    {
+      dmc__proto_zero(pstDmc->pu8Rx, pstDmc->uRxCap);
+    }
+    free(pstDmc->pu8Rx);
     return pvNew;
   }
   return realloc(pstDmc->pu8Rx, uNewCap);
@@ -155,7 +194,7 @@ static void *dmc__realloc_rx(io dmc_st *pstDmc, in size_t uNewCap)
 
 /* ============================ 在途表 ============================ */
 
-static dmc__pending_st *dmc__find(io dmc_st *pstDmc, in uint32 u32ReqID)
+static dmc__pending_st *dmc__find(dm_io dmc_st *pstDmc, dm_in uint32 u32ReqID)
 {
   uint32 u32Idx = 0u;
   for (u32Idx = 0u; u32Idx < DMC_PENDING_MAX; u32Idx++)
@@ -168,8 +207,8 @@ static dmc__pending_st *dmc__find(io dmc_st *pstDmc, in uint32 u32ReqID)
   return NULL;
 }
 
-static void dmc__finish(io dmc_st *pstDmc, io dmc__pending_st *pstOne, in int iStatus,
-                        in uint8 u8Flag, in const uint8 *pu8Body, in uint32 u32Len)
+static void dmc__finish(dm_io dmc_st *pstDmc, dm_io dmc__pending_st *pstOne, dm_in int iStatus,
+                        dm_in uint8 u8Flag, dm_in const uint8 *pu8Body, dm_in uint32 u32Len)
 {
   dmc_reply_cb pfReply = pstOne->pfReply;
   void *pvArg = pstOne->pvArg;
@@ -185,7 +224,7 @@ static void dmc__finish(io dmc_st *pstDmc, io dmc__pending_st *pstOne, in int iS
 
 /* ============================ 生命周期 ============================ */
 
-dmc_st *dmc_new(in const dmc_host_st *pstHost)
+dmc_st *dmc_new(dm_in const dmc_host_st *pstHost)
 {
   dmc_st *pstDmc = NULL;
 
@@ -216,7 +255,7 @@ dmc_st *dmc_new(in const dmc_host_st *pstHost)
   return pstDmc;
 }
 
-void dmc_free(io dmc_st *pstDmc)
+void dmc_free(dm_io dmc_st *pstDmc)
 {
   dmc_host_st stHostCopy;
 
@@ -224,13 +263,17 @@ void dmc_free(io dmc_st *pstDmc)
   {
     return;
   }
+  if (pstDmc->bRxHasSensitive && (NULL != pstDmc->pu8Rx) && (pstDmc->uRxCap > 0u))
+  {
+    dmc__proto_zero(pstDmc->pu8Rx, pstDmc->uRxCap);
+  }
   stHostCopy = pstDmc->stHost;
   dmc__free_with(&stHostCopy, pstDmc->pu8Rx);
   dmc__free_with(&stHostCopy, pstDmc);
   return;
 }
 
-void dmc_on_connected(io dmc_st *pstDmc)
+void dmc_on_connected(dm_io dmc_st *pstDmc)
 {
   if (NULL == pstDmc)
   {
@@ -243,13 +286,18 @@ void dmc_on_connected(io dmc_st *pstDmc)
   return;
 }
 
-void dmc_on_disconnected(io dmc_st *pstDmc)
+void dmc_on_disconnected(dm_io dmc_st *pstDmc)
 {
   uint32 u32Idx = 0u;
 
   if (NULL == pstDmc)
   {
     return;
+  }
+  if (pstDmc->bRxHasSensitive && (NULL != pstDmc->pu8Rx) && (pstDmc->uRxCap > 0u))
+  {
+    dmc__proto_zero(pstDmc->pu8Rx, pstDmc->uRxCap);
+    pstDmc->bRxHasSensitive = DM_FALSE;
   }
   pstDmc->u32ConnGen++;
   pstDmc->bConnected = DM_FALSE;
@@ -272,19 +320,20 @@ void dmc_on_disconnected(io dmc_st *pstDmc)
   return;
 }
 
-bool_t dmc_connected(in const dmc_st *pstDmc)
+bool_t dmc_connected(dm_in const dmc_st *pstDmc)
 {
   return ((NULL != pstDmc) && pstDmc->bConnected) ? DM_TRUE : DM_FALSE;
 }
 
-uint32 dmc_inflight(in const dmc_st *pstDmc)
+uint32 dmc_inflight(dm_in const dmc_st *pstDmc)
 {
   return (NULL != pstDmc) ? pstDmc->u32Inflight : 0u;
 }
 
 /* ============================ 发 ============================ */
 
-static int dmc__send(io dmc_st *pstDmc, in const dm_frame_head_st *pstHead, in const void *pvBody)
+static int dmc__send(dm_io dmc_st *pstDmc, dm_in const dm_frame_head_st *pstHead,
+                     dm_in const void *pvBody)
 {
   uint8 au8Head[DM_FRAME_HEAD];
 
@@ -294,18 +343,17 @@ static int dmc__send(io dmc_st *pstDmc, in const dm_frame_head_st *pstHead, in c
              : DMC_ERR_NOT_CON;
 }
 
-int dmc_request(io dmc_st *pstDmc, in uint16 u16LinkID, in uint8 u8Flag, in const void *pvBody,
-                in uint32 u32Len, in dmc_reply_cb pfReply, in void *pvArg, out uint32 *pu32ReqID)
+int dmc_request(dm_io dmc_st *pstDmc, dm_in const dmc_req_opt_st *pstReq, dm_out uint32 *pu32ReqID)
 {
   dm_frame_head_st stHead;
   dmc__pending_st *pstSlot = NULL;
   int iErr = DMC_OK;
 
-  if ((NULL == pstDmc) || ((NULL == pvBody) && (0u != u32Len)))
+  if ((NULL == pstDmc) || (NULL == pstReq) || ((NULL == pstReq->pvBody) && (0u != pstReq->u32Len)))
   {
     return DMC_ERR_ARG;
   }
-  if (u32Len > pstDmc->stHost.u32FrameMax)
+  if (pstReq->u32Len > pstDmc->stHost.u32FrameMax)
   {
     return DMC_ERR_ARG;
   }
@@ -320,8 +368,8 @@ int dmc_request(io dmc_st *pstDmc, in uint16 u16LinkID, in uint8 u8Flag, in cons
   }
   pstSlot->u32ReqID = pstDmc->u32NextID;
   pstSlot->bInSend = DM_TRUE;
-  pstSlot->pfReply = pfReply;
-  pstSlot->pvArg = pvArg;
+  pstSlot->pfReply = pstReq->pfReply;
+  pstSlot->pvArg = pstReq->pvArg;
   pstDmc->u32Inflight++;
   pstDmc->u32NextID++;
   if (0u == pstDmc->u32NextID)
@@ -329,16 +377,16 @@ int dmc_request(io dmc_st *pstDmc, in uint16 u16LinkID, in uint8 u8Flag, in cons
     pstDmc->u32NextID = 1u;
   }
   memset(&stHead, 0, sizeof(stHead));
-  stHead.u16LinkID = u16LinkID;
+  stHead.u16LinkID = pstReq->u16LinkID;
   stHead.u8Type = DM_FRAME_T_REQ;
-  stHead.u8Flag = u8Flag;
+  stHead.u8Flag = pstReq->u8Flag;
   stHead.u32ReqID = pstSlot->u32ReqID;
-  stHead.u32Len = u32Len;
+  stHead.u32Len = pstReq->u32Len;
   if (NULL != pu32ReqID)
   {
     *pu32ReqID = pstSlot->u32ReqID;
   }
-  iErr = dmc__send(pstDmc, &stHead, pvBody);
+  iErr = dmc__send(pstDmc, &stHead, pstReq->pvBody);
   if (DMC_OK != iErr)
   {
     if (pstSlot->u32ReqID == stHead.u32ReqID)
@@ -354,8 +402,8 @@ int dmc_request(io dmc_st *pstDmc, in uint16 u16LinkID, in uint8 u8Flag, in cons
   return iErr;
 }
 
-int dmc_notify(io dmc_st *pstDmc, in uint16 u16LinkID, in uint8 u8Flag, in const void *pvBody,
-               in uint32 u32Len)
+int dmc_notify(dm_io dmc_st *pstDmc, dm_in uint16 u16LinkID, dm_in uint8 u8Flag,
+               dm_in const void *pvBody, dm_in uint32 u32Len)
 {
   dm_frame_head_st stHead;
 
@@ -380,7 +428,7 @@ int dmc_notify(io dmc_st *pstDmc, in uint16 u16LinkID, in uint8 u8Flag, in const
   return dmc__send(pstDmc, &stHead, pvBody);
 }
 
-int dmc_cancel(io dmc_st *pstDmc, in uint32 u32ReqID, in int iStatus)
+int dmc_cancel(dm_io dmc_st *pstDmc, dm_in uint32 u32ReqID, dm_in int iStatus)
 {
   dmc__pending_st *pstOne = NULL;
 
@@ -397,13 +445,13 @@ int dmc_cancel(io dmc_st *pstDmc, in uint32 u32ReqID, in int iStatus)
   return DMC_OK;
 }
 
-int dmc_answer(io dmc_st *pstDmc, in uint16 u16Func, in uint32 u32ReqID, in int32 i32Status,
-               in uint8 u8Flag, in const void *pvBody, in uint32 u32Len)
+int dmc_answer(dm_io dmc_st *pstDmc, dm_in const dmc_ans_opt_st *pstAns)
 {
   dm_frame_head_st stHead;
 
-  if ((NULL == pstDmc) || (0u == u32ReqID) || ((NULL == pvBody) && (0u != u32Len)) ||
-      (u32Len > pstDmc->stHost.u32FrameMax))
+  if ((NULL == pstDmc) || (NULL == pstAns) || (0u == pstAns->u32ReqID) ||
+      ((NULL == pstAns->pvBody) && (0u != pstAns->u32Len)) ||
+      (pstAns->u32Len > pstDmc->stHost.u32FrameMax))
   {
     return DMC_ERR_ARG;
   }
@@ -412,19 +460,24 @@ int dmc_answer(io dmc_st *pstDmc, in uint16 u16Func, in uint32 u32ReqID, in int3
     return DMC_ERR_NOT_CON;
   }
   memset(&stHead, 0, sizeof(stHead));
-  stHead.u16LinkID = u16Func;
+  stHead.u16LinkID = pstAns->u16Func;
   stHead.u8Type = DM_FRAME_T_REP;
-  stHead.u8Flag = u8Flag;
-  stHead.u32ReqID = u32ReqID;
-  stHead.i32Status = i32Status;
-  stHead.u32Len = u32Len;
-  return dmc__send(pstDmc, &stHead, pvBody);
+  stHead.u8Flag = pstAns->u8Flag;
+  stHead.u32ReqID = pstAns->u32ReqID;
+  stHead.i32Status = pstAns->i32Status;
+  stHead.u32Len = pstAns->u32Len;
+  return dmc__send(pstDmc, &stHead, pstAns->pvBody);
 }
 
 /* ============================ 收 ============================ */
 
-static void dmc__wire_error(io dmc_st *pstDmc)
+static void dmc__wire_error(dm_io dmc_st *pstDmc)
 {
+  if (pstDmc->bRxHasSensitive && (NULL != pstDmc->pu8Rx) && (pstDmc->uRxCap > 0u))
+  {
+    dmc__proto_zero(pstDmc->pu8Rx, pstDmc->uRxCap);
+    pstDmc->bRxHasSensitive = DM_FALSE;
+  }
   pstDmc->bBroken = DM_TRUE;
   pstDmc->uRxLen = 0u;
   if (NULL != pstDmc->stHost.pfOnWireError)
@@ -434,8 +487,8 @@ static void dmc__wire_error(io dmc_st *pstDmc)
   return;
 }
 
-static bool_t dmc__on_frame(io dmc_st *pstDmc, in const dm_frame_head_st *pstHead,
-                            in const uint8 *pu8Body)
+static bool_t dmc__on_frame(dm_io dmc_st *pstDmc, dm_in const dm_frame_head_st *pstHead,
+                            dm_in const uint8 *pu8Body)
 {
   dmc__pending_st *pstOne = NULL;
   dmc_push_st stPush;
@@ -474,8 +527,9 @@ static bool_t dmc__on_frame(io dmc_st *pstDmc, in const dm_frame_head_st *pstHea
     }
     else if (0u != pstHead->u32ReqID)
     {
-      (void)dmc_answer(pstDmc, pstHead->u16LinkID, pstHead->u32ReqID, (int32)DM__NOT_FOUND, 0u,
-                       NULL, 0u);
+      dmc_ans_opt_st stAns = {
+          pstHead->u16LinkID, pstHead->u32ReqID, (int32)DM__NOT_FOUND, 0u, NULL, 0u};
+      (void)dmc_answer(pstDmc, &stAns);
     }
     return DM_TRUE;
   default:
@@ -483,14 +537,26 @@ static bool_t dmc__on_frame(io dmc_st *pstDmc, in const dm_frame_head_st *pstHea
   }
 }
 
-static size_t dmc__cut(io dmc_st *pstDmc, in const uint8 *pu8, in size_t uLen, in uint32 u32Gen)
+static size_t dmc__cut(dm_io dmc_st *pstDmc, dm_in const uint8 *pu8, dm_io uint8 *pu8Mut,
+                       dm_in size_t uLen, dm_in uint32 u32Gen)
 {
   dm_frame_head_st stHead;
   size_t uUsed = 0u;
 
   while ((uLen - uUsed) >= DM_FRAME_HEAD)
   {
+    bool_t bSensitive = DM_FALSE;
+    bool_t bOk = DM_FALSE;
+    size_t uFrameLen = 0u;
     dm_frame_get(pu8 + uUsed, &stHead);
+    bSensitive =
+        ((0u != (stHead.u8Flag & DM_FRAME_F_SENSITIVE)) || (DM_LINKID_HELLO == stHead.u16LinkID))
+            ? DM_TRUE
+            : DM_FALSE;
+    if (bSensitive)
+    {
+      pstDmc->bRxHasSensitive = DM_TRUE;
+    }
     if (stHead.u32Len > pstDmc->stHost.u32FrameMax)
     {
       return (size_t)-1;
@@ -499,11 +565,17 @@ static size_t dmc__cut(io dmc_st *pstDmc, in const uint8 *pu8, in size_t uLen, i
     {
       break;
     }
-    if (!dmc__on_frame(pstDmc, &stHead, pu8 + uUsed + DM_FRAME_HEAD))
+    uFrameLen = DM_FRAME_HEAD + (size_t)stHead.u32Len;
+    bOk = dmc__on_frame(pstDmc, &stHead, pu8 + uUsed + DM_FRAME_HEAD);
+    if (bSensitive && (NULL != pu8Mut) && (pstDmc->u32ConnGen == u32Gen))
+    {
+      dmc__proto_zero(pu8Mut + uUsed, uFrameLen);
+    }
+    if (!bOk)
     {
       return (size_t)-1;
     }
-    uUsed += DM_FRAME_HEAD + (size_t)stHead.u32Len;
+    uUsed += uFrameLen;
     if (pstDmc->bBroken || !pstDmc->bConnected || (pstDmc->u32ConnGen != u32Gen))
     {
       break;
@@ -512,7 +584,7 @@ static size_t dmc__cut(io dmc_st *pstDmc, in const uint8 *pu8, in size_t uLen, i
   return uUsed;
 }
 
-static bool_t dmc__rx_append(io dmc_st *pstDmc, in const uint8 *pu8, in size_t uLen)
+static bool_t dmc__rx_append(dm_io dmc_st *pstDmc, dm_in const uint8 *pu8, dm_in size_t uLen)
 {
   if (uLen > (SIZE_MAX - pstDmc->uRxLen))
   {
@@ -542,10 +614,15 @@ static bool_t dmc__rx_append(io dmc_st *pstDmc, in const uint8 *pu8, in size_t u
   }
   memcpy(pstDmc->pu8Rx + pstDmc->uRxLen, pu8, uLen);
   pstDmc->uRxLen += uLen;
+  if ((pstDmc->uRxLen >= 4u) && ((0u != (pstDmc->pu8Rx[3] & DM_FRAME_F_SENSITIVE)) ||
+                                 (DM_LINKID_HELLO == (uint16)dm_frame_rd16(pstDmc->pu8Rx))))
+  {
+    pstDmc->bRxHasSensitive = DM_TRUE;
+  }
   return DM_TRUE;
 }
 
-size_t dmc_feed(io dmc_st *pstDmc, in const void *pvData, in size_t uLen)
+size_t dmc_feed(dm_io dmc_st *pstDmc, dm_in const void *pvData, dm_in size_t uLen)
 {
   const uint8 *pu8 = (const uint8 *)pvData;
   size_t uUsed = 0u;
@@ -563,7 +640,7 @@ size_t dmc_feed(io dmc_st *pstDmc, in const void *pvData, in size_t uLen)
   pstDmc->bInFeed = DM_TRUE;
   if (0u == pstDmc->uRxLen)
   {
-    uUsed = dmc__cut(pstDmc, pu8, uLen, u32Gen);
+    uUsed = dmc__cut(pstDmc, pu8, NULL, uLen, u32Gen);
     if ((size_t)-1 == uUsed)
     {
       dmc__wire_error(pstDmc);
@@ -596,7 +673,7 @@ size_t dmc_feed(io dmc_st *pstDmc, in const void *pvData, in size_t uLen)
     pstDmc->bInFeed = DM_FALSE;
     return uLen;
   }
-  uUsed = dmc__cut(pstDmc, pstDmc->pu8Rx, pstDmc->uRxLen, u32Gen);
+  uUsed = dmc__cut(pstDmc, pstDmc->pu8Rx, pstDmc->pu8Rx, pstDmc->uRxLen, u32Gen);
   if ((size_t)-1 == uUsed)
   {
     dmc__wire_error(pstDmc);
@@ -612,6 +689,10 @@ size_t dmc_feed(io dmc_st *pstDmc, in const void *pvData, in size_t uLen)
   {
     memmove(pstDmc->pu8Rx, pstDmc->pu8Rx + uUsed, pstDmc->uRxLen - uUsed);
     pstDmc->uRxLen -= uUsed;
+    if (pstDmc->bRxHasSensitive)
+    {
+      dmc__proto_zero(pstDmc->pu8Rx + pstDmc->uRxLen, uUsed);
+    }
   }
   pstDmc->bInFeed = DM_FALSE;
   return uLen;

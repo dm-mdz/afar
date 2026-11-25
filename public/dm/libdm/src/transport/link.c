@@ -98,7 +98,7 @@ void dm_link_fini(void)
 
 /* ============================ 扩展钩子表 ============================ */
 
-static int dm__net_hook_before_init(in const dm_cfg_st *pstCfg)
+static int dm__net_hook_before_init(dm_in const dm_cfg_st *pstCfg)
 {
   if (NULL != pstCfg)
   {
@@ -130,7 +130,7 @@ static void dm__net_hook_on_end(void)
   return;
 }
 
-static void dm__net_hook_get_ports(out int *piLinkPort, out int *piHttpPort)
+static void dm__net_hook_get_ports(dm_out int *piLinkPort, dm_out int *piHttpPort)
 {
   if (NULL != piLinkPort)
   {
@@ -143,7 +143,7 @@ static void dm__net_hook_get_ports(out int *piLinkPort, out int *piHttpPort)
   return;
 }
 
-static int dm__net_hook_reply_take(in const void *pvMsg, out void *pvReply)
+static int dm__net_hook_reply_take(dm_in const void *pvMsg, dm_out void *pvReply)
 {
   dm_reply_st stReply = {0};
   int iErr = DM_SUCCESS;
@@ -160,8 +160,8 @@ static int dm__net_hook_reply_take(in const void *pvMsg, out void *pvReply)
   return iErr;
 }
 
-static int dm__net_hook_reply_send(in const void *pvReply, in int iStatus, in const void *pvBody,
-                                   in uint32 u32Len)
+static int dm__net_hook_reply_send(dm_in const void *pvReply, dm_in int iStatus,
+                                   dm_in const void *pvBody, dm_in uint32 u32Len)
 {
   dm_reply_st stReply = {0};
 

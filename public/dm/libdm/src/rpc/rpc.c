@@ -34,7 +34,7 @@ static dm_hash_table_st g_stIfaceTable; /* linkID -> dm_iface_st（拷贝） */
 
 /* ============================ 接口表 ============================ */
 
-static int dm__iface_add(in const dm_iface_st *pstIface)
+static int dm__iface_add(dm_in const dm_iface_st *pstIface)
 {
   dm_iface_st *pstCopy = NULL;
 
@@ -57,7 +57,7 @@ static int dm__iface_add(in const dm_iface_st *pstIface)
   return DM_SUCCESS;
 }
 
-static const dm_iface_st *dm__iface_find(in uint uiLinkID)
+static const dm_iface_st *dm__iface_find(dm_in uint uiLinkID)
 {
   if (NULL == g_stIfaceTable.pstBuckets)
   {
@@ -67,8 +67,9 @@ static const dm_iface_st *dm__iface_find(in uint uiLinkID)
 }
 
 /* 挨个看接口表（接口不多）；pfEach 返回真就停 */
-static void dm__iface_each(in bool_t (*pfEach)(in const dm_iface_st *pstOne, in void *pvArg),
-                           in void *pvArg)
+static void dm__iface_each(dm_in bool_t (*pfEach)(dm_in const dm_iface_st *pstOne,
+                                                  dm_in void *pvArg),
+                           dm_in void *pvArg)
 {
   uint32 u32Idx = 0;
   dm_list_node_st *pstNode = NULL;
@@ -96,7 +97,7 @@ typedef struct dm__name_hit
   bool_t bHit;
 } dm__name_hit_st;
 
-static bool_t dm__iface_name_cmp(in const dm_iface_st *pstOne, in void *pvArg)
+static bool_t dm__iface_name_cmp(dm_in const dm_iface_st *pstOne, dm_in void *pvArg)
 {
   dm__name_hit_st *pstHit = (dm__name_hit_st *)pvArg;
   pstHit->bHit = (NULL != pstOne->pcName) && (0 == strcmp(pstOne->pcName, pstHit->pcName));
@@ -104,7 +105,7 @@ static bool_t dm__iface_name_cmp(in const dm_iface_st *pstOne, in void *pvArg)
 }
 
 /* 名字重了没有 */
-static bool_t dm__iface_name_taken(in const char *pcName)
+static bool_t dm__iface_name_taken(dm_in const char *pcName)
 {
   dm__name_hit_st stHit = {0};
   stHit.pcName = pcName;
@@ -113,7 +114,7 @@ static bool_t dm__iface_name_taken(in const char *pcName)
   return stHit.bHit;
 }
 
-int dm_iface_register(in const dm_iface_st *pstIface)
+int dm_iface_register(dm_in const dm_iface_st *pstIface)
 {
   DM__CHECK_LOOP();
   if ((DM__PHASE_INIT != dm__phase()) && (DM__PHASE_NONE != dm__phase()))
@@ -136,14 +137,14 @@ int dm_iface_register(in const dm_iface_st *pstIface)
   return dm__iface_add(pstIface);
 }
 
-const char *dm__iface_name(in uint uiLinkID)
+const char *dm__iface_name(dm_in uint uiLinkID)
 {
   const dm_iface_st *pstIface = dm__iface_find(uiLinkID);
   return (NULL != pstIface) ? pstIface->pcName : NULL;
 }
 
 /* 校验外部连接角色是否有权调用指定 uiLinkID（DD-01） */
-int dm__iface_allow(in uint uiLinkID, in uint32 u32Role)
+int dm__iface_allow(dm_in uint uiLinkID, dm_in uint32 u32Role)
 {
   const dm_iface_st *pstIface = dm__iface_find(uiLinkID);
 
@@ -154,7 +155,7 @@ int dm__iface_allow(in uint uiLinkID, in uint32 u32Role)
   return (0u != (pstIface->u32Roles & u32Role)) ? DM_SUCCESS : DM_PERM;
 }
 
-static void dm__iface_free(in void *pvValue)
+static void dm__iface_free(dm_in void *pvValue)
 {
   dm_free_tag(pvValue);
   return;
@@ -169,7 +170,7 @@ void dm__rpc_destroy(void)
 
 /* ============================ 应答 ============================ */
 
-bool_t dm_reply_equal(in const dm_reply_st *pstA, in const dm_reply_st *pstB)
+bool_t dm_reply_equal(dm_in const dm_reply_st *pstA, dm_in const dm_reply_st *pstB)
 {
   if ((NULL == pstA) || (NULL == pstB))
   {
@@ -178,7 +179,7 @@ bool_t dm_reply_equal(in const dm_reply_st *pstA, in const dm_reply_st *pstB)
   return (0 == memcmp(pstA, pstB, sizeof(*pstA))) ? DM_TRUE : DM_FALSE;
 }
 
-int dm_reply_take(in const dm_link_msg_st *pstMsg, out dm_reply_st *pstReply)
+int dm_reply_take(dm_in const dm_link_msg_st *pstMsg, dm_out dm_reply_st *pstReply)
 {
   const dm__reply_ctx_st *pstCtx = NULL;
 
@@ -200,8 +201,8 @@ int dm_reply_take(in const dm_link_msg_st *pstMsg, out dm_reply_st *pstReply)
   return DM_SUCCESS;
 }
 
-int dm_reply_send(in const dm_reply_st *pstReply, in int iStatus, in const void *pvBody,
-                  in uint32 u32Len)
+int dm_reply_send(dm_in const dm_reply_st *pstReply, dm_in int iStatus, dm_in const void *pvBody,
+                  dm_in uint32 u32Len)
 {
   DM__CHECK_LOOP();
   if ((NULL == pstReply) || (DM__REPLY_MAGIC != pstReply->au32Priv[3]) ||
@@ -225,8 +226,8 @@ int dm_reply_send(in const dm_reply_st *pstReply, in int iStatus, in const void 
 /* ============================ DM 内置接口 ============================ */
 
 /* 回一段 JSON（拼好的文本）；超帧上限时兜底回 DM_TOO_BIG 避免 pending 挂死 */
-static void dm__builtin_answer(in dm_link_msg_st *pstMsg, in int iStatus, in const char *pcJson,
-                               in size_t uLen)
+static void dm__builtin_answer(dm_in dm_link_msg_st *pstMsg, dm_in int iStatus,
+                               dm_in const char *pcJson, dm_in size_t uLen)
 {
   dm_reply_st stReply = {0};
   if (DM_SUCCESS == dm_reply_take(pstMsg, &stReply))
@@ -240,7 +241,7 @@ static void dm__builtin_answer(in dm_link_msg_st *pstMsg, in int iStatus, in con
   return;
 }
 
-static void dm__builtin_answer_mut(in dm_link_msg_st *pstMsg, in yyjson_mut_doc *pstDoc)
+static void dm__builtin_answer_mut(dm_in dm_link_msg_st *pstMsg, dm_in yyjson_mut_doc *pstDoc)
 {
   size_t uLen = 0;
   char *pcText = dm_json_write_mut(pstDoc, &uLen);
@@ -251,7 +252,7 @@ static void dm__builtin_answer_mut(in dm_link_msg_st *pstMsg, in yyjson_mut_doc 
 }
 
 /* dm.ping：心跳 */
-static int dm__builtin_ping(in void *pvArg)
+static int dm__builtin_ping(dm_in void *pvArg)
 {
   dm__builtin_answer((dm_link_msg_st *)pvArg, DM_SUCCESS, NULL, 0u);
   return DM_SUCCESS;
@@ -267,7 +268,7 @@ typedef struct dm__list_ctx
   bool_t bOom;
 } dm__list_ctx_st;
 
-static bool_t dm__builtin_list_one(in const dm_iface_st *pstOne, in void *pvArg)
+static bool_t dm__builtin_list_one(dm_in const dm_iface_st *pstOne, dm_in void *pvArg)
 {
   dm__list_ctx_st *pstCtx = (dm__list_ctx_st *)pvArg;
   yyjson_mut_val *pstObj = NULL;
@@ -289,6 +290,7 @@ static bool_t dm__builtin_list_one(in const dm_iface_st *pstOne, in void *pvArg)
                                       (NULL != pstOne->pcDesc) ? pstOne->pcDesc : "");
   bOk = bOk && yyjson_mut_obj_add_str(pstCtx->pstDoc, pstObj, "args",
                                       (NULL != pstOne->pcArgs) ? pstOne->pcArgs : "");
+  bOk = bOk && yyjson_mut_obj_add_uint(pstCtx->pstDoc, pstObj, "roles", pstOne->u32Roles);
   bOk = bOk && yyjson_mut_obj_add_uint(pstCtx->pstDoc, pstObj, "flags", pstOne->u32Flags);
   bOk = bOk && yyjson_mut_obj_add_bool(pstCtx->pstDoc, pstObj, "mutate",
                                        0u != (pstOne->u32Flags & DM_IFACE_MUTATE));
@@ -300,6 +302,8 @@ static bool_t dm__builtin_list_one(in const dm_iface_st *pstOne, in void *pvArg)
                                        0u != (pstOne->u32Flags & DM_IFACE_TEST_ONLY));
   bOk = bOk && yyjson_mut_obj_add_bool(pstCtx->pstDoc, pstObj, "stateless",
                                        0u != (pstOne->u32Flags & DM_IFACE_STATELESS));
+  bOk = bOk && yyjson_mut_obj_add_bool(pstCtx->pstDoc, pstObj, "sensitive",
+                                       0u != (pstOne->u32Flags & DM_IFACE_SENSITIVE));
   bOk = bOk && yyjson_mut_obj_add_bool(pstCtx->pstDoc, pstObj, "allowed",
                                        0u != (pstOne->u32Roles & pstCtx->u32Role));
   if (!bOk)
@@ -310,7 +314,7 @@ static bool_t dm__builtin_list_one(in const dm_iface_st *pstOne, in void *pvArg)
   return DM_FALSE;
 }
 
-static int dm__builtin_iface_list(in void *pvArg)
+static int dm__builtin_iface_list(dm_in void *pvArg)
 {
   dm_link_msg_st *pstMsg = (dm_link_msg_st *)pvArg;
   dm__list_ctx_st stCtx = {0};
@@ -362,7 +366,7 @@ typedef struct dm__recent_ctx
   bool_t bOom;
 } dm__recent_ctx_st;
 
-static int dm__log_parse_level(in const char *pcLevel)
+static int dm__log_parse_level(dm_in const char *pcLevel)
 {
   char acLow[16] = {0};
   size_t uIdx = 0u;
@@ -399,7 +403,7 @@ static int dm__log_parse_level(in const char *pcLevel)
   return -2;
 }
 
-static int dm__log_char_level(in char cLevel)
+static int dm__log_char_level(dm_in char cLevel)
 {
   switch (cLevel)
   {
@@ -417,7 +421,7 @@ static int dm__log_char_level(in char cLevel)
 }
 
 /* 解析日志行 "YYYY-MM-DD HH:MM:SS.mmm <L> T<nn> <mod>  <file:line>  <msg>" 做过滤 */
-static bool_t dm__recent_match(in const char *pcLine, in const dm__recent_ctx_st *pstCtx)
+static bool_t dm__recent_match(dm_in const char *pcLine, dm_in const dm__recent_ctx_st *pstCtx)
 {
   const char *pc = pcLine;
   const char *pcTok = NULL;
@@ -472,7 +476,7 @@ static bool_t dm__recent_match(in const char *pcLine, in const dm__recent_ctx_st
   return DM_TRUE;
 }
 
-static void dm__builtin_recent_line(in const char *pcLine, in void *pvArg)
+static void dm__builtin_recent_line(dm_in const char *pcLine, dm_in void *pvArg)
 {
   dm__recent_ctx_st *pstCtx = (dm__recent_ctx_st *)pvArg;
   yyjson_mut_val *pstStr = NULL;
@@ -513,8 +517,8 @@ static void dm__builtin_recent_line(in const char *pcLine, in void *pvArg)
 }
 
 /* 读取可选字符串字段并校验不含内嵌 NUL；字段缺失或为空串时 *ppcOut 置 NULL */
-static int dm__recent_str_field(in yyjson_val *pstRoot, in const char *pcKey,
-                                out const char **ppcOut, out size_t *puLenOut)
+static int dm__recent_str_field(dm_in yyjson_val *pstRoot, dm_in const char *pcKey,
+                                dm_out const char **ppcOut, dm_out size_t *puLenOut)
 {
   yyjson_val *pstVal = yyjson_obj_get(pstRoot, pcKey);
   const char *pcStr = NULL;
@@ -551,7 +555,7 @@ static int dm__recent_str_field(in yyjson_val *pstRoot, in const char *pcKey,
 }
 
 /* 解析 limit / n 字段并钳位至 [0, DM_LOG_RECENT] */
-static int dm__recent_parse_limit(in yyjson_val *pstRoot, out uint32 *pu32Limit)
+static int dm__recent_parse_limit(dm_in yyjson_val *pstRoot, dm_out uint32 *pu32Limit)
 {
   yyjson_val *pstLimit = NULL;
   int64 i64N = 100;
@@ -596,9 +600,9 @@ static int dm__recent_parse_limit(in yyjson_val *pstRoot, out uint32 *pu32Limit)
 }
 
 /* 解析 dm.log.recent 请求体并填充过滤上下文；调用方负责释放 *ppstReq */
-static int dm__recent_parse_req(in const dm_link_msg_st *pstMsg, out yyjson_doc **ppstReq,
-                                io dm__recent_ctx_st *pstCtx, out uint32 *pu32Limit,
-                                out bool_t *pbFilter)
+static int dm__recent_parse_req(dm_in const dm_link_msg_st *pstMsg, dm_out yyjson_doc **ppstReq,
+                                dm_io dm__recent_ctx_st *pstCtx, dm_out uint32 *pu32Limit,
+                                dm_out bool_t *pbFilter)
 {
   yyjson_doc *pstReq = NULL;
   yyjson_val *pstRoot = NULL;
@@ -657,7 +661,8 @@ static int dm__recent_parse_req(in const dm_link_msg_st *pstMsg, out yyjson_doc 
 }
 
 /* 收集最近日志行至 pstCtx->pstArr；有过滤条件时先用环形数组保底最近 u32Limit 条 */
-static int dm__recent_collect(io dm__recent_ctx_st *pstCtx, in uint32 u32Limit, in bool_t bFilter)
+static int dm__recent_collect(dm_io dm__recent_ctx_st *pstCtx, dm_in uint32 u32Limit,
+                              dm_in bool_t bFilter)
 {
   uint32 u32Idx = 0u;
 
@@ -690,7 +695,7 @@ static int dm__recent_collect(io dm__recent_ctx_st *pstCtx, in uint32 u32Limit, 
   return pstCtx->bOom ? DM_ALLOC : DM_SUCCESS;
 }
 
-static int dm__builtin_log_recent(in void *pvArg)
+static int dm__builtin_log_recent(dm_in void *pvArg)
 {
   dm_link_msg_st *pstMsg = (dm_link_msg_st *)pvArg;
   yyjson_doc *pstReq = NULL;
@@ -747,8 +752,8 @@ typedef struct dm__log_level_opts
   int iNewConsole;
 } dm__log_level_opts_st;
 
-static int dm__log_level_match(in const char *pcLevel, in const char *const *ppcNames,
-                               in uint uiCount, out dm_log_level_et *peLevel)
+static int dm__log_level_match(dm_in const char *pcLevel, dm_in const char *const *ppcNames,
+                               dm_in uint uiCount, dm_out dm_log_level_et *peLevel)
 {
   uint uiIdx = 0u;
 
@@ -763,8 +768,9 @@ static int dm__log_level_match(in const char *pcLevel, in const char *const *ppc
   return DM_INVALID;
 }
 
-static int dm__log_level_parse_req(in const dm_link_msg_st *pstMsg, in const char *const *ppcNames,
-                                   in uint uiCount, out dm__log_level_opts_st *pstOpts)
+static int dm__log_level_parse_req(dm_in const dm_link_msg_st *pstMsg,
+                                   dm_in const char *const *ppcNames, dm_in uint uiCount,
+                                   dm_out dm__log_level_opts_st *pstOpts)
 {
   yyjson_doc *pstReq = NULL;
   yyjson_val *pstRoot = NULL;
@@ -828,7 +834,7 @@ static int dm__log_level_parse_req(in const dm_link_msg_st *pstMsg, in const cha
 
 /* dm.log.level：{"level":"debug|info|warn|error|none","console":true|false}，两个都可以不给；
  * 先全量校验再落地变更，失败走统一错误 JSON 信封（DD-01） */
-static int dm__builtin_log_level(in void *pvArg)
+static int dm__builtin_log_level(dm_in void *pvArg)
 {
   static const char *const apcName[] = {"debug", "info", "warn", "error", "none"};
   dm_link_msg_st *pstMsg = (dm_link_msg_st *)pvArg;
@@ -864,15 +870,17 @@ int dm__rpc_builtin_init(void)
   static const dm_iface_st astBuiltin[] = {
       {DM_LINKID_IFACE_LIST, "dm.iface.list", DM_ROLE_ALL, 0u,
        "list the interfaces this connection may call", NULL},
-      {DM_LINKID_LOG_RECENT, "dm.log.recent", DM_ROLE_ALL, 0u, "the most recent log lines",
+      {DM_LINKID_LOG_RECENT, "dm.log.recent",
+       DM_ROLE_UI | DM_ROLE_SHELL | DM_ROLE_CLI | DM_ROLE_DIAG | DM_ROLE_PEER, DM_IFACE_DIAG,
+       "the most recent log lines",
        "{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"integer\"},"
        "\"n\":{\"type\":\"integer\"},\"mod\":{\"type\":\"string\"},"
        "\"level\":{\"type\":\"string\",\"description\":\"debug|info|warn|error\"},"
        "\"grep\":{\"type\":\"string\"}}}"},
-      {DM_LINKID_STAT, "dm.stat", DM_ROLE_ALL, 0u,
-       "counters: handlers, loop, thread pool, memory, connections, log", NULL},
+      {DM_LINKID_STAT, "dm.stat", DM_ROLE_UI | DM_ROLE_SHELL | DM_ROLE_CLI | DM_ROLE_DIAG,
+       DM_IFACE_DIAG, "counters: handlers, loop, thread pool, memory, connections, log", NULL},
       {DM_LINKID_PING, "dm.ping", DM_ROLE_ALL, 0u, "heartbeat", NULL},
-      {DM_LINKID_LOG_LEVEL, "dm.log.level", DM_ROLE_CLI, DM_IFACE_MUTATE,
+      {DM_LINKID_LOG_LEVEL, "dm.log.level", DM_ROLE_CLI, DM_IFACE_MUTATE | DM_IFACE_ADVANCED,
        "change the log level or console output",
        "{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"string\",\"description\":"
        "\"debug|info|warn|error|none\"},\"console\":{\"type\":\"boolean\"}}}"},

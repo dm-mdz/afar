@@ -22,17 +22,11 @@
 af_auth_ctx_st g_stAfAuth = {.iDrainHold = -1};
 
 static const dm_err_entry_st g_astAfAuthErrMap[] = {
-    {AF_ERR_BAD_REQ, "bad_request"},
-    {AF_ERR_UNAUTH, "unauthorized"},
-    {AF_ERR_WRONG_CODE, "wrong_code"},
-    {AF_ERR_LOCKED, "locked"},
-    {AF_ERR_PAIR_CLOSED, "pairing_closed"},
-    {AF_ERR_UPGRADE_REQ, "upgrade_required"},
-    {AF_ERR_WRONG_PW, "wrong_password"},
-    {AF_ERR_NOT_FOUND, "not_found"},
-    {AF_ERR_INTERNAL, "internal"},
-    {0, NULL}
-};
+    {AF_ERR_BAD_REQ, "bad_request"},        {AF_ERR_UNAUTH, "unauthorized"},
+    {AF_ERR_WRONG_CODE, "wrong_code"},      {AF_ERR_LOCKED, "locked"},
+    {AF_ERR_PAIR_CLOSED, "pairing_closed"}, {AF_ERR_UPGRADE_REQ, "upgrade_required"},
+    {AF_ERR_WRONG_PW, "wrong_password"},    {AF_ERR_NOT_FOUND, "not_found"},
+    {AF_ERR_INTERNAL, "internal"},          {0, NULL}};
 
 uint64 af_auth_now_ms(void)
 {
@@ -43,17 +37,17 @@ uint64 af_auth_now_ms(void)
   return dm_hrtime() / 1000000ULL;
 }
 
-void af_auth_set_clock_fn(in af_auth_clock_fn pfClock)
+void af_auth_set_clock_fn(dm_in af_auth_clock_fn pfClock)
 {
   g_stAfAuth.pfClock = pfClock;
 }
 
-void af_auth_set_od_verify_fn(in af_auth_od_verify_fn pfVerify)
+void af_auth_set_od_verify_fn(dm_in af_auth_od_verify_fn pfVerify)
 {
   g_stAfAuth.pfOdVerify = pfVerify;
 }
 
-int af_auth_set_data_dir(in const char *pcDataDir)
+int af_auth_set_data_dir(dm_in const char *pcDataDir)
 {
   if ((NULL == pcDataDir) || ('\0' == pcDataDir[0]))
   {
@@ -96,7 +90,7 @@ void af_auth_rng_fini(void)
   }
 }
 
-int af_auth_rng_cb(io void *pvCtx, out unsigned char *pucOut, in size_t uLen)
+int af_auth_rng_cb(dm_io void *pvCtx, dm_out unsigned char *pucOut, dm_in size_t uLen)
 {
   (void)pvCtx;
   if (!g_stAfAuth.bRngReady)
@@ -109,13 +103,13 @@ int af_auth_rng_cb(io void *pvCtx, out unsigned char *pucOut, in size_t uLen)
   return mbedtls_ctr_drbg_random(&g_stAfAuth.stDrbg, pucOut, uLen);
 }
 
-int af_auth_rng_bytes(out uint8 *pu8Out, in size_t uLen)
+int af_auth_rng_bytes(dm_out uint8 *pu8Out, dm_in size_t uLen)
 {
   return (0 == af_auth_rng_cb(NULL, pu8Out, uLen)) ? DM_SUCCESS : DM_FAILD;
 }
 
-void af_auth_trunc_utf8_chars(in const char *pcSrc, out char *pcDst, in size_t uDstCap,
-                              in size_t uMaxChars)
+void af_auth_trunc_utf8_chars(dm_in const char *pcSrc, dm_out char *pcDst, dm_in size_t uDstCap,
+                              dm_in size_t uMaxChars)
 {
   size_t uPos = 0u;
   size_t uChars = 0u;
@@ -129,9 +123,18 @@ void af_auth_trunc_utf8_chars(in const char *pcSrc, out char *pcDst, in size_t u
   {
     unsigned char uc = (unsigned char)pcSrc[uPos];
     size_t uStep = 1u;
-    if (0xF0u == (uc & 0xF8u))      { uStep = 4u; }
-    else if (0xE0u == (uc & 0xF0u)) { uStep = 3u; }
-    else if (0xC0u == (uc & 0xE0u)) { uStep = 2u; }
+    if (0xF0u == (uc & 0xF8u))
+    {
+      uStep = 4u;
+    }
+    else if (0xE0u == (uc & 0xF0u))
+    {
+      uStep = 3u;
+    }
+    else if (0xC0u == (uc & 0xE0u))
+    {
+      uStep = 2u;
+    }
     if (((uPos + uStep) > uSrcLen) || ((uPos + uStep) >= uDstCap))
     {
       break;
@@ -146,8 +149,8 @@ void af_auth_trunc_utf8_chars(in const char *pcSrc, out char *pcDst, in size_t u
   pcDst[uPos] = '\0';
 }
 
-void af_auth_publish_ev(in af_auth_ev_kind_et eKind, in const char *pcDevId,
-                        in const char *pcDevName, in const char *pcSidecarName)
+void af_auth_publish_ev(dm_in af_auth_ev_kind_et eKind, dm_in const char *pcDevId,
+                        dm_in const char *pcDevName, dm_in const char *pcSidecarName)
 {
   af_ev_auth_st stEv;
 
@@ -188,14 +191,14 @@ void af_auth_inflight_dec(void)
 
 /* ============================ 公开 HTTPS 应答与查询 ============================ */
 
-void af_https_send_ok(in uint64 u64ReplyId, in const char *pcJson)
+void af_https_send_ok(dm_in uint64 u64ReplyId, dm_in const char *pcJson)
 {
   const char *pcBody = (NULL != pcJson) ? pcJson : "{}";
-  (void)dm_https_reply(u64ReplyId, 200u, pcBody, (uint32)strlen(pcBody));
+  (void)af_https_reply(u64ReplyId, 200u, pcBody, (uint32)strlen(pcBody));
 }
 
-void af_https_send_err(in uint64 u64ReplyId, in uint uiStatus, in const char *pcCode,
-                       in const char *pcMsg)
+void af_https_send_err(dm_in uint64 u64ReplyId, dm_in uint uiStatus, dm_in const char *pcCode,
+                       dm_in const char *pcMsg)
 {
   yyjson_mut_doc *pstDoc = yyjson_mut_doc_new(dm_json_alc());
   yyjson_mut_val *pstRoot = NULL;
@@ -205,7 +208,7 @@ void af_https_send_err(in uint64 u64ReplyId, in uint uiStatus, in const char *pc
   if (NULL == pstDoc)
   {
     static const char acFallback[] = "{\"code\":\"internal\",\"error\":\"internal\"}";
-    (void)dm_https_reply(u64ReplyId, uiStatus, acFallback, (uint32)(sizeof(acFallback) - 1u));
+    (void)af_https_reply(u64ReplyId, uiStatus, acFallback, (uint32)(sizeof(acFallback) - 1u));
     return;
   }
   pstRoot = yyjson_mut_obj(pstDoc);
@@ -216,12 +219,12 @@ void af_https_send_err(in uint64 u64ReplyId, in uint uiStatus, in const char *pc
   yyjson_mut_doc_free(pstDoc);
   if (NULL != pcJson)
   {
-    (void)dm_https_reply(u64ReplyId, uiStatus, pcJson, (uint32)uLen);
+    (void)af_https_reply(u64ReplyId, uiStatus, pcJson, (uint32)uLen);
     dm_json_free_str(pcJson);
   }
 }
 
-void af_auth_get_pair_view(out af_pair_view_st *pstOut)
+void af_auth_get_pair_view(dm_out af_pair_view_st *pstOut)
 {
   uint64 u64Now = af_auth_now_ms();
 
@@ -246,7 +249,7 @@ void af_auth_get_pair_view(out af_pair_view_st *pstOut)
   }
 }
 
-uint32 af_auth_list_devices(out af_device_st *pastOut, in uint32 u32Cap)
+uint32 af_auth_list_devices(dm_out af_device_st *pastOut, dm_in uint32 u32Cap)
 {
   uint32 u32N = g_stAfAuth.u32DevCnt;
 
@@ -265,7 +268,7 @@ uint32 af_auth_list_devices(out af_device_st *pastOut, in uint32 u32Cap)
   return u32N;
 }
 
-bool_t af_auth_other_owns_sidecar(in const char *pcSelfDevId, in const char *pcSidecarName)
+bool_t af_auth_other_owns_sidecar(dm_in const char *pcSelfDevId, dm_in const char *pcSidecarName)
 {
   uint32 i = 0u;
 
@@ -275,8 +278,8 @@ bool_t af_auth_other_owns_sidecar(in const char *pcSelfDevId, in const char *pcS
   }
   for (i = 0u; i < g_stAfAuth.u32DevCnt; i++)
   {
-    if ((0 == strcmp(g_stAfAuth.astDevs[i].acSidecarName, pcSidecarName))
-        && ((NULL == pcSelfDevId) || (0 != strcmp(g_stAfAuth.astDevs[i].acId, pcSelfDevId))))
+    if ((0 == strcmp(g_stAfAuth.astDevs[i].acSidecarName, pcSidecarName)) &&
+        ((NULL == pcSelfDevId) || (0 != strcmp(g_stAfAuth.astDevs[i].acId, pcSelfDevId))))
     {
       return DM_TRUE;
     }
@@ -284,7 +287,7 @@ bool_t af_auth_other_owns_sidecar(in const char *pcSelfDevId, in const char *pcS
   return DM_FALSE;
 }
 
-int af_auth_bind_sidecar(in const char *pcDevId, in const char *pcSidecarName)
+int af_auth_bind_sidecar(dm_in const char *pcDevId, dm_in const char *pcSidecarName)
 {
   int iIdx = af_auth_store_find_by_id(pcDevId);
   af_device_st *pstDev = NULL;
@@ -301,9 +304,10 @@ int af_auth_bind_sidecar(in const char *pcDevId, in const char *pcSidecarName)
   return DM_SUCCESS;
 }
 
-/* ============================ HTTPS 路由：/info, /password, /unpair ============================ */
+/* ============================ HTTPS 路由：/info, /password, /unpair ============================
+ */
 
-static void af__on_info(in const dm_https_msg_st *pstMsg)
+static void af__on_info(dm_in const af_https_msg_st *pstMsg)
 {
   const af_state_st *pstSt = af_store_state();
   char acName[65];
@@ -334,7 +338,7 @@ static void af__on_info(in const dm_https_msg_st *pstMsg)
   yyjson_mut_doc_free(pstDoc);
   if (NULL != pcJson)
   {
-    (void)dm_https_reply(pstMsg->u64ReplyId, 200u, pcJson, (uint32)uLen);
+    (void)af_https_reply(pstMsg->u64ReplyId, 200u, pcJson, (uint32)uLen);
     dm_json_free_str(pcJson);
   }
 }
@@ -348,7 +352,7 @@ typedef struct af__pw_job
   int iOdRc;
 } af__pw_job_st;
 
-static void af__pw_on_saved(in int iStatus, io void *pvCtx)
+static void af__pw_on_saved(dm_in int iStatus, dm_io void *pvCtx)
 {
   uint64 *pu64Rid = (uint64 *)pvCtx;
 
@@ -363,7 +367,7 @@ static void af__pw_on_saved(in int iStatus, io void *pvCtx)
   dm_free_tag(pu64Rid);
 }
 
-static void af__pw_work(io void *pvArg)
+static void af__pw_work(dm_io void *pvArg)
 {
   af__pw_job_st *pstJob = (af__pw_job_st *)pvArg;
   af_auth_od_verify_fn pfVerify =
@@ -373,7 +377,7 @@ static void af__pw_work(io void *pvArg)
   dm_secure_zero(pstJob->acPass, sizeof(pstJob->acPass));
 }
 
-static void af__pw_after(io void *pvArg, in int iStatus)
+static void af__pw_after(dm_io void *pvArg, dm_in int iStatus)
 {
   af__pw_job_st *pstJob = (af__pw_job_st *)pvArg;
   uint64 u64Rid = pstJob->u64ReplyId;
@@ -405,13 +409,16 @@ static void af__pw_after(io void *pvArg, in int iStatus)
     af_auth_publish_ev(AF_AUTH_EV_BINDING, g_stAfAuth.astDevs[iIdx].acId,
                        g_stAfAuth.astDevs[iIdx].acName, g_stAfAuth.astDevs[iIdx].acSidecarName);
     uint64 *pu64Ctx = (uint64 *)dm_malloc_tag(sizeof(uint64), DM_MEM_TAG_JSON);
-    if ((NULL != pu64Ctx) && (*pu64Ctx = u64Rid,
-                              DM_SUCCESS == af_auth_store_save_async(af__pw_on_saved, pu64Ctx)))
+    if ((NULL != pu64Ctx) &&
+        (*pu64Ctx = u64Rid, DM_SUCCESS == af_auth_store_save_async(af__pw_on_saved, pu64Ctx)))
     {
       af_auth_inflight_dec();
       return;
     }
-    if (NULL != pu64Ctx) { dm_free_tag(pu64Ctx); }
+    if (NULL != pu64Ctx)
+    {
+      dm_free_tag(pu64Ctx);
+    }
     af_https_send_ok(u64Rid, "{\"ok\":true}");
     af_auth_inflight_dec();
     return;
@@ -430,7 +437,7 @@ static void af__pw_after(io void *pvArg, in int iStatus)
   af_auth_inflight_dec();
 }
 
-static void af__on_password(in const dm_https_msg_st *pstMsg)
+static void af__on_password(dm_in const af_https_msg_st *pstMsg)
 {
   af_device_st stDev;
   uint64 u64Now = af_auth_now_ms();
@@ -467,7 +474,10 @@ static void af__on_password(in const dm_https_msg_st *pstMsg)
   uPwLen = (NULL != pcPw) ? yyjson_get_len(pstPw) : 0u;
   if ((NULL == pcPw) || (0u == uPwLen) || (uPwLen > 256u))
   {
-    if (NULL != pstDoc) { yyjson_doc_free(pstDoc); }
+    if (NULL != pstDoc)
+    {
+      yyjson_doc_free(pstDoc);
+    }
     af_https_send_err(pstMsg->u64ReplyId, 400u, "bad_request", "密码长度无效");
     return;
   }
@@ -497,7 +507,7 @@ static void af__on_password(in const dm_https_msg_st *pstMsg)
   }
 }
 
-static void af__unpair_on_saved(in int iStatus, io void *pvCtx)
+static void af__unpair_on_saved(dm_in int iStatus, dm_io void *pvCtx)
 {
   uint64 *pu64Rid = (uint64 *)pvCtx;
 
@@ -512,7 +522,7 @@ static void af__unpair_on_saved(in int iStatus, io void *pvCtx)
   dm_free_tag(pu64Rid);
 }
 
-static void af__on_unpair(in const dm_https_msg_st *pstMsg)
+static void af__on_unpair(dm_in const af_https_msg_st *pstMsg)
 {
   af_device_st stDev;
   af_device_st stRemoved;
@@ -529,19 +539,21 @@ static void af__on_unpair(in const dm_https_msg_st *pstMsg)
   }
   af_auth_publish_ev(AF_AUTH_EV_REVOKED, stRemoved.acId, stRemoved.acName, stRemoved.acSidecarName);
   pu64Rid = (uint64 *)dm_malloc_tag(sizeof(uint64), DM_MEM_TAG_JSON);
-  if ((NULL != pu64Rid)
-      && (*pu64Rid = pstMsg->u64ReplyId,
-          DM_SUCCESS == af_auth_store_save_async(af__unpair_on_saved, pu64Rid)))
+  if ((NULL != pu64Rid) && (*pu64Rid = pstMsg->u64ReplyId,
+                            DM_SUCCESS == af_auth_store_save_async(af__unpair_on_saved, pu64Rid)))
   {
     return;
   }
-  if (NULL != pu64Rid) { dm_free_tag(pu64Rid); }
+  if (NULL != pu64Rid)
+  {
+    dm_free_tag(pu64Rid);
+  }
   af_https_send_ok(pstMsg->u64ReplyId, "{\"ok\":true}");
 }
 
 /* ============================ CLI RPC 与 UI LinkID ============================ */
 
-static int af__on_cli_pair_code(io void *pvArg)
+static int af__on_cli_pair_code(dm_io void *pvArg)
 {
   dm_link_msg_st *pstMsg = (dm_link_msg_st *)pvArg;
   dm_reply_st stReply;
@@ -577,7 +589,7 @@ static int af__on_cli_pair_code(io void *pvArg)
   return DM_SUCCESS;
 }
 
-static int af__on_ui_pair_open(io void *pvArg)
+static int af__on_ui_pair_open(dm_io void *pvArg)
 {
   (void)pvArg;
   af_auth_pair_open();
@@ -585,7 +597,7 @@ static int af__on_ui_pair_open(io void *pvArg)
   return DM_SUCCESS;
 }
 
-static int af__on_ui_pair_close(io void *pvArg)
+static int af__on_ui_pair_close(dm_io void *pvArg)
 {
   (void)pvArg;
   af_auth_pair_close(DM_FALSE);
@@ -593,7 +605,7 @@ static int af__on_ui_pair_close(io void *pvArg)
   return DM_SUCCESS;
 }
 
-static int af__on_ui_unpair(io void *pvArg)
+static int af__on_ui_unpair(dm_io void *pvArg)
 {
   dm_link_msg_st *pstMsg = (dm_link_msg_st *)pvArg;
   int iErr = 0;
@@ -631,8 +643,7 @@ static int af__auth_init(void)
       .u32Roles = AF_ROLE_CLI,
       .u32Flags = DM_IFACE_MUTATE,
       .pcDesc = "Open/extend pairing window and return 6-digit code",
-      .pcArgs = NULL
-  };
+      .pcArgs = NULL};
   int iRc = DM_SUCCESS;
 
   g_stAfAuth.bDraining = DM_FALSE;
@@ -643,31 +654,34 @@ static int af__auth_init(void)
   af_auth_pair_close(DM_FALSE);
 
   iRc = af_auth_rng_init();
-  if (DM_SUCCESS != iRc) { return iRc; }
+  if (DM_SUCCESS != iRc)
+  {
+    return iRc;
+  }
   if ('\0' != g_stAfAuth.acDataDir[0])
   {
     (void)af_auth_store_load(g_stAfAuth.acDataDir);
   }
-  if ((DM_SUCCESS != dm_https_route_exact("GET", "/info", af__on_info))
-      || (DM_SUCCESS != dm_https_route_exact("POST", "/pair/start", af_auth_pair_on_start))
-      || (DM_SUCCESS != dm_https_route_exact("POST", "/pair/finish", af_auth_pair_on_finish))
-      || (DM_SUCCESS != dm_https_route_exact("POST", "/password", af__on_password))
-      || (DM_SUCCESS != dm_https_route_exact("POST", "/unpair", af__on_unpair))
-      || (DM_SUCCESS != dm_link_register_handler(AF_LINK_CLI_PAIR_CODE, af__on_cli_pair_code, NULL,
-                                                 NULL))
-      || (DM_SUCCESS != dm_iface_register(&stCliPairCode))
-      || (DM_SUCCESS != dm_link_register_handler(AF_LINK_UI_PAIR_OPEN, af__on_ui_pair_open, NULL,
-                                                 NULL))
-      || (DM_SUCCESS != dm_link_register_handler(AF_LINK_UI_PAIR_CLOSE, af__on_ui_pair_close, NULL,
-                                                 NULL))
-      || (DM_SUCCESS != dm_link_register_handler(AF_LINK_UI_UNPAIR, af__on_ui_unpair, NULL, NULL)))
+  if ((DM_SUCCESS != af_https_route_exact("GET", "/info", af__on_info)) ||
+      (DM_SUCCESS != af_https_route_exact("POST", "/pair/start", af_auth_pair_on_start)) ||
+      (DM_SUCCESS != af_https_route_exact("POST", "/pair/finish", af_auth_pair_on_finish)) ||
+      (DM_SUCCESS != af_https_route_exact("POST", "/password", af__on_password)) ||
+      (DM_SUCCESS != af_https_route_exact("POST", "/unpair", af__on_unpair)) ||
+      (DM_SUCCESS !=
+       dm_link_register_handler(AF_LINK_CLI_PAIR_CODE, af__on_cli_pair_code, NULL, NULL)) ||
+      (DM_SUCCESS != dm_iface_register(&stCliPairCode)) ||
+      (DM_SUCCESS !=
+       dm_link_register_handler(AF_LINK_UI_PAIR_OPEN, af__on_ui_pair_open, NULL, NULL)) ||
+      (DM_SUCCESS !=
+       dm_link_register_handler(AF_LINK_UI_PAIR_CLOSE, af__on_ui_pair_close, NULL, NULL)) ||
+      (DM_SUCCESS != dm_link_register_handler(AF_LINK_UI_UNPAIR, af__on_ui_unpair, NULL, NULL)))
   {
     return DM_FAILD;
   }
   return DM_SUCCESS;
 }
 
-static void af__auth_drain(io dm_drain_st *pstDrain)
+static void af__auth_drain(dm_io dm_drain_st *pstDrain)
 {
   g_stAfAuth.bDraining = DM_TRUE;
   if (g_stAfAuth.u32InFlight > 0u)
@@ -689,14 +703,12 @@ static void af__auth_fini(void)
   g_stAfAuth.bDraining = DM_FALSE;
 }
 
-const dm_module_st g_stAfAuthMod = {
-    .u16ModID = AF_MOD_AUTH,
-    .pcName = "af_auth",
-    .pfInit = af__auth_init,
-    .pfDrain = af__auth_drain,
-    .pfFini = af__auth_fini,
-    .pastErrMap = g_astAfAuthErrMap
-};
+const dm_module_st g_stAfAuthMod = {.u16ModID = AF_MOD_AUTH,
+                                    .pcName = "af_auth",
+                                    .pfInit = af__auth_init,
+                                    .pfDrain = af__auth_drain,
+                                    .pfFini = af__auth_fini,
+                                    .pastErrMap = g_astAfAuthErrMap};
 
 const dm_module_st *af_auth_module(void)
 {

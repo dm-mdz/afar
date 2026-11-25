@@ -19,7 +19,7 @@ extern "C"
 #endif
 
 #define AF_SSH_KEYS_MAX 6u
-#define AF_SSH_KEY_LEN  1024u
+#define AF_SSH_KEY_LEN 1024u
 
 typedef struct af_env_snap
 {
@@ -33,31 +33,35 @@ typedef struct af_env_snap
   char acUser[64];     /* 当前 macOS 短用户名 */
   uint32 u32SshKeyCnt;
   char aacSshKeys[AF_SSH_KEYS_MAX][AF_SSH_KEY_LEN]; /* OpenSSH 公钥前两段 type base64 */
+  bool_t bPermSc;                                   /* 屏幕录制权限 */
+  bool_t bPermAx;                                   /* 辅助功能权限 */
 } af_env_snap_st;
 
 extern const dm_module_st g_stAfEnvMod;
 const dm_module_st *af_env_module(void);
 
-void af_env_get_snapshot(out af_env_snap_st *pstOut);
+void af_env_get_snapshot(dm_out af_env_snap_st *pstOut);
 void af_env_probe_now(void);
+void af_env_start_fast_perm_poll(dm_in uint32 u32WindowMs);
 
 /* ---- 纯解析辅助（供单元测试与内部共用） ---- */
-bool_t af_env_parse_agent_plist(in const char *pcXml, in const char *pcExePath);
-bool_t af_env_parse_launchctl_ok(in int iExitCode, in const char *pcOut);
-bool_t af_env_parse_fw_global_off(in int iExitCode, in const char *pcOut);
-bool_t af_env_parse_fw_app_permitted(in int iExitCode, in const char *pcOut);
-bool_t af_env_parse_pmset_autorestart(in const char *pcOut);
-bool_t af_env_parse_filevault(in int iExitCode, in const char *pcOut);
-bool_t af_env_parse_autologin(in int iExitCode, in const char *pcOut);
-uint32 af_env_parse_ssh_pub(in const char *pcText, out char aacOut[][AF_SSH_KEY_LEN],
-                            io uint32 *pu32Cnt, in uint32 u32Cap);
+bool_t af_env_parse_agent_plist(dm_in const char *pcXml, dm_in const char *pcExePath);
+bool_t af_env_parse_launchctl_ok(dm_in int iExitCode, dm_in const char *pcOut);
+bool_t af_env_parse_fw_global_off(dm_in int iExitCode, dm_in const char *pcOut);
+bool_t af_env_parse_fw_app_permitted(dm_in int iExitCode, dm_in const char *pcOut);
+bool_t af_env_parse_pmset_autorestart(dm_in const char *pcOut);
+bool_t af_env_parse_filevault(dm_in int iExitCode, dm_in const char *pcOut);
+bool_t af_env_parse_autologin(dm_in int iExitCode, dm_in const char *pcOut);
+uint32 af_env_parse_ssh_pub(dm_in const char *pcText, dm_out char aacOut[][AF_SSH_KEY_LEN],
+                            dm_io uint32 *pu32Cnt, dm_in uint32 u32Cap);
 
 /* ---- 可选测试注入钩子（NULL 恢复生产默认） ---- */
-typedef int (*af_env_cmd_fn)(in const char *const *ppcArgv, in const _Atomic bool_t *pbCancel,
-                             out char *pcOut, in size_t uOutCap, in uint32 u32TimeoutMs,
-                             out int *piExitCode);
-typedef bool_t (*af_env_tcp_probe_fn)(in const char *pcIp, in uint16 u16Port,
-                                      in uint32 u32TimeoutMs, in const _Atomic bool_t *pbCancel);
+typedef int (*af_env_cmd_fn)(dm_in const char *const *ppcArgv, dm_in const _Atomic bool_t *pbCancel,
+                             dm_out char *pcOut, dm_in size_t uOutCap, dm_in uint32 u32TimeoutMs,
+                             dm_out int *piExitCode);
+typedef bool_t (*af_env_tcp_probe_fn)(dm_in const char *pcIp, dm_in uint16 u16Port,
+                                      dm_in uint32 u32TimeoutMs,
+                                      dm_in const _Atomic bool_t *pbCancel);
 
 typedef struct af_env_hooks
 {
@@ -66,9 +70,12 @@ typedef struct af_env_hooks
   const char *pcSshDir;
   const char *pcPlistPath;
   const char *pcExePath;
+  bool_t (*pfPermSc)(void);
+  bool_t (*pfPermAx)(void);
+  uint32 u32FastPollMs; /* 0 = 默认 2500ms */
 } af_env_hooks_st;
 
-void af_env_set_hooks(in const af_env_hooks_st *pstHooks);
+void af_env_set_hooks(dm_in const af_env_hooks_st *pstHooks);
 
 #ifdef __cplusplus
 }

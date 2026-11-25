@@ -56,19 +56,19 @@ typedef struct dm_frame_head
 } dm_frame_head_st;
 
 /* 大端读写：手写移位，不引 htons/ntohs，保持纯 C11 */
-static inline void dm_frame_wr16(out uint8 *pu8, in uint32 u32Val)
+static inline void dm_frame_wr16(dm_out uint8 *pu8, dm_in uint32 u32Val)
 {
   pu8[0] = (uint8)((u32Val >> 8) & 0xFFu);
   pu8[1] = (uint8)(u32Val & 0xFFu);
   return;
 }
 
-static inline uint32 dm_frame_rd16(in const uint8 *pu8)
+static inline uint32 dm_frame_rd16(dm_in const uint8 *pu8)
 {
   return ((uint32)pu8[0] << 8) | (uint32)pu8[1];
 }
 
-static inline void dm_frame_wr32(out uint8 *pu8, in uint32 u32Val)
+static inline void dm_frame_wr32(dm_out uint8 *pu8, dm_in uint32 u32Val)
 {
   pu8[0] = (uint8)(u32Val >> 24);
   pu8[1] = (uint8)(u32Val >> 16);
@@ -77,25 +77,25 @@ static inline void dm_frame_wr32(out uint8 *pu8, in uint32 u32Val)
   return;
 }
 
-static inline uint32 dm_frame_rd32(in const uint8 *pu8)
+static inline uint32 dm_frame_rd32(dm_in const uint8 *pu8)
 {
   return ((uint32)pu8[0] << 24) | ((uint32)pu8[1] << 16) | ((uint32)pu8[2] << 8) | (uint32)pu8[3];
 }
 
-static inline void dm_frame_wr64(out uint8 *pu8, in uint64 u64Val)
+static inline void dm_frame_wr64(dm_out uint8 *pu8, dm_in uint64 u64Val)
 {
   dm_frame_wr32(pu8, (uint32)(u64Val >> 32));
   dm_frame_wr32(pu8 + 4, (uint32)u64Val);
   return;
 }
 
-static inline uint64 dm_frame_rd64(in const uint8 *pu8)
+static inline uint64 dm_frame_rd64(dm_in const uint8 *pu8)
 {
   return ((uint64)dm_frame_rd32(pu8) << 32) | (uint64)dm_frame_rd32(pu8 + 4);
 }
 
 /* 写帧头到 pu8Out（要有 DM_FRAME_HEAD 字节） */
-static inline void dm_frame_put(out uint8 *pu8Out, in const dm_frame_head_st *pstHead)
+static inline void dm_frame_put(dm_out uint8 *pu8Out, dm_in const dm_frame_head_st *pstHead)
 {
   dm_frame_wr16(pu8Out, pstHead->u16LinkID);
   pu8Out[2] = pstHead->u8Type;
@@ -107,7 +107,7 @@ static inline void dm_frame_put(out uint8 *pu8Out, in const dm_frame_head_st *ps
 }
 
 /* 从 pu8In（至少 DM_FRAME_HEAD 字节）读帧头 */
-static inline void dm_frame_get(in const uint8 *pu8In, out dm_frame_head_st *pstHead)
+static inline void dm_frame_get(dm_in const uint8 *pu8In, dm_out dm_frame_head_st *pstHead)
 {
   pstHead->u16LinkID = (uint16)dm_frame_rd16(pu8In);
   pstHead->u8Type = pu8In[2];

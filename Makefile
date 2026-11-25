@@ -80,13 +80,14 @@ STRESS_BINS    :=
 APP_BIN        :=
 
 # ----------------------------------------------------------------------------
-# 基础三方与框架清单（按单向无环顺序）
+# 基础三方、框架与 MIT 协议库清单（按单向无环顺序）
 # ----------------------------------------------------------------------------
 include public/third/libuv.mk
 include public/third/mbedtls.mk
 include public/dm/libdm/libdm.mk
 include public/dm/plug/dmc/dmc.mk
 include public/dm/plug/dmcmd/dmcmd.mk
+-include $(sort $(wildcard public/proto/*/*.mk))
 
 # ----------------------------------------------------------------------------
 # 业务与测试子目录 .mk 严格分层自动发现（并行工作包仅维护本目录 .mk，零冲突）：
@@ -109,7 +110,7 @@ $(OBJ)/%.m.o: %.m $(MAKEFILE_LIST)
 .PHONY: all libs app tests aqua-tests stress-tests list-tests list-aqua-tests list-stress-tests
 
 all: libs $(if $(APP_BIN),app) $(DMCMD_BIN)
-libs: $(LIBUV_LIB) $(MBEDTLS_LIBS) $(LIBDM_NET_LIB) $(LIBDM_JSON_LIB) $(LIBDM_CORE_LIB) $(LLHTTP_LIB) $(LIBDMC_PROTO_LIB) $(LIBDMC_CLIENT_LIB)
+libs: $(LIBUV_LIB) $(MBEDTLS_LIBS) $(LIBDM_NET_LIB) $(LIBDM_JSON_LIB) $(LIBDM_CRYPTO_LIB) $(LIBDM_CORE_LIB) $(LLHTTP_LIB) $(LIBDMC_PROTO_LIB) $(LIBDMC_CLIENT_LIB) $(AF_DIRECT_PROTO_LIB)
 app: $(APP_BIN)
 tests: $(TEST_BINS)
 aqua-tests: $(AQUA_TEST_BINS)

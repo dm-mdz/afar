@@ -20,16 +20,16 @@ extern "C"
 
 /* u32RepeatMs = 0 是一次性的。uiLinkID 没登记过当场回 DM_LINK_ERR_NOT_FOUND；
  * 拆除阶段回 DM_SHUTTING_DOWN；别的线程调回 DM_WRONG_THREAD */
-DM_API int dm_timer_add(in uint32 u32DelayMs, in uint32 u32RepeatMs, in uint uiLinkID,
-                        in uint64 u64Tag, out uint32 *pu32Timer);
+DM_API int dm_timer_add(dm_in uint32 u32DelayMs, dm_in uint32 u32RepeatMs, dm_in uint uiLinkID,
+                        dm_in uint64 u64Tag, dm_out uint32 *pu32Timer);
 
 /* 改期（从现在起算）。改期之前已经到点、还排在队列里的那一次丢掉。
  * 一次性的在交给 before 之前就摘掉了，所以在它自己的回调里改期回 DM_NOT_FOUND */
-DM_API int dm_timer_reset(in uint32 u32Timer, in uint32 u32DelayMs);
+DM_API int dm_timer_reset(dm_in uint32 u32Timer, dm_in uint32 u32DelayMs);
 
 /* 取消。已经到点交出去了或者取消过的，返回 DM_NOT_FOUND，不算错；
  * 到点了、还排在队列里没交的，那一次丢掉 */
-DM_API int dm_timer_cancel(in uint32 u32Timer);
+DM_API int dm_timer_cancel(dm_in uint32 u32Timer);
 
 #ifdef __cplusplus
 }

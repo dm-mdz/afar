@@ -12,6 +12,8 @@ extern "C"
 
 #include "dmc_client_int.h"
 
+#include <dm/rpc.h>
+
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,7 +35,7 @@ uint64 dmc_now_ms(void)
 #endif
 }
 
-char *dmc_read_file_utf8(in const char *pcPath, out size_t *puLen)
+char *dmc_read_file_utf8(dm_in const char *pcPath, dm_out size_t *puLen)
 {
   FILE *pstFp = NULL;
   char *pcText = NULL;
@@ -63,6 +65,8 @@ char *dmc_read_file_utf8(in const char *pcPath, out size_t *puLen)
   {
     return NULL;
   }
+  /* 禁用 stdio 内部缓冲，防止 dm.run / 密钥配置文件明文残留于 CRT 堆缓冲 */
+  (void)setvbuf(pstFp, NULL, _IONBF, 0u);
   if ((0 == fseek(pstFp, 0, SEEK_END)) && ((lSize = ftell(pstFp)) >= 0) &&
       (lSize <= 16L * 1024L * 1024L) && (0 == fseek(pstFp, 0, SEEK_SET)))
   {
@@ -81,7 +85,7 @@ char *dmc_read_file_utf8(in const char *pcPath, out size_t *puLen)
   return pcText;
 }
 
-static void dmc__sleep_ms(in uint32 u32Ms)
+static void dmc__sleep_ms(dm_in uint32 u32Ms)
 {
   if (0u == u32Ms)
   {
@@ -100,9 +104,8 @@ static void dmc__sleep_ms(in uint32 u32Ms)
   return;
 }
 
-int dmc__read_run_file(in const char *pcDataDir, in const char *pcWantRole, out int *piLink,
-                       out int *piHttp, out char *pcBoot, in size_t uBootCap, out char *pcRole,
-                       in size_t uRoleCap, out char *pcToken, in size_t uTokenCap)
+int dmc__read_run_file(dm_in const char *pcDataDir, dm_in const char *pcWantRole,
+                       dm_out dmc__run_info_st *pstOut)
 {
   char acPath[768];
   char *pcText = NULL;
@@ -115,11 +118,11 @@ int dmc__read_run_file(in const char *pcDataDir, in const char *pcWantRole, out 
   const char *pcBootVal = NULL;
   bool_t bFound = DM_FALSE;
 
-  *piLink = 0;
-  *piHttp = 0;
-  pcBoot[0] = '\0';
-  pcRole[0] = '\0';
-  pcToken[0] = '\0';
+  if (NULL == pstOut)
+  {
+    return DMC_ERR_ARG;
+  }
+  memset(pstOut, 0, sizeof(*pstOut));
 
   snprintf(acPath, sizeof(acPath), "%s/dm.run",
            ((NULL != pcDataDir) && ('\0' != pcDataDir[0])) ? pcDataDir : ".");
@@ -137,12 +140,12 @@ int dmc__read_run_file(in const char *pcDataDir, in const char *pcWantRole, out 
     yyjson_doc_free(pstDoc);
     return DMC_ERR_NOT_CON;
   }
-  *piLink = (int)yyjson_get_int(yyjson_obj_get(pstRoot, "link"));
-  *piHttp = (int)yyjson_get_int(yyjson_obj_get(pstRoot, "http"));
+  pstOut->iLinkPort = (int)yyjson_get_int(yyjson_obj_get(pstRoot, "link"));
+  pstOut->iHttpPort = (int)yyjson_get_int(yyjson_obj_get(pstRoot, "http"));
   pcBootVal = yyjson_get_str(yyjson_obj_get(pstRoot, "boot"));
   if (NULL != pcBootVal)
   {
-    dmc__copy_str(pcBoot, uBootCap, pcBootVal);
+    dmc__copy_str(pstOut->acBoot, sizeof(pstOut->acBoot), pcBootVal);
   }
   pstTok = yyjson_obj_get(pstRoot, "tokens");
   if (yyjson_is_obj(pstTok))
@@ -160,8 +163,8 @@ int dmc__read_run_file(in const char *pcDataDir, in const char *pcWantRole, out 
       }
       if (0 == strcmp(pcName, pcTargetRole))
       {
-        dmc__copy_str(pcRole, uRoleCap, pcName);
-        dmc__copy_str(pcToken, uTokenCap, pcVal);
+        dmc__copy_str(pstOut->acRole, sizeof(pstOut->acRole), pcName);
+        dmc__copy_str(pstOut->acToken, sizeof(pstOut->acToken), pcVal);
         bFound = DM_TRUE;
         break;
       }
@@ -175,18 +178,18 @@ int dmc__read_run_file(in const char *pcDataDir, in const char *pcWantRole, out 
         const char *pcVal = yyjson_get_str(yyjson_obj_iter_get_val(pstKey));
         if ((NULL != pcName) && (NULL != pcVal))
         {
-          dmc__copy_str(pcRole, uRoleCap, pcName);
-          dmc__copy_str(pcToken, uTokenCap, pcVal);
+          dmc__copy_str(pstOut->acRole, sizeof(pstOut->acRole), pcName);
+          dmc__copy_str(pstOut->acToken, sizeof(pstOut->acToken), pcVal);
           break;
         }
       }
     }
   }
   yyjson_doc_free(pstDoc);
-  return (*piLink > 0) ? DMC_OK : DMC_ERR_NOT_CON;
+  return (pstOut->iLinkPort > 0) ? DMC_OK : DMC_ERR_NOT_CON;
 }
 
-static bool_t dmc__builtin_id(in const char *pcName, out uint16 *pu16ID)
+static bool_t dmc__builtin_id(dm_in const char *pcName, dm_out uint16 *pu16ID)
 {
   static const struct
   {
@@ -212,7 +215,7 @@ static bool_t dmc__builtin_id(in const char *pcName, out uint16 *pu16ID)
   return DM_FALSE;
 }
 
-const char *dmc_client_ifaces_json(io dmc_client_st *pstCli, in bool_t bRefresh)
+const char *dmc_client_ifaces_json(dm_io dmc_client_st *pstCli, dm_in bool_t bRefresh)
 {
   dmc_resp_st stResp;
   int iErr = DMC_OK;
@@ -225,8 +228,10 @@ const char *dmc_client_ifaces_json(io dmc_client_st *pstCli, in bool_t bRefresh)
   {
     return pstCli->pcIfacesJson;
   }
-  iErr = dmc_client_call_id(pstCli, DM_LINKID_IFACE_LIST, 0u, NULL, 0u, pstCli->u32DefaultTimeoutMs,
-                            &stResp);
+  {
+    dmc_call_id_req_st stReq = {DM_LINKID_IFACE_LIST, 0u, NULL, 0u, pstCli->u32DefaultTimeoutMs};
+    iErr = dmc_client_call_id(pstCli, &stReq, &stResp);
+  }
   if ((DMC_OK != iErr) || (NULL == stResp.pcBody))
   {
     dmc_resp_free(&stResp);
@@ -238,13 +243,18 @@ const char *dmc_client_ifaces_json(io dmc_client_st *pstCli, in bool_t bRefresh)
   return pstCli->pcIfacesJson;
 }
 
-static bool_t dmc__lookup_iface_id(io dmc_client_st *pstCli, in const char *pcName,
-                                   in bool_t bRefresh, out uint16 *pu16ID)
+static bool_t dmc__lookup_iface_meta(dm_io dmc_client_st *pstCli, dm_in const char *pcName,
+                                     dm_in bool_t bRefresh, dm_out uint16 *pu16ID,
+                                     dm_out uint32 *pu32Flags)
 {
   yyjson_val *pstArr = NULL;
   yyjson_val *pstOne = NULL;
   yyjson_arr_iter stIter;
 
+  if (NULL != pu32Flags)
+  {
+    *pu32Flags = 0u;
+  }
   if (NULL == dmc_client_ifaces_json(pstCli, bRefresh))
   {
     return DM_FALSE;
@@ -263,6 +273,10 @@ static bool_t dmc__lookup_iface_id(io dmc_client_st *pstCli, in const char *pcNa
       if (yyjson_is_uint(pstId) && (yyjson_get_uint(pstId) <= 65535u))
       {
         *pu16ID = (uint16)yyjson_get_uint(pstId);
+        if (NULL != pu32Flags)
+        {
+          *pu32Flags = (uint32)yyjson_get_uint(yyjson_obj_get(pstOne, "flags"));
+        }
         return DM_TRUE;
       }
       return DM_FALSE;
@@ -271,13 +285,12 @@ static bool_t dmc__lookup_iface_id(io dmc_client_st *pstCli, in const char *pcNa
   return DM_FALSE;
 }
 
-int dmc_client_call_id(io dmc_client_st *pstCli, in uint16 u16LinkID, in uint8 u8Flag,
-                       in const void *pvBody, in uint32 u32Len, in uint32 u32TimeoutMs,
-                       out dmc_resp_st *pstResp)
+int dmc_client_call_id(dm_io dmc_client_st *pstCli, dm_in const dmc_call_id_req_st *pstReq,
+                       dm_out dmc_resp_st *pstResp)
 {
   int iErr = DMC_OK;
 
-  if ((NULL == pstCli) || (NULL == pstResp))
+  if ((NULL == pstCli) || (NULL == pstReq) || (NULL == pstResp))
   {
     return DMC_ERR_ARG;
   }
@@ -290,7 +303,7 @@ int dmc_client_call_id(io dmc_client_st *pstCli, in uint16 u16LinkID, in uint8 u
       return pstResp->iStatus;
     }
   }
-  iErr = dmc__cli_call_raw(pstCli, u16LinkID, u8Flag, pvBody, u32Len, u32TimeoutMs, pstResp);
+  iErr = dmc__cli_call_raw(pstCli, pstReq, pstResp);
   if ((DMC_ERR_NOT_CON == iErr) && pstCli->bAutoReconnect)
   {
     dmc_resp_free(pstResp);
@@ -300,48 +313,79 @@ int dmc_client_call_id(io dmc_client_st *pstCli, in uint16 u16LinkID, in uint8 u
       pstResp->iStatus = iErr;
       return iErr;
     }
-    iErr = dmc__cli_call_raw(pstCli, u16LinkID, u8Flag, pvBody, u32Len, u32TimeoutMs, pstResp);
+    iErr = dmc__cli_call_raw(pstCli, pstReq, pstResp);
   }
   return iErr;
 }
 
-int dmc_client_call_name(io dmc_client_st *pstCli, in const char *pcName, in const char *pcJsonBody,
-                         in uint32 u32TimeoutMs, out dmc_resp_st *pstResp)
+int dmc_client_call_name_ex(dm_io dmc_client_st *pstCli, dm_in const dmc_call_name_req_st *pstReq,
+                            dm_out dmc_resp_st *pstResp)
 {
   uint16 u16LinkID = 0u;
-  uint32 u32Len = (NULL != pcJsonBody) ? (uint32)strlen(pcJsonBody) : 0u;
-  uint8 u8Flag = (u32Len > 0u) ? DM_FRAME_F_JSON : 0u;
+  uint32 u32IfaceFlags = 0u;
+  uint32 u32Len = 0u;
+  uint8 u8Flag = 0u;
+  dmc_call_id_req_st stIdReq;
   int iErr = DMC_OK;
 
-  if ((NULL == pstCli) || (NULL == pcName) || ('\0' == pcName[0]) || (NULL == pstResp))
+  if ((NULL == pstCli) || (NULL == pstReq) || (NULL == pstReq->pcName) ||
+      ('\0' == pstReq->pcName[0]) || (NULL == pstResp))
   {
     return DMC_ERR_ARG;
   }
+  u32Len = (NULL != pstReq->pcJsonBody) ? (uint32)strlen(pstReq->pcJsonBody) : 0u;
+  u8Flag = (uint8)(((u32Len > 0u) ? DM_FRAME_F_JSON : 0u) |
+                   (pstReq->u8ExtraFlags & DM_FRAME_F_SENSITIVE));
   memset(pstResp, 0, sizeof(*pstResp));
-  if (dmc__builtin_id(pcName, &u16LinkID))
+  memset(&stIdReq, 0, sizeof(stIdReq));
+  stIdReq.pvBody = pstReq->pcJsonBody;
+  stIdReq.u32Len = u32Len;
+  stIdReq.u32TimeoutMs = pstReq->u32TimeoutMs;
+  if (dmc__builtin_id(pstReq->pcName, &u16LinkID))
   {
-    return dmc_client_call_id(pstCli, u16LinkID, u8Flag, pcJsonBody, u32Len, u32TimeoutMs, pstResp);
+    stIdReq.u16LinkID = u16LinkID;
+    stIdReq.u8Flag = u8Flag;
+    return dmc_client_call_id(pstCli, &stIdReq, pstResp);
   }
-  if (!dmc__lookup_iface_id(pstCli, pcName, DM_FALSE, &u16LinkID) &&
-      !dmc__lookup_iface_id(pstCli, pcName, DM_TRUE, &u16LinkID))
+  if (!dmc__lookup_iface_meta(pstCli, pstReq->pcName, DM_FALSE, &u16LinkID, &u32IfaceFlags) &&
+      !dmc__lookup_iface_meta(pstCli, pstReq->pcName, DM_TRUE, &u16LinkID, &u32IfaceFlags))
   {
     pstResp->iStatus = dmc_connected(pstCli->pstDmc) ? DMC_ERR_NOT_FOUND : DMC_ERR_NOT_CON;
     return pstResp->iStatus;
   }
-  iErr = dmc_client_call_id(pstCli, u16LinkID, u8Flag, pcJsonBody, u32Len, u32TimeoutMs, pstResp);
+  if (0u != (u32IfaceFlags & DM_IFACE_SENSITIVE))
+  {
+    u8Flag |= DM_FRAME_F_SENSITIVE;
+  }
+  stIdReq.u16LinkID = u16LinkID;
+  stIdReq.u8Flag = u8Flag;
+  iErr = dmc_client_call_id(pstCli, &stIdReq, pstResp);
   if (DM__LINK_ERR_NOT_FOUND == iErr)
   {
-    if (dmc__lookup_iface_id(pstCli, pcName, DM_TRUE, &u16LinkID))
+    if (dmc__lookup_iface_meta(pstCli, pstReq->pcName, DM_TRUE, &u16LinkID, &u32IfaceFlags))
     {
+      if (0u != (u32IfaceFlags & DM_IFACE_SENSITIVE))
+      {
+        u8Flag |= DM_FRAME_F_SENSITIVE;
+      }
       dmc_resp_free(pstResp);
-      iErr =
-          dmc_client_call_id(pstCli, u16LinkID, u8Flag, pcJsonBody, u32Len, u32TimeoutMs, pstResp);
+      stIdReq.u16LinkID = u16LinkID;
+      stIdReq.u8Flag = u8Flag;
+      iErr = dmc_client_call_id(pstCli, &stIdReq, pstResp);
     }
   }
   return iErr;
 }
 
-int dmc_client_poll(io dmc_client_st *pstCli, in uint32 u32WaitMs)
+int dmc_client_call_name(dm_io dmc_client_st *pstCli, dm_in const char *pcName,
+                         dm_in const char *pcJsonBody, dm_in uint32 u32TimeoutMs,
+                         dm_out dmc_resp_st *pstResp)
+{
+  dmc_call_name_req_st stReq = {pcName, 0u, pcJsonBody, u32TimeoutMs};
+  return dmc_client_call_name_ex(pstCli, &stReq, pstResp);
+}
+
+int dmc_client_poll(dm_io dmc_client_st *pstCli, dm_in uint32 u32WaitMs)
 {
   uint64 u64Now = 0u;
   int iErr = DMC_OK;
@@ -381,9 +425,9 @@ int dmc_client_poll(io dmc_client_st *pstCli, in uint32 u32WaitMs)
       (u64Now - pstCli->u64LastPingMs >= pstCli->u32PingIntervalMs))
   {
     dmc_resp_st stPing;
+    dmc_call_id_req_st stPingReq = {DM_LINKID_PING, 0u, NULL, 0u, pstCli->u32ConnectTimeoutMs};
     pstCli->u64LastPingMs = u64Now;
-    iErr = dmc__cli_call_raw(pstCli, DM_LINKID_PING, 0u, NULL, 0u, pstCli->u32ConnectTimeoutMs,
-                             &stPing);
+    iErr = dmc__cli_call_raw(pstCli, &stPingReq, &stPing);
     dmc_resp_free(&stPing);
     if (DMC_OK != iErr)
     {
@@ -394,26 +438,31 @@ int dmc_client_poll(io dmc_client_st *pstCli, in uint32 u32WaitMs)
   return DMC_OK;
 }
 
-uint64 dmc_client_last_seq(in const dmc_client_st *pstCli)
+uint64 dmc_client_last_seq(dm_in const dmc_client_st *pstCli)
 {
   return (NULL != pstCli) ? pstCli->u64LastSeq : 0u;
 }
 
-const char *dmc_client_boot(in const dmc_client_st *pstCli)
+const char *dmc_client_boot(dm_in const dmc_client_st *pstCli)
 {
   return (NULL != pstCli) ? pstCli->acBoot : "";
 }
 
-int dmc_client_http_port(in const dmc_client_st *pstCli)
+int dmc_client_http_port(dm_in const dmc_client_st *pstCli)
 {
   return (NULL != pstCli) ? pstCli->iHttpPort : 0;
 }
 
-void dmc_resp_free(io dmc_resp_st *pstResp)
+void dmc_resp_free(dm_io dmc_resp_st *pstResp)
 {
   if (NULL == pstResp)
   {
     return;
+  }
+  if ((NULL != pstResp->pcBody) && (0u != (pstResp->u8Flag & DM_FRAME_F_SENSITIVE)) &&
+      (pstResp->u32Len > 0u))
+  {
+    dmc__zero_mem(pstResp->pcBody, pstResp->u32Len);
   }
   free(pstResp->pcBody);
   pstResp->pcBody = NULL;

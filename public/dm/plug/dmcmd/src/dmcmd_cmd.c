@@ -48,7 +48,7 @@ static const dmcmd__builtin_meta_st g_astBuiltins[] = {
      "runtime diagnostic snapshot: conns, queue, lanes, timers, loop, push", NULL},
 };
 
-bool_t dmcmd_parse_u64(in const char *pcStr, out uint64 *pu64Out)
+bool_t dmcmd_parse_u64(dm_in const char *pcStr, dm_out uint64 *pu64Out)
 {
   char *pcEnd = NULL;
   unsigned long long ullVal = 0ull;
@@ -66,7 +66,7 @@ bool_t dmcmd_parse_u64(in const char *pcStr, out uint64 *pu64Out)
   return DM_TRUE;
 }
 
-void dmcmd_usage(io FILE *pstOut)
+void dmcmd_usage(dm_io FILE *pstOut)
 {
   fprintf(pstOut, "usage: dmcmd [--target URI] [--data-dir DIR] [--token TOK] [--role ROLE]\n"
                   "             [--timeout MS] [--json] [--raw]\n"
@@ -84,8 +84,8 @@ void dmcmd_usage(io FILE *pstOut)
   return;
 }
 
-static int dmcmd__handle_resp(in const dmcmd_opt_st *pstOpt, in const char *pcName,
-                              in const dmc_resp_st *pstResp)
+static int dmcmd__handle_resp(dm_in const dmcmd_opt_st *pstOpt, dm_in const char *pcName,
+                              dm_in const dmc_resp_st *pstResp)
 {
   if (DMC_OK == pstResp->iStatus)
   {
@@ -113,21 +113,25 @@ static int dmcmd__handle_resp(in const dmcmd_opt_st *pstOpt, in const char *pcNa
   return DMCMD_EXIT_ERR;
 }
 
-static int dmcmd__call_id_print(io dmc_client_st *pstCli, in const dmcmd_opt_st *pstOpt,
-                                in const char *pcName, in uint16 u16LinkID, in const char *pcBody)
+static int dmcmd__call_id_print(dm_io dmc_client_st *pstCli, dm_in const dmcmd_opt_st *pstOpt,
+                                dm_in const char *pcName, dm_in uint16 u16LinkID,
+                                dm_in const char *pcBody)
 {
   dmc_resp_st stResp;
   uint32 u32Len = (NULL != pcBody) ? (uint32)strlen(pcBody) : 0u;
   int iRc = DMCMD_EXIT_OK;
 
-  (void)dmc_client_call_id(pstCli, u16LinkID, (u32Len > 0u) ? DM_FRAME_F_JSON : 0u, pcBody, u32Len,
-                           pstOpt->u32TimeoutMs, &stResp);
+  (void)dmc_client_call_id(pstCli,
+                           &(const dmc_call_id_req_st){u16LinkID,
+                                                       (u32Len > 0u) ? DM_FRAME_F_JSON : 0u, pcBody,
+                                                       u32Len, pstOpt->u32TimeoutMs},
+                           &stResp);
   iRc = dmcmd__handle_resp(pstOpt, pcName, &stResp);
   dmc_resp_free(&stResp);
   return iRc;
 }
 
-static const dmcmd__builtin_meta_st *dmcmd__find_builtin(in const char *pcName)
+static const dmcmd__builtin_meta_st *dmcmd__find_builtin(dm_in const char *pcName)
 {
   uint uiIdx = 0u;
   for (uiIdx = 0u; uiIdx < (uint)ARRAY_SIZE(g_astBuiltins); uiIdx++)
@@ -140,10 +144,26 @@ static const dmcmd__builtin_meta_st *dmcmd__find_builtin(in const char *pcName)
   return NULL;
 }
 
-static yyjson_mut_val *dmcmd__meta_to_json(io yyjson_mut_doc *pstDoc, in uint16 u16ID,
-                                           in const char *pcName, in uint32 u32Flags,
-                                           in const char *pcDesc, in const char *pcArgs,
-                                           in bool_t bAllowed)
+static void dmcmd__zero_mem(dm_out void *pvBuf, dm_in size_t uLen)
+{
+  volatile uint8 *pu8 = (volatile uint8 *)pvBuf;
+  size_t uIdx = 0u;
+
+  if (NULL == pvBuf)
+  {
+    return;
+  }
+  for (uIdx = 0u; uIdx < uLen; uIdx++)
+  {
+    pu8[uIdx] = 0u;
+  }
+  return;
+}
+
+static yyjson_mut_val *dmcmd__meta_to_json(dm_io yyjson_mut_doc *pstDoc, dm_in uint16 u16ID,
+                                           dm_in const char *pcName, dm_in uint32 u32Flags,
+                                           dm_in const char *pcDesc, dm_in const char *pcArgs,
+                                           dm_in bool_t bAllowed)
 {
   yyjson_mut_val *pstObj = (NULL != pstDoc) ? yyjson_mut_obj(pstDoc) : NULL;
   if (NULL == pstObj)
@@ -158,6 +178,7 @@ static yyjson_mut_val *dmcmd__meta_to_json(io yyjson_mut_doc *pstDoc, in uint16 
   (void)yyjson_mut_obj_add_bool(pstDoc, pstObj, "advanced", 0u != (u32Flags & DM_IFACE_ADVANCED));
   (void)yyjson_mut_obj_add_bool(pstDoc, pstObj, "diag", 0u != (u32Flags & DM_IFACE_DIAG));
   (void)yyjson_mut_obj_add_bool(pstDoc, pstObj, "test_only", 0u != (u32Flags & DM_IFACE_TEST_ONLY));
+  (void)yyjson_mut_obj_add_bool(pstDoc, pstObj, "sensitive", 0u != (u32Flags & DM_IFACE_SENSITIVE));
   (void)yyjson_mut_obj_add_bool(pstDoc, pstObj, "allowed", bAllowed ? true : false);
   if ((NULL != pcArgs) && ('\0' != pcArgs[0]))
   {
@@ -183,9 +204,10 @@ static yyjson_mut_val *dmcmd__meta_to_json(io yyjson_mut_doc *pstDoc, in uint16 
   return pstObj;
 }
 
-static int dmcmd__emit_meta_json(in const dmcmd_opt_st *pstOpt, in uint16 u16ID,
-                                 in const char *pcName, in uint32 u32Flags, in const char *pcDesc,
-                                 in const char *pcArgs, in bool_t bAllowed)
+static int dmcmd__emit_meta_json(dm_in const dmcmd_opt_st *pstOpt, dm_in uint16 u16ID,
+                                 dm_in const char *pcName, dm_in uint32 u32Flags,
+                                 dm_in const char *pcDesc, dm_in const char *pcArgs,
+                                 dm_in bool_t bAllowed)
 {
   yyjson_mut_doc *pstDoc = yyjson_mut_doc_new(NULL);
   yyjson_mut_val *pstObj =
@@ -209,8 +231,8 @@ static int dmcmd__emit_meta_json(in const dmcmd_opt_st *pstOpt, in uint16 u16ID,
   return DMCMD_EXIT_OK;
 }
 
-static int dmcmd__help_one(in const dmcmd_opt_st *pstOpt, in const char *pcName,
-                           in yyjson_val *pstIfaces)
+static int dmcmd__help_one(dm_in const dmcmd_opt_st *pstOpt, dm_in const char *pcName,
+                           dm_in yyjson_val *pstIfaces)
 {
   const dmcmd__builtin_meta_st *pstBi = dmcmd__find_builtin(pcName);
   yyjson_val *pstOne = NULL;
@@ -264,7 +286,7 @@ static int dmcmd__help_one(in const dmcmd_opt_st *pstOpt, in const char *pcName,
   return DMCMD_EXIT_USAGE;
 }
 
-static int dmcmd__help_list_json(in const dmcmd_opt_st *pstOpt, in yyjson_val *pstArr)
+static int dmcmd__help_list_json(dm_in const dmcmd_opt_st *pstOpt, dm_in yyjson_val *pstArr)
 {
   yyjson_mut_doc *pstOut = yyjson_mut_doc_new(NULL);
   yyjson_mut_val *pstRoot = (NULL != pstOut) ? yyjson_mut_obj(pstOut) : NULL;
@@ -327,8 +349,8 @@ static int dmcmd__help_list_json(in const dmcmd_opt_st *pstOpt, in yyjson_val *p
   return DMCMD_EXIT_OK;
 }
 
-static int dmcmd__help(io dmc_client_st *pstCli, in const dmcmd_opt_st *pstOpt, in int iArgc,
-                       in char **ppcArgv)
+static int dmcmd__help(dm_io dmc_client_st *pstCli, dm_in const dmcmd_opt_st *pstOpt,
+                       dm_in int iArgc, dm_in char **ppcArgv)
 {
   const char *pcRaw = NULL;
   yyjson_doc *pstDoc = NULL;
@@ -396,7 +418,7 @@ static int dmcmd__help(io dmc_client_st *pstCli, in const dmcmd_opt_st *pstOpt, 
       {
         continue;
       }
-      if (!bAll && (0u != (u32Flags & (DM_IFACE_ADVANCED | DM_IFACE_DIAG))))
+      if (!bAll && (0u != (u32Flags & (DM_IFACE_ADVANCED | DM_IFACE_DIAG | DM_IFACE_TEST_ONLY))))
       {
         u32Folded++;
         continue;
@@ -414,14 +436,16 @@ static int dmcmd__help(io dmc_client_st *pstCli, in const dmcmd_opt_st *pstOpt, 
   return DMCMD_EXIT_OK;
 }
 
-static int dmcmd__version(io dmc_client_st *pstCli, in const dmcmd_opt_st *pstOpt)
+static int dmcmd__version(dm_io dmc_client_st *pstCli, dm_in const dmcmd_opt_st *pstOpt)
 {
   dmc_resp_st stResp;
   yyjson_doc *pstDoc = NULL;
   const char *pcCore = NULL;
   char acSelf[64];
 
-  (void)dmc_client_call_id(pstCli, DM_LINKID_STAT, 0u, NULL, 0u, pstOpt->u32TimeoutMs, &stResp);
+  (void)dmc_client_call_id(
+      pstCli, &(const dmc_call_id_req_st){DM_LINKID_STAT, 0u, NULL, 0u, pstOpt->u32TimeoutMs},
+      &stResp);
   if (DMC_OK != stResp.iStatus)
   {
     int iRc = dmcmd__handle_resp(pstOpt, "version", &stResp);
@@ -430,8 +454,16 @@ static int dmcmd__version(io dmc_client_st *pstCli, in const dmcmd_opt_st *pstOp
   }
   pstDoc = yyjson_read(stResp.pcBody, stResp.u32Len, 0);
   pcCore = yyjson_get_str(yyjson_obj_get(yyjson_doc_get_root(pstDoc), "version"));
-  snprintf(acSelf, sizeof(acSelf), "%d.%d.%d-%s", DM_VERSION_MAJOR, DM_VERSION_MINOR,
-           DM_VERSION_PATCH, DM_VERSION_SUFFIX);
+  if (DM_VERSION_IS_RELEASE)
+  {
+    snprintf(acSelf, sizeof(acSelf), "%d.%d.%d", DM_VERSION_MAJOR, DM_VERSION_MINOR,
+             DM_VERSION_PATCH);
+  }
+  else
+  {
+    snprintf(acSelf, sizeof(acSelf), "%d.%d.%d-%s", DM_VERSION_MAJOR, DM_VERSION_MINOR,
+             DM_VERSION_PATCH, DM_VERSION_SUFFIX);
+  }
   if (pstOpt->bJson)
   {
     yyjson_mut_doc *pstOut = yyjson_mut_doc_new(NULL);
@@ -466,8 +498,8 @@ static int dmcmd__version(io dmc_client_st *pstCli, in const dmcmd_opt_st *pstOp
   return DMCMD_EXIT_OK;
 }
 
-static int dmcmd__log(io dmc_client_st *pstCli, in const dmcmd_opt_st *pstOpt, in int iArgc,
-                      in char **ppcArgv)
+static int dmcmd__log(dm_io dmc_client_st *pstCli, dm_in const dmcmd_opt_st *pstOpt,
+                      dm_in int iArgc, dm_in char **ppcArgv)
 {
   char *pcBody = NULL;
   dmc_resp_st stResp;
@@ -485,14 +517,19 @@ static int dmcmd__log(io dmc_client_st *pstCli, in const dmcmd_opt_st *pstOpt, i
   }
   else
   {
-    iRc = dmcmd_args_build(pstOpt, "log", g_astBuiltins[1].pcArgs, iArgc, ppcArgv, &pcBody);
+    iRc = dmcmd_args_build(
+        &(const dmcmd_args_req_st){pstOpt, "log", g_astBuiltins[1].pcArgs, iArgc, ppcArgv},
+        &pcBody);
   }
   if (DMCMD_EXIT_OK != iRc)
   {
     return iRc;
   }
-  (void)dmc_client_call_id(pstCli, DM_LINKID_LOG_RECENT, DM_FRAME_F_JSON, pcBody,
-                           (uint32)strlen(pcBody), pstOpt->u32TimeoutMs, &stResp);
+  (void)dmc_client_call_id(pstCli,
+                           &(const dmc_call_id_req_st){DM_LINKID_LOG_RECENT, DM_FRAME_F_JSON,
+                                                       pcBody, (uint32)strlen(pcBody),
+                                                       pstOpt->u32TimeoutMs},
+                           &stResp);
   free(pcBody);
   if ((DMC_OK == stResp.iStatus) && !pstOpt->bJson)
   {
@@ -522,8 +559,8 @@ static int dmcmd__log(io dmc_client_st *pstCli, in const dmcmd_opt_st *pstOpt, i
   return iRc;
 }
 
-static int dmcmd__iface(io dmc_client_st *pstCli, in const dmcmd_opt_st *pstOpt,
-                        in const char *pcName, in int iArgc, in char **ppcArgv)
+static int dmcmd__iface(dm_io dmc_client_st *pstCli, dm_in const dmcmd_opt_st *pstOpt,
+                        dm_in const char *pcName, dm_in int iArgc, dm_in char **ppcArgv)
 {
   const dmcmd__builtin_meta_st *pstBi = dmcmd__find_builtin(pcName);
   char *pcBody = NULL;
@@ -542,7 +579,8 @@ static int dmcmd__iface(io dmc_client_st *pstCli, in const dmcmd_opt_st *pstOpt,
   }
   else if (NULL != pstBi)
   {
-    iRc = dmcmd_args_build(pstOpt, pcName, pstBi->pcArgs, iArgc, ppcArgv, &pcBody);
+    iRc = dmcmd_args_build(
+        &(const dmcmd_args_req_st){pstOpt, pcName, pstBi->pcArgs, iArgc, ppcArgv}, &pcBody);
   }
   else
   {
@@ -580,7 +618,8 @@ static int dmcmd__iface(io dmc_client_st *pstCli, in const dmcmd_opt_st *pstOpt,
       dmcmd_emit_error(pstOpt->bJson, DMC_ERR_NOT_FOUND, "unknown command", pcName);
       return DMCMD_EXIT_USAGE;
     }
-    iRc = dmcmd_args_build(pstOpt, pcName, pcSchema, iArgc, ppcArgv, &pcBody);
+    iRc = dmcmd_args_build(&(const dmcmd_args_req_st){pstOpt, pcName, pcSchema, iArgc, ppcArgv},
+                           &pcBody);
     yyjson_doc_free(pstDoc);
   }
   if (DMCMD_EXIT_OK != iRc)
@@ -588,14 +627,18 @@ static int dmcmd__iface(io dmc_client_st *pstCli, in const dmcmd_opt_st *pstOpt,
     return iRc;
   }
   (void)dmc_client_call_name(pstCli, pcName, pcBody, pstOpt->u32TimeoutMs, &stResp);
-  free(pcBody);
+  if (NULL != pcBody)
+  {
+    dmcmd__zero_mem(pcBody, strlen(pcBody));
+    free(pcBody);
+  }
   iRc = dmcmd__handle_resp(pstOpt, pcName, &stResp);
   dmc_resp_free(&stResp);
   return iRc;
 }
 
-int dmcmd_cmd_run(io dmc_client_st *pstCli, in const dmcmd_opt_st *pstOpt, in int iArgc,
-                  in char **ppcArgv)
+int dmcmd_cmd_run(dm_io dmc_client_st *pstCli, dm_in const dmcmd_opt_st *pstOpt, dm_in int iArgc,
+                  dm_in char **ppcArgv)
 {
   const char *pcCmd = ppcArgv[0];
   if ((0 == strcmp(pcCmd, "help")) || (0 == strcmp(pcCmd, "--help")))

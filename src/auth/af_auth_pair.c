@@ -24,7 +24,7 @@
 #define AF_JPAKE_BUF_MAX 512u
 #define AF_JPAKE_B64_MAX 768u
 
-uint32 af_auth_lock_minutes(in uint32 u32Rounds)
+uint32 af_auth_lock_minutes(dm_in uint32 u32Rounds)
 {
   uint32 u32Shift = 0u;
   uint32 u32Min = 0u;
@@ -38,7 +38,7 @@ uint32 af_auth_lock_minutes(in uint32 u32Rounds)
   return (u32Min > 60u) ? 60u : u32Min;
 }
 
-static void af__slot_clear(io af_pair_slot_st *pstSlot)
+static void af__slot_clear(dm_io af_pair_slot_st *pstSlot)
 {
   if (pstSlot->bUsed)
   {
@@ -60,7 +60,7 @@ static void af__slots_clear_all(void)
   }
 }
 
-static void af__slots_prune(in uint64 u64Now)
+static void af__slots_prune(dm_in uint64 u64Now)
 {
   uint32 i = 0u;
 
@@ -73,7 +73,7 @@ static void af__slots_prune(in uint64 u64Now)
   }
 }
 
-static void af__gen_code6(out char acOut[7], in const char *pcAvoid)
+static void af__gen_code6(dm_out char acOut[7], dm_in const char *pcAvoid)
 {
   uint32 u32Val = 0u;
   int iTry = 0;
@@ -85,8 +85,8 @@ static void af__gen_code6(out char acOut[7], in const char *pcAvoid)
     {
       break;
     }
-    u32Val = ((uint32)au8R[0] << 24u) | ((uint32)au8R[1] << 16u) | ((uint32)au8R[2] << 8u)
-             | (uint32)au8R[3];
+    u32Val = ((uint32)au8R[0] << 24u) | ((uint32)au8R[1] << 16u) | ((uint32)au8R[2] << 8u) |
+             (uint32)au8R[3];
     dm_secure_zero(au8R, sizeof(au8R));
     if (u32Val >= 4294000000u)
     {
@@ -101,7 +101,7 @@ static void af__gen_code6(out char acOut[7], in const char *pcAvoid)
   snprintf(acOut, 7u, "%06u", (unsigned)((u32Val + 1u) % 1000000u));
 }
 
-static int af__gen_uuid_v4(out char acUuid[37])
+static int af__gen_uuid_v4(dm_out char acUuid[37])
 {
   uint8 au8B[16];
 
@@ -112,16 +112,16 @@ static int af__gen_uuid_v4(out char acUuid[37])
   }
   au8B[6] = (uint8)((au8B[6] & 0x0Fu) | 0x40u);
   au8B[8] = (uint8)((au8B[8] & 0x3Fu) | 0x80u);
-  snprintf(acUuid, 37u,
-           "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
-           au8B[0], au8B[1], au8B[2], au8B[3], au8B[4], au8B[5], au8B[6], au8B[7], au8B[8],
-           au8B[9], au8B[10], au8B[11], au8B[12], au8B[13], au8B[14], au8B[15]);
+  snprintf(acUuid, 37u, "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+           au8B[0], au8B[1], au8B[2], au8B[3], au8B[4], au8B[5], au8B[6], au8B[7], au8B[8], au8B[9],
+           au8B[10], au8B[11], au8B[12], au8B[13], au8B[14], au8B[15]);
   dm_secure_zero(au8B, sizeof(au8B));
   return DM_SUCCESS;
 }
 
-static int af__hmac_confirm(in const uint8 *pu8Key, in size_t uKeyLen, in const char *pcLabel,
-                            in const uint8 au8Fp[32], out uint8 au8Out[32])
+static int af__hmac_confirm(dm_in const uint8 *pu8Key, dm_in size_t uKeyLen,
+                            dm_in const char *pcLabel, dm_in const uint8 au8Fp[32],
+                            dm_out uint8 au8Out[32])
 {
   const mbedtls_md_info_t *pstInfo = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
   mbedtls_md_context_t stMd;
@@ -132,11 +132,11 @@ static int af__hmac_confirm(in const uint8 *pu8Key, in size_t uKeyLen, in const 
     return DM_FAILD;
   }
   mbedtls_md_init(&stMd);
-  if ((0 == mbedtls_md_setup(&stMd, pstInfo, 1))
-      && (0 == mbedtls_md_hmac_starts(&stMd, pu8Key, uKeyLen))
-      && (0 == mbedtls_md_hmac_update(&stMd, (const unsigned char *)pcLabel, strlen(pcLabel)))
-      && (0 == mbedtls_md_hmac_update(&stMd, au8Fp, 32u))
-      && (0 == mbedtls_md_hmac_finish(&stMd, au8Out)))
+  if ((0 == mbedtls_md_setup(&stMd, pstInfo, 1)) &&
+      (0 == mbedtls_md_hmac_starts(&stMd, pu8Key, uKeyLen)) &&
+      (0 == mbedtls_md_hmac_update(&stMd, (const unsigned char *)pcLabel, strlen(pcLabel))) &&
+      (0 == mbedtls_md_hmac_update(&stMd, au8Fp, 32u)) &&
+      (0 == mbedtls_md_hmac_finish(&stMd, au8Out)))
   {
     iRc = DM_SUCCESS;
   }
@@ -144,7 +144,7 @@ static int af__hmac_confirm(in const uint8 *pu8Key, in size_t uKeyLen, in const 
   return iRc;
 }
 
-void af_auth_pair_close(in bool_t bKeepLastPaired)
+void af_auth_pair_close(dm_in bool_t bKeepLastPaired)
 {
   af__slots_clear_all();
   dm_secure_zero(g_stAfAuth.acCode, sizeof(g_stAfAuth.acCode));
@@ -197,7 +197,7 @@ void af_auth_pair_open(void)
   g_stAfAuth.u64WinUntilMs = u64Now + AF_PAIR_WINDOW_MS;
 }
 
-static void af__trigger_pair_lock(in uint64 u64Now)
+static void af__trigger_pair_lock(dm_in uint64 u64Now)
 {
   char acOld[7];
   uint32 u32Min = 0u;
@@ -227,9 +227,9 @@ static af_pair_slot_st *af__alloc_slot(void)
   return NULL;
 }
 
-static int af__pair_start_crypto(io af_pair_slot_st *pstSlot, in const uint8 *pu8CR1,
-                                 in size_t uCR1Len, out char acSR1B64[AF_JPAKE_B64_MAX],
-                                 out char acSR2B64[AF_JPAKE_B64_MAX])
+static int af__pair_start_crypto(dm_io af_pair_slot_st *pstSlot, dm_in const uint8 *pu8CR1,
+                                 dm_in size_t uCR1Len, dm_out char acSR1B64[AF_JPAKE_B64_MAX],
+                                 dm_out char acSR2B64[AF_JPAKE_B64_MAX])
 {
   uint8 au8SR1[AF_JPAKE_BUF_MAX];
   uint8 au8SR2[AF_JPAKE_BUF_MAX];
@@ -240,17 +240,17 @@ static int af__pair_start_crypto(io af_pair_slot_st *pstSlot, in const uint8 *pu
 
   mbedtls_ecjpake_init(&pstSlot->stJpake);
   if ((0 == mbedtls_ecjpake_setup(&pstSlot->stJpake, MBEDTLS_ECJPAKE_SERVER, MBEDTLS_MD_SHA256,
-                                  MBEDTLS_ECP_DP_SECP256R1, (const unsigned char *)g_stAfAuth.acCode,
-                                  6u))
-      && (0 == mbedtls_ecjpake_read_round_one(&pstSlot->stJpake, pu8CR1, uCR1Len))
-      && (0 == mbedtls_ecjpake_write_round_one(&pstSlot->stJpake, au8SR1, sizeof(au8SR1), &uSR1Len,
-                                               af_auth_rng_cb, NULL))
-      && (0 == mbedtls_ecjpake_write_round_two(&pstSlot->stJpake, au8SR2, sizeof(au8SR2), &uSR2Len,
-                                               af_auth_rng_cb, NULL))
-      && (0 == mbedtls_base64_encode((unsigned char *)acSR1B64, AF_JPAKE_B64_MAX, &uB64Len, au8SR1,
-                                     uSR1Len))
-      && (0 == mbedtls_base64_encode((unsigned char *)acSR2B64, AF_JPAKE_B64_MAX, &uB64Len, au8SR2,
-                                     uSR2Len)))
+                                  MBEDTLS_ECP_DP_SECP256R1,
+                                  (const unsigned char *)g_stAfAuth.acCode, 6u)) &&
+      (0 == mbedtls_ecjpake_read_round_one(&pstSlot->stJpake, pu8CR1, uCR1Len)) &&
+      (0 == mbedtls_ecjpake_write_round_one(&pstSlot->stJpake, au8SR1, sizeof(au8SR1), &uSR1Len,
+                                            af_auth_rng_cb, NULL)) &&
+      (0 == mbedtls_ecjpake_write_round_two(&pstSlot->stJpake, au8SR2, sizeof(au8SR2), &uSR2Len,
+                                            af_auth_rng_cb, NULL)) &&
+      (0 == mbedtls_base64_encode((unsigned char *)acSR1B64, AF_JPAKE_B64_MAX, &uB64Len, au8SR1,
+                                  uSR1Len)) &&
+      (0 == mbedtls_base64_encode((unsigned char *)acSR2B64, AF_JPAKE_B64_MAX, &uB64Len, au8SR2,
+                                  uSR2Len)))
   {
     iRc = DM_SUCCESS;
   }
@@ -263,8 +263,8 @@ static int af__pair_start_crypto(io af_pair_slot_st *pstSlot, in const uint8 *pu
   return iRc;
 }
 
-static void af__pair_start_reply(in uint64 u64ReplyId, in const char *pcPairId,
-                                 in const char *pcSR1B64, in const char *pcSR2B64)
+static void af__pair_start_reply(dm_in uint64 u64ReplyId, dm_in const char *pcPairId,
+                                 dm_in const char *pcSR1B64, dm_in const char *pcSR2B64)
 {
   yyjson_mut_doc *pstDoc = yyjson_mut_doc_new(dm_json_alc());
   yyjson_mut_val *pstRoot = NULL;
@@ -285,7 +285,7 @@ static void af__pair_start_reply(in uint64 u64ReplyId, in const char *pcPairId,
   yyjson_mut_doc_free(pstDoc);
   if (NULL != pcJson)
   {
-    (void)dm_https_reply(u64ReplyId, 200u, pcJson, (uint32)uLen);
+    (void)af_https_reply(u64ReplyId, 200u, pcJson, (uint32)uLen);
     dm_json_free_str(pcJson);
   }
   else
@@ -294,7 +294,7 @@ static void af__pair_start_reply(in uint64 u64ReplyId, in const char *pcPairId,
   }
 }
 
-static af_pair_slot_st *af__pair_check_gate(in uint64 u64ReplyId, in uint64 u64Now)
+static af_pair_slot_st *af__pair_check_gate(dm_in uint64 u64ReplyId, dm_in uint64 u64Now)
 {
   af_pair_slot_st *pstSlot = NULL;
 
@@ -328,7 +328,7 @@ static af_pair_slot_st *af__pair_check_gate(in uint64 u64ReplyId, in uint64 u64N
   return pstSlot;
 }
 
-void af_auth_pair_on_start(in const dm_https_msg_st *pstMsg)
+void af_auth_pair_on_start(dm_in const af_https_msg_st *pstMsg)
 {
   int iErr = 0;
   yyjson_doc *pstDoc = NULL;
@@ -347,7 +347,10 @@ void af_auth_pair_on_start(in const dm_https_msg_st *pstMsg)
   pstDoc = dm_json_read_sensitive((const char *)pstMsg->pu8Body, pstMsg->u32BodyLen, 65536u, &iErr);
   if ((NULL == pstDoc) || (!yyjson_is_obj(yyjson_doc_get_root(pstDoc))))
   {
-    if (NULL != pstDoc) { yyjson_doc_free(pstDoc); }
+    if (NULL != pstDoc)
+    {
+      yyjson_doc_free(pstDoc);
+    }
     af_https_send_err(pstMsg->u64ReplyId, 400u, "bad_request", "请求格式不对");
     return;
   }
@@ -368,10 +371,10 @@ void af_auth_pair_on_start(in const dm_https_msg_st *pstMsg)
   }
   pcCR1B64 = yyjson_get_str(yyjson_obj_get(pstRoot, "c_r1"));
   pcDevName = yyjson_get_str(yyjson_obj_get(pstRoot, "device_name"));
-  if ((NULL == pcCR1B64) || ('\0' == pcCR1B64[0])
-      || (0 != mbedtls_base64_decode(au8CR1, sizeof(au8CR1), &uCR1Len,
-                                     (const unsigned char *)pcCR1B64, strlen(pcCR1B64)))
-      || (0u == uCR1Len))
+  if ((NULL == pcCR1B64) || ('\0' == pcCR1B64[0]) ||
+      (0 != mbedtls_base64_decode(au8CR1, sizeof(au8CR1), &uCR1Len, (const unsigned char *)pcCR1B64,
+                                  strlen(pcCR1B64))) ||
+      (0u == uCR1Len))
   {
     yyjson_doc_free(pstDoc);
     af_https_send_err(pstMsg->u64ReplyId, 400u, "bad_request", "无效的配对参数");
@@ -413,7 +416,7 @@ typedef struct af__pair_fin_ctx
   uint8 au8SConfirm[32];
 } af__pair_fin_ctx_st;
 
-static void af__pair_fin_on_saved(in int iStatus, io void *pvCtx)
+static void af__pair_fin_on_saved(dm_in int iStatus, dm_io void *pvCtx)
 {
   af__pair_fin_ctx_st *pstC = (af__pair_fin_ctx_st *)pvCtx;
   char acSConfB64[64];
@@ -439,10 +442,13 @@ static void af__pair_fin_on_saved(in int iStatus, io void *pvCtx)
       yyjson_mut_obj_add_str(pstDoc, pstRoot, "s_confirm", acSConfB64);
       pcJson = dm_json_write_mut_sensitive(pstDoc, &uLen);
     }
-    if (NULL != pstDoc) { yyjson_mut_doc_free(pstDoc); }
+    if (NULL != pstDoc)
+    {
+      yyjson_mut_doc_free(pstDoc);
+    }
     if (NULL != pcJson)
     {
-      (void)dm_https_reply(pstC->u64ReplyId, 200u, pcJson, (uint32)uLen);
+      (void)af_https_reply(pstC->u64ReplyId, 200u, pcJson, (uint32)uLen);
       dm_json_free_str_sensitive(pcJson);
       af_plat_notify("新 iPad 已配对", pstC->acDevName, "pair");
       af_auth_publish_ev(AF_AUTH_EV_PAIRED, pstC->acDevId, pstC->acDevName, NULL);
@@ -457,7 +463,7 @@ static void af__pair_fin_on_saved(in int iStatus, io void *pvCtx)
   dm_free_tag(pstC);
 }
 
-static af_pair_slot_st *af__find_slot(in const char *pcPairId)
+static af_pair_slot_st *af__find_slot(dm_in const char *pcPairId)
 {
   uint32 i = 0u;
 
@@ -467,9 +473,8 @@ static af_pair_slot_st *af__find_slot(in const char *pcPairId)
   }
   for (i = 0u; i < AF_PAIR_PENDING_MAX; i++)
   {
-    if (g_stAfAuth.astSlots[i].bUsed
-        && af_auth_ct_eq((const uint8 *)g_stAfAuth.astSlots[i].acPairId, (const uint8 *)pcPairId,
-                         32u))
+    if (g_stAfAuth.astSlots[i].bUsed &&
+        af_auth_ct_eq((const uint8 *)g_stAfAuth.astSlots[i].acPairId, (const uint8 *)pcPairId, 32u))
     {
       return &g_stAfAuth.astSlots[i];
     }
@@ -477,13 +482,13 @@ static af_pair_slot_st *af__find_slot(in const char *pcPairId)
   return NULL;
 }
 
-static int af__pair_parse_finish(in const dm_https_msg_st *pstMsg, out char acPairId[33],
-                                 out uint8 au8CR2[AF_JPAKE_BUF_MAX], out size_t *puCR2Len,
-                                 out uint8 au8CConf[32])
+static int af__pair_parse_finish(dm_in const af_https_msg_st *pstMsg, dm_out char acPairId[33],
+                                 dm_out uint8 au8CR2[AF_JPAKE_BUF_MAX], dm_out size_t *puCR2Len,
+                                 dm_out uint8 au8CConf[32])
 {
   int iErr = 0;
-  yyjson_doc *pstDoc = dm_json_read_sensitive((const char *)pstMsg->pu8Body, pstMsg->u32BodyLen,
-                                              65536u, &iErr);
+  yyjson_doc *pstDoc =
+      dm_json_read_sensitive((const char *)pstMsg->pu8Body, pstMsg->u32BodyLen, 65536u, &iErr);
   yyjson_val *pstRoot = NULL;
   const char *pcPid = NULL;
   const char *pcCR2 = NULL;
@@ -493,20 +498,23 @@ static int af__pair_parse_finish(in const dm_https_msg_st *pstMsg, out char acPa
 
   if ((NULL == pstDoc) || (!yyjson_is_obj(yyjson_doc_get_root(pstDoc))))
   {
-    if (NULL != pstDoc) { yyjson_doc_free(pstDoc); }
+    if (NULL != pstDoc)
+    {
+      yyjson_doc_free(pstDoc);
+    }
     return DM_INVALID;
   }
   pstRoot = yyjson_doc_get_root(pstDoc);
   pcPid = yyjson_get_str(yyjson_obj_get(pstRoot, "pair_id"));
   pcCR2 = yyjson_get_str(yyjson_obj_get(pstRoot, "c_r2"));
   pcConf = yyjson_get_str(yyjson_obj_get(pstRoot, "c_confirm"));
-  if ((NULL != pcPid) && (32u == strlen(pcPid)) && (NULL != pcCR2) && (NULL != pcConf)
-      && (0 == mbedtls_base64_decode(au8CR2, AF_JPAKE_BUF_MAX, puCR2Len,
-                                     (const unsigned char *)pcCR2, strlen(pcCR2)))
-      && (*puCR2Len > 0u)
-      && (0 == mbedtls_base64_decode(au8CConf, 32u, &uConfLen, (const unsigned char *)pcConf,
-                                     strlen(pcConf)))
-      && (32u == uConfLen))
+  if ((NULL != pcPid) && (32u == strlen(pcPid)) && (NULL != pcCR2) && (NULL != pcConf) &&
+      (0 == mbedtls_base64_decode(au8CR2, AF_JPAKE_BUF_MAX, puCR2Len, (const unsigned char *)pcCR2,
+                                  strlen(pcCR2))) &&
+      (*puCR2Len > 0u) &&
+      (0 == mbedtls_base64_decode(au8CConf, 32u, &uConfLen, (const unsigned char *)pcConf,
+                                  strlen(pcConf))) &&
+      (32u == uConfLen))
   {
     memcpy(acPairId, pcPid, 33u);
     iRc = DM_SUCCESS;
@@ -515,8 +523,8 @@ static int af__pair_parse_finish(in const dm_https_msg_st *pstMsg, out char acPa
   return iRc;
 }
 
-static void af__pair_commit_device(in uint64 u64ReplyId, in const char *pcDevName,
-                                   in const uint8 au8SConfirm[32])
+static void af__pair_commit_device(dm_in uint64 u64ReplyId, dm_in const char *pcDevName,
+                                   dm_in const uint8 au8SConfirm[32])
 {
   af__pair_fin_ctx_st *pstC = NULL;
   af_device_st *pstDev = NULL;
@@ -535,8 +543,8 @@ static void af__pair_commit_device(in uint64 u64ReplyId, in const char *pcDevNam
   }
   pstC->u64ReplyId = u64ReplyId;
   memset(au8TokRaw, 0, sizeof(au8TokRaw));
-  if ((DM_SUCCESS != af__gen_uuid_v4(pstC->acDevId))
-      || (DM_SUCCESS != af_auth_rng_bytes(au8TokRaw, sizeof(au8TokRaw))))
+  if ((DM_SUCCESS != af__gen_uuid_v4(pstC->acDevId)) ||
+      (DM_SUCCESS != af_auth_rng_bytes(au8TokRaw, sizeof(au8TokRaw))))
   {
     dm_secure_zero(au8TokRaw, sizeof(au8TokRaw));
     dm_secure_zero(pstC, sizeof(*pstC));
@@ -568,7 +576,7 @@ static void af__pair_commit_device(in uint64 u64ReplyId, in const char *pcDevNam
   }
 }
 
-void af_auth_pair_on_finish(in const dm_https_msg_st *pstMsg)
+void af_auth_pair_on_finish(dm_in const af_https_msg_st *pstMsg)
 {
   char acPairId[33];
   char acDevName[65];
@@ -613,17 +621,17 @@ void af_auth_pair_on_finish(in const dm_https_msg_st *pstMsg)
     af_https_send_err(pstMsg->u64ReplyId, 400u, "bad_request", "无效的配对握手");
     return;
   }
-  if ((DM_SUCCESS != af__hmac_confirm(au8Secret, uSecLen, "client", g_stAfAuth.au8OwnCertFp,
-                                      au8ExpC))
-      || (!af_auth_ct_eq(au8ExpC, au8CConf, 32u)))
+  if ((DM_SUCCESS !=
+       af__hmac_confirm(au8Secret, uSecLen, "client", g_stAfAuth.au8OwnCertFp, au8ExpC)) ||
+      (!af_auth_ct_eq(au8ExpC, au8CConf, 32u)))
   {
     dm_secure_zero(au8Secret, sizeof(au8Secret));
     dm_secure_zero(au8ExpC, sizeof(au8ExpC));
     af_https_send_err(pstMsg->u64ReplyId, 403u, "wrong_code", "配对码不对");
     return;
   }
-  if (DM_SUCCESS != af__hmac_confirm(au8Secret, uSecLen, "server", g_stAfAuth.au8OwnCertFp,
-                                     au8SConf))
+  if (DM_SUCCESS !=
+      af__hmac_confirm(au8Secret, uSecLen, "server", g_stAfAuth.au8OwnCertFp, au8SConf))
   {
     dm_secure_zero(au8Secret, sizeof(au8Secret));
     dm_secure_zero(au8ExpC, sizeof(au8ExpC));

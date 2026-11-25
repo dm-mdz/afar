@@ -21,7 +21,7 @@ typedef struct af__http_save_ctx
   uint64 u64ReplyId;
 } af__http_save_ctx_st;
 
-static bool_t af__json_depth_ok(in const char *pcText, in size_t uLen, in uint32 u32MaxDepth)
+static bool_t af__json_depth_ok(dm_in const char *pcText, dm_in size_t uLen, dm_in uint32 u32MaxDepth)
 {
   uint32 u32Depth = 0u;
   bool_t bInStr = DM_FALSE;
@@ -49,7 +49,7 @@ static bool_t af__json_depth_ok(in const char *pcText, in size_t uLen, in uint32
   return DM_TRUE;
 }
 
-static bool_t af__is_blank(in const char *pcText, in size_t uLen)
+static bool_t af__is_blank(dm_in const char *pcText, dm_in size_t uLen)
 {
   size_t i = 0u;
   for (i = 0u; i < uLen; i++)
@@ -59,8 +59,8 @@ static bool_t af__is_blank(in const char *pcText, in size_t uLen)
   return DM_TRUE;
 }
 
-static int af__read_json_obj(in const dm_https_msg_st *pstMsg, in bool_t bAllowEmpty,
-                             out yyjson_doc **ppstDoc)
+int af_ses_read_json_obj(dm_in const af_https_msg_st *pstMsg, dm_in bool_t bAllowEmpty,
+                         dm_out yyjson_doc **ppstDoc)
 {
   const char *pcBody = (const char *)pstMsg->pu8Body;
   int iErr = DM_SUCCESS;
@@ -89,8 +89,8 @@ static int af__read_json_obj(in const dm_https_msg_st *pstMsg, in bool_t bAllowE
   return DM_SUCCESS;
 }
 
-static size_t af__trim_trunc_utf8(in const char *pcSrc, out char *pcDst, in size_t uDstCap,
-                                  in size_t uMaxBytes)
+static size_t af__trim_trunc_utf8(dm_in const char *pcSrc, dm_out char *pcDst, dm_in size_t uDstCap,
+                                  dm_in size_t uMaxBytes)
 {
   const char *pcS = pcSrc;
   const char *pcE = NULL;
@@ -111,7 +111,7 @@ static size_t af__trim_trunc_utf8(in const char *pcSrc, out char *pcDst, in size
   return af_session_trunc_utf8_bytes(acSlice, pcDst, uDstCap, uMaxBytes);
 }
 
-static void af__https_save_reply_cb(in int iStatus, io void *pvCtx)
+static void af__https_save_reply_cb(dm_in int iStatus, dm_io void *pvCtx)
 {
   af__http_save_ctx_st *pstCtx = (af__http_save_ctx_st *)pvCtx;
   uint64 u64Rid = pstCtx->u64ReplyId;
@@ -122,7 +122,7 @@ static void af__https_save_reply_cb(in int iStatus, io void *pvCtx)
   else { af_https_send_err(u64Rid, 500u, "internal", "状态保存失败"); }
 }
 
-static const char *af__bt_stage_str(in af_bt_pair_stage_et eStage)
+static const char *af__bt_stage_str(dm_in af_bt_pair_stage_et eStage)
 {
   switch (eStage)
   {
@@ -135,8 +135,8 @@ static const char *af__bt_stage_str(in af_bt_pair_stage_et eStage)
   }
 }
 
-static void af__add_opt_str(io yyjson_mut_doc *pstDoc, io yyjson_mut_val *pstObj,
-                            in const char *pcKey, in const char *pcVal)
+static void af__add_opt_str(dm_io yyjson_mut_doc *pstDoc, dm_io yyjson_mut_val *pstObj,
+                            dm_in const char *pcKey, dm_in const char *pcVal)
 {
   if ((NULL != pcVal) && ('\0' != pcVal[0]))
   {
@@ -148,7 +148,7 @@ static void af__add_opt_str(io yyjson_mut_doc *pstDoc, io yyjson_mut_val *pstObj
   }
 }
 
-static yyjson_mut_val *af__make_bt_dev_obj(io yyjson_mut_doc *pstDoc, in const af_bt_device_st *pstD)
+static yyjson_mut_val *af__make_bt_dev_obj(dm_io yyjson_mut_doc *pstDoc, dm_in const af_bt_device_st *pstD)
 {
   yyjson_mut_val *pstO = yyjson_mut_obj(pstDoc);
   yyjson_mut_obj_add_strcpy(pstDoc, pstO, "address", pstD->acAddr);
@@ -158,8 +158,8 @@ static yyjson_mut_val *af__make_bt_dev_obj(io yyjson_mut_doc *pstDoc, in const a
   return pstO;
 }
 
-static void af__status_add_kbd(io yyjson_mut_doc *pstDoc, io yyjson_mut_val *pstRoot,
-                               in const af_kbd_snap_st *pstKbd)
+static void af__status_add_kbd(dm_io yyjson_mut_doc *pstDoc, dm_io yyjson_mut_val *pstRoot,
+                               dm_in const af_kbd_snap_st *pstKbd)
 {
   if (pstKbd->bHasSelected)
   {
@@ -196,9 +196,9 @@ static void af__status_add_kbd(io yyjson_mut_doc *pstDoc, io yyjson_mut_val *pst
   }
 }
 
-static void af__status_add_env_disp(io yyjson_mut_doc *pstDoc, io yyjson_mut_val *pstRoot,
-                                    in const af_env_snap_st *pstEnv,
-                                    in const af_disp_snap_st *pstDisp, in const char *pcScale)
+static void af__status_add_env_disp(dm_io yyjson_mut_doc *pstDoc, dm_io yyjson_mut_val *pstRoot,
+                                    dm_in const af_env_snap_st *pstEnv,
+                                    dm_in const af_disp_snap_st *pstDisp, dm_in const char *pcScale)
 {
   yyjson_mut_val *pstScales = yyjson_mut_arr(pstDoc);
   yyjson_mut_val *pstKeys = yyjson_mut_arr(pstDoc);
@@ -233,12 +233,110 @@ static void af__status_add_env_disp(io yyjson_mut_doc *pstDoc, io yyjson_mut_val
   af__add_opt_str(pstDoc, pstRoot, "restart_error", g_stAfSes.acRestartError);
 }
 
-static void af__status_eval_owner(in const af_device_st *pstDev, in const af_sc_snap_st *pstSc,
-                                  in bool_t bShowingState, out bool_t *pbMe, out bool_t *pbOther)
+static void af__status_add_v6(dm_io yyjson_mut_doc *pstDoc, dm_io yyjson_mut_val *pstRoot,
+                              dm_in const af_env_snap_st *pstEnv, dm_in const char *pcActiveMode,
+                              dm_in const char *pcActiveDevId)
+{
+  yyjson_mut_val *pstCap = yyjson_mut_obj(pstDoc);
+
+  yyjson_mut_obj_add_bool(pstDoc, pstCap, "direct", true);
+  yyjson_mut_obj_add_bool(pstDoc, pstCap, "hevc_444",
+                          af_stream_is_hevc444_supported() ? true : false);
+  yyjson_mut_obj_add_bool(pstDoc, pstCap, "perm_sc", pstEnv->bPermSc ? true : false);
+  yyjson_mut_obj_add_bool(pstDoc, pstCap, "perm_ax", pstEnv->bPermAx ? true : false);
+  yyjson_mut_obj_add_val(pstDoc, pstRoot, "capabilities", pstCap);
+  yyjson_mut_obj_add_str(pstDoc, pstRoot, "active_mode", pcActiveMode);
+  af__add_opt_str(pstDoc, pstRoot, "active_device_id", pcActiveDevId);
+}
+
+static void af__status_find_sc_dev_id(dm_in const char *pcScName, dm_out char acOut[37])
+{
+  af_device_st astDevs[AF_DEV_MAX];
+  uint32 u32Cnt = 0u;
+  uint32 i = 0u;
+
+  acOut[0] = '\0';
+  if ((NULL == pcScName) || ('\0' == pcScName[0])) { return; }
+  u32Cnt = af_auth_list_devices(astDevs, AF_DEV_MAX);
+  for (i = 0u; i < u32Cnt; i++)
+  {
+    if (0 == strcmp(astDevs[i].acSidecarName, pcScName))
+    {
+      snprintf(acOut, 37u, "%s", astDevs[i].acId);
+      return;
+    }
+  }
+}
+
+typedef struct af__status_mode
+{
+  const char *pcState;
+  const char *pcShowing;
+  const char *pcActiveMode;
+  const char *pcActiveDevId;
+  bool_t bDirect;
+  bool_t bShowingState;
+  char acScDevId[37];
+} af__status_mode_st;
+
+static void af__status_resolve_mode(dm_in const af_ev_stream_st *pstStrm,
+                                    dm_in const af_sc_snap_st *pstSc,
+                                    dm_out af__status_mode_st *pstOut)
+{
+  memset(pstOut, 0, sizeof(*pstOut));
+  pstOut->pcState = "online";
+  pstOut->pcActiveMode = "idle";
+  pstOut->bDirect = ((AF_STREAM_STARTING == pstStrm->eCur) || (AF_STREAM_STREAMING == pstStrm->eCur))
+                        ? DM_TRUE
+                        : DM_FALSE;
+  if (pstOut->bDirect)
+  {
+    pstOut->bShowingState = DM_TRUE;
+    pstOut->pcState = "showing";
+    pstOut->pcActiveMode = "direct";
+    pstOut->pcActiveDevId = pstStrm->acDevId;
+    pstOut->pcShowing = ('\0' != pstStrm->acDevName[0]) ? pstStrm->acDevName : pstStrm->acDevId;
+    return;
+  }
+  pstOut->bShowingState =
+      ((AF_SC_SHOWING == pstSc->eState) && (!g_stAfSes.stFront.bActive)) ? DM_TRUE : DM_FALSE;
+  if (g_stAfSes.stFront.bActive || (AF_SC_CONNECTING == pstSc->eState) ||
+      af_ses_direct_is_switching_prodraw())
+  {
+    pstOut->pcState = "connecting";
+    pstOut->pcActiveMode = "sidecar";
+  }
+  else if (pstOut->bShowingState)
+  {
+    pstOut->pcState = "showing";
+    pstOut->pcActiveMode = "sidecar";
+    pstOut->pcShowing = pstSc->acShowing;
+  }
+  if (0 == strcmp(pstOut->pcActiveMode, "sidecar"))
+  {
+    const char *pcN = pstOut->bShowingState
+                          ? pstSc->acShowing
+                          : ((g_stAfSes.stFront.bActive && ('\0' != g_stAfSes.stFront.acName[0]))
+                                 ? g_stAfSes.stFront.acName
+                                 : af_store_state()->acLastIpad);
+    af__status_find_sc_dev_id(pcN, pstOut->acScDevId);
+    pstOut->pcActiveDevId = pstOut->acScDevId;
+  }
+}
+
+static void af__status_eval_owner(dm_in const af_device_st *pstDev, dm_in const af_sc_snap_st *pstSc,
+                                  dm_in const af__status_mode_st *pstMode, dm_out bool_t *pbMe,
+                                  dm_out bool_t *pbOther)
 {
   *pbMe = DM_FALSE;
   *pbOther = DM_FALSE;
-  if ((!bShowingState) || ('\0' == pstSc->acShowing[0])) { return; }
+  if (pstMode->bDirect && (NULL != pstMode->pcActiveDevId) && ('\0' != pstMode->pcActiveDevId[0]))
+  {
+    if (0 == strcmp(pstDev->acId, pstMode->pcActiveDevId)) { *pbMe = DM_TRUE; }
+    else { *pbOther = DM_TRUE; }
+    return;
+  }
+  if ((!pstMode->bShowingState) || ('\0' == pstSc->acShowing[0])) { return; }
   if ('\0' != pstDev->acSidecarName[0])
   {
     if (0 == strcmp(pstDev->acSidecarName, pstSc->acShowing)) { *pbMe = DM_TRUE; }
@@ -248,28 +346,38 @@ static void af__status_eval_owner(in const af_device_st *pstDev, in const af_sc_
   if (af_auth_other_owns_sidecar(pstDev->acId, pstSc->acShowing)) { *pbOther = DM_TRUE; }
 }
 
-static const char *af__resolve_scale_target(in const af_device_st *pstDev,
-                                            in const af_sc_snap_st *pstSc)
+static const char *af__resolve_scale_target(dm_in const af_device_st *pstDev,
+                                            dm_in const af_sc_snap_st *pstSc,
+                                            dm_in const char *pcDirectKey,
+                                            dm_in const af_ev_stream_st *pstStrm)
 {
   const af_state_st *pstSt = af_store_state();
+  if ((NULL != pstStrm) &&
+      ((AF_STREAM_STARTING == pstStrm->eCur) || (AF_STREAM_STREAMING == pstStrm->eCur)))
+  {
+    if ((NULL != pcDirectKey) && ('\0' != pcDirectKey[0])) { return pcDirectKey; }
+    if ('\0' != pstDev->acSidecarName[0]) { return pstDev->acSidecarName; }
+    if ('\0' != pstStrm->acDevId[0]) { return pstStrm->acDevId; }
+  }
   if ((AF_SC_SHOWING == pstSc->eState) && ('\0' != pstSc->acShowing[0])) { return pstSc->acShowing; }
   if ('\0' != pstDev->acSidecarName[0]) { return pstDev->acSidecarName; }
   if ('\0' != pstSt->acLastIpad[0]) { return pstSt->acLastIpad; }
   return NULL;
 }
 
-static void af__on_status(in const dm_https_msg_st *pstMsg)
+static void af__on_status(dm_in const af_https_msg_st *pstMsg)
 {
   af_device_st stDev;
   af_sc_snap_st stSc;
+  af_ev_stream_st stStrm;
   af_disp_snap_st stDisp;
   af_env_snap_st stEnv;
   af_kbd_snap_st stKbd;
+  af__status_mode_st stMode;
   char acName[65];
+  char acDirectKey[65];
   const char *pcScaleTarget = NULL;
   const char *pcScale = NULL;
-  const char *pcState = "online";
-  bool_t bShowingState = DM_FALSE;
   bool_t bMe = DM_FALSE;
   bool_t bOther = DM_FALSE;
   yyjson_mut_doc *pstDoc = NULL;
@@ -281,18 +389,16 @@ static void af__on_status(in const dm_https_msg_st *pstMsg)
 
   if (!af_auth_check_https(pstMsg, &stDev)) { return; }
   af_sidecar_get_snap(&stSc);
-  pcScaleTarget = af__resolve_scale_target(&stDev, &stSc);
+  af_ses_direct_get_active(&stStrm, acDirectKey, sizeof(acDirectKey));
+  pcScaleTarget = af__resolve_scale_target(&stDev, &stSc, acDirectKey, &stStrm);
   af_display_get_snap(pcScaleTarget, &stDisp);
   af_env_get_snapshot(&stEnv);
   af_kbd_get_snap(&stKbd);
   af_ses_get_mac_name(acName, sizeof(acName));
 
-  bShowingState = ((AF_SC_SHOWING == stSc.eState) && (!g_stAfSes.stFront.bActive)) ? DM_TRUE : DM_FALSE;
-  if (g_stAfSes.stFront.bActive || (AF_SC_CONNECTING == stSc.eState)) { pcState = "connecting"; }
-  else if (bShowingState) { pcState = "showing"; }
-  af__status_eval_owner(&stDev, &stSc, bShowingState, &bMe, &bOther);
-  pcScale = ('\0' != stDisp.acActualScale[0]) ? stDisp.acActualScale
-                                              : af_disp_store_target_scale(pcScaleTarget);
+  af__status_resolve_mode(&stStrm, &stSc, &stMode);
+  af__status_eval_owner(&stDev, &stSc, &stMode, &bMe, &bOther);
+  pcScale = ('\0' != stDisp.acActualScale[0]) ? stDisp.acActualScale : af_disp_store_target_scale(pcScaleTarget);
 
   pstDoc = yyjson_mut_doc_new(dm_json_alc());
   if (NULL == pstDoc) { af_https_send_err(pstMsg->u64ReplyId, 500u, "internal", "内存不足"); return; }
@@ -300,35 +406,26 @@ static void af__on_status(in const dm_https_msg_st *pstMsg)
   yyjson_mut_doc_set_root(pstDoc, pstRoot);
   yyjson_mut_obj_add_strcpy(pstDoc, pstRoot, "name", acName);
   yyjson_mut_obj_add_str(pstDoc, pstRoot, "version", AF_VERSION);
-  yyjson_mut_obj_add_str(pstDoc, pstRoot, "state", pcState);
-  af__add_opt_str(pstDoc, pstRoot, "showing", bShowingState ? stSc.acShowing : NULL);
+  yyjson_mut_obj_add_str(pstDoc, pstRoot, "state", stMode.pcState);
+  af__add_opt_str(pstDoc, pstRoot, "showing", stMode.pcShowing);
   pstNearby = yyjson_mut_arr(pstDoc);
-  for (i = 0u; (i < stSc.u32NearbyCnt) && (i < AF_SC_DEV_MAX); i++)
-  {
-    yyjson_mut_arr_add_strcpy(pstDoc, pstNearby, stSc.aacNearby[i]);
-  }
+  for (i = 0u; (i < stSc.u32NearbyCnt) && (i < AF_SC_DEV_MAX); i++) { yyjson_mut_arr_add_strcpy(pstDoc, pstNearby, stSc.aacNearby[i]); }
   yyjson_mut_obj_add_val(pstDoc, pstRoot, "nearby", pstNearby);
   yyjson_mut_obj_add_bool(pstDoc, pstRoot, "password_saved", stDev.bPasswordSaved ? true : false);
   yyjson_mut_obj_add_bool(pstDoc, pstRoot, "showing_me", bMe ? true : false);
   yyjson_mut_obj_add_bool(pstDoc, pstRoot, "showing_other", bOther ? true : false);
   af__status_add_env_disp(pstDoc, pstRoot, &stEnv, &stDisp, pcScale);
   af__status_add_kbd(pstDoc, pstRoot, &stKbd);
+  af__status_add_v6(pstDoc, pstRoot, &stEnv, stMode.pcActiveMode, stMode.pcActiveDevId);
   pcJson = dm_json_write_mut(pstDoc, &uLen);
   yyjson_mut_doc_free(pstDoc);
-  if (NULL != pcJson)
-  {
-    (void)dm_https_reply(pstMsg->u64ReplyId, 200u, pcJson, (uint32)uLen);
-    dm_json_free_str(pcJson);
-  }
-  else
-  {
-    af_https_send_err(pstMsg->u64ReplyId, 500u, "internal", "序列化状态失败");
-  }
+  if (NULL != pcJson) { (void)af_https_reply(pstMsg->u64ReplyId, 200u, pcJson, (uint32)uLen); dm_json_free_str(pcJson); }
+  else { af_https_send_err(pstMsg->u64ReplyId, 500u, "internal", "序列化状态失败"); }
 }
 
-static int af__parse_connect_req(in yyjson_val *pstRoot, out char *pcSidecar, in size_t uCap,
-                                 out bool_t *pbKbd, out bool_t *pbAuto, out bool_t *pbHasScr,
-                                 out uint32 *pu32W, out uint32 *pu32H)
+static int af__parse_connect_req(dm_in yyjson_val *pstRoot, dm_out char *pcSidecar, dm_in size_t uCap,
+                                 dm_out bool_t *pbKbd, dm_out bool_t *pbAuto, dm_out bool_t *pbHasScr,
+                                 dm_out uint32 *pu32W, dm_out uint32 *pu32H)
 {
   yyjson_val *pstV = NULL;
 
@@ -378,9 +475,9 @@ static int af__parse_connect_req(in yyjson_val *pstRoot, out char *pcSidecar, in
   return DM_SUCCESS;
 }
 
-static int af__resolve_connect_target(in const char *pcReqName, in const af_device_st *pstDev,
-                                      in const af_sc_snap_st *pstSc, out char *pcOut,
-                                      in size_t uCap)
+int af_ses_resolve_connect_target(dm_in const char *pcReqName, dm_in const af_device_st *pstDev,
+                                  dm_in const af_sc_snap_st *pstSc, dm_out char *pcOut,
+                                  dm_in size_t uCap)
 {
   if ((NULL != pcReqName) && ('\0' != pcReqName[0]))
   {
@@ -401,7 +498,7 @@ static int af__resolve_connect_target(in const char *pcReqName, in const af_devi
   return AF_ERR_CHOOSE_IPAD;
 }
 
-static void af__on_connect(in const dm_https_msg_st *pstMsg)
+static void af__on_connect(dm_in const af_https_msg_st *pstMsg)
 {
   af_device_st stDev;
   af_sc_snap_st stSc;
@@ -421,7 +518,12 @@ static void af__on_connect(in const dm_https_msg_st *pstMsg)
     return;
   }
   if (!af_auth_check_https(pstMsg, &stDev)) { return; }
-  if (DM_SUCCESS != af__read_json_obj(pstMsg, DM_FALSE, &pstDoc)) { return; }
+  if (af_ses_direct_is_active())
+  {
+    af_https_send_err(pstMsg->u64ReplyId, 409u, "stream_busy", "当前处于直连显示模式");
+    return;
+  }
+  if (DM_SUCCESS != af_ses_read_json_obj(pstMsg, DM_FALSE, &pstDoc)) { return; }
   iRc = af__parse_connect_req(yyjson_doc_get_root(pstDoc), acReqName, sizeof(acReqName), &bKbd,
                               &bAuto, &bHasScr, &u32W, &u32H);
   yyjson_doc_free(pstDoc);
@@ -431,7 +533,7 @@ static void af__on_connect(in const dm_https_msg_st *pstMsg)
     return;
   }
   af_sidecar_get_snap(&stSc);
-  iRc = af__resolve_connect_target(acReqName, &stDev, &stSc, acTarget, sizeof(acTarget));
+  iRc = af_ses_resolve_connect_target(acReqName, &stDev, &stSc, acTarget, sizeof(acTarget));
   if (AF_ERR_NO_IPAD == iRc)
   {
     af_https_send_err(pstMsg->u64ReplyId, 409u, "no_ipad", "附近没找到 iPad");
@@ -459,7 +561,7 @@ static void af__on_connect(in const dm_https_msg_st *pstMsg)
   af_https_send_ok(pstMsg->u64ReplyId, "{\"ok\":true}");
 }
 
-static void af__on_disconnect(in const dm_https_msg_st *pstMsg)
+static void af__on_disconnect(dm_in const af_https_msg_st *pstMsg)
 {
   af_device_st stDev;
   af__http_save_ctx_st *pstCtx = NULL;
@@ -482,7 +584,7 @@ static void af__on_disconnect(in const dm_https_msg_st *pstMsg)
   af_ses_disconnect_core(af__https_save_reply_cb, pstCtx);
 }
 
-static void af__on_front(in const dm_https_msg_st *pstMsg)
+static void af__on_front(dm_in const af_https_msg_st *pstMsg)
 {
   af_device_st stDev;
 
@@ -492,6 +594,11 @@ static void af__on_front(in const dm_https_msg_st *pstMsg)
     return;
   }
   if (!af_auth_check_https(pstMsg, &stDev)) { return; }
+  if (af_ses_direct_is_active())
+  {
+    af_https_send_err(pstMsg->u64ReplyId, 409u, "stream_busy", "当前处于直连显示模式");
+    return;
+  }
   if ('\0' == stDev.acSidecarName[0])
   {
     af_https_send_err(pstMsg->u64ReplyId, 409u, "no_ipad", "这台 iPad 尚未绑定随航名称");
@@ -501,9 +608,9 @@ static void af__on_front(in const dm_https_msg_st *pstMsg)
   af_https_send_ok(pstMsg->u64ReplyId, "{\"ok\":true}");
 }
 
-static int af__parse_settings_req(in yyjson_val *pstRoot, out bool_t *pbHasScale, out char *pcScale,
-                                  in size_t uScaleCap, out bool_t *pbHasName, out char *pcName,
-                                  in size_t uNameCap)
+static int af__parse_settings_req(dm_in yyjson_val *pstRoot, dm_out bool_t *pbHasScale, dm_out char *pcScale,
+                                  dm_in size_t uScaleCap, dm_out bool_t *pbHasName, dm_out char *pcName,
+                                  dm_in size_t uNameCap)
 {
   yyjson_val *pstV = NULL;
 
@@ -533,7 +640,7 @@ static int af__parse_settings_req(in yyjson_val *pstRoot, out bool_t *pbHasScale
   return DM_SUCCESS;
 }
 
-static void af__on_settings(in const dm_https_msg_st *pstMsg)
+static void af__on_settings(dm_in const af_https_msg_st *pstMsg)
 {
   af_device_st stDev;
   af_sc_snap_st stSc;
@@ -550,7 +657,7 @@ static void af__on_settings(in const dm_https_msg_st *pstMsg)
     return;
   }
   if (!af_auth_check_https(pstMsg, &stDev)) { return; }
-  if (DM_SUCCESS != af__read_json_obj(pstMsg, DM_FALSE, &pstDoc)) { return; }
+  if (DM_SUCCESS != af_ses_read_json_obj(pstMsg, DM_FALSE, &pstDoc)) { return; }
   iRc = af__parse_settings_req(yyjson_doc_get_root(pstDoc), &bHasScale, acScale, sizeof(acScale),
                                &bHasName, acName, sizeof(acName));
   yyjson_doc_free(pstDoc);
@@ -561,8 +668,12 @@ static void af__on_settings(in const dm_https_msg_st *pstMsg)
   }
   if (bHasScale)
   {
+    af_ev_stream_st stStrm;
+    char acDirectKey[65];
     af_sidecar_get_snap(&stSc);
-    iRc = af_display_set_scale(af__resolve_scale_target(&stDev, &stSc), acScale);
+    af_ses_direct_get_active(&stStrm, acDirectKey, sizeof(acDirectKey));
+    iRc = af_display_set_scale(af__resolve_scale_target(&stDev, &stSc, acDirectKey, &stStrm),
+                               acScale);
     if (DM_INVALID == iRc)
     {
       af_https_send_err(pstMsg->u64ReplyId, 400u, "bad_request", "无效的显示档位");
@@ -576,7 +687,7 @@ static void af__on_settings(in const dm_https_msg_st *pstMsg)
   }
   if (bHasName)
   {
-    uint16 u16Port = dm_https_get_port();
+    uint16 u16Port = af_https_get_port();
     if (0u == u16Port) { u16Port = af_store_cfg()->u16Port; }
     snprintf(af_store_state_mut()->acName, sizeof(af_store_state_mut()->acName), "%s", acName);
     (void)af_ses_ops()->pfBonjourStart(acName, u16Port);
@@ -597,7 +708,7 @@ static void af__on_settings(in const dm_https_msg_st *pstMsg)
   af_https_send_ok(pstMsg->u64ReplyId, "{\"ok\":true}");
 }
 
-static void af__on_restart(in const dm_https_msg_st *pstMsg)
+static void af__on_restart(dm_in const af_https_msg_st *pstMsg)
 {
   af_device_st stDev;
   yyjson_doc *pstDoc = NULL;
@@ -609,7 +720,7 @@ static void af__on_restart(in const dm_https_msg_st *pstMsg)
     return;
   }
   if (!af_auth_check_https(pstMsg, &stDev)) { return; }
-  if (DM_SUCCESS != af__read_json_obj(pstMsg, DM_TRUE, &pstDoc)) { return; }
+  if (DM_SUCCESS != af_ses_read_json_obj(pstMsg, DM_TRUE, &pstDoc)) { return; }
   if (NULL != pstDoc)
   {
     yyjson_val *pstR = yyjson_obj_get(yyjson_doc_get_root(pstDoc), "reopen");
@@ -635,12 +746,13 @@ static void af__on_restart(in const dm_https_msg_st *pstMsg)
 
 int af_ses_http_register(void)
 {
-  if ((DM_SUCCESS != dm_https_route_exact("GET", "/status", af__on_status))
-      || (DM_SUCCESS != dm_https_route_exact("POST", "/connect", af__on_connect))
-      || (DM_SUCCESS != dm_https_route_exact("POST", "/disconnect", af__on_disconnect))
-      || (DM_SUCCESS != dm_https_route_exact("POST", "/front", af__on_front))
-      || (DM_SUCCESS != dm_https_route_exact("POST", "/settings", af__on_settings))
-      || (DM_SUCCESS != dm_https_route_exact("POST", "/restart", af__on_restart)))
+  if ((DM_SUCCESS != af_https_route_exact("GET", "/status", af__on_status))
+      || (DM_SUCCESS != af_https_route_exact("POST", "/connect", af__on_connect))
+      || (DM_SUCCESS != af_https_route_exact("POST", "/disconnect", af__on_disconnect))
+      || (DM_SUCCESS != af_https_route_exact("POST", "/front", af__on_front))
+      || (DM_SUCCESS != af_https_route_exact("POST", "/settings", af__on_settings))
+      || (DM_SUCCESS != af_https_route_exact("POST", "/restart", af__on_restart))
+      || (DM_SUCCESS != af_ses_direct_register()))
   {
     return DM_FAILD;
   }

@@ -14,7 +14,7 @@
 
 #define AF_BT_MAJOR_PERIPHERAL 0x05u
 
-static bool_t af__contains_ci(in const char *pcHaystack, in const char *pcNeedle)
+static bool_t af__contains_ci(dm_in const char *pcHaystack, dm_in const char *pcNeedle)
 {
   size_t uHlen = 0u;
   size_t uNlen = 0u;
@@ -50,19 +50,23 @@ static bool_t af__contains_ci(in const char *pcHaystack, in const char *pcNeedle
   return DM_FALSE;
 }
 
-bool_t af_kbd_is_apple_non_kb(in const char *pcName)
+bool_t af_kbd_is_apple_non_kb(dm_in const char *pcName)
 {
   static const char *const apcAllow[] = {
-      "keyboard", "keys", "mouse", "trackpad", "keypad", "numpad",
-      "\xe9\x94\xae\xe7\x9b\x98",             /* 键盘 */
-      "\xe9\xbc\xa0\xe6\xa0\x87",             /* 鼠标 */
-      "\xe8\xa7\xa6\xe6\x8e\xa7\xe6\x9d\xbf"  /* 触控板 */
+      "keyboard",
+      "keys",
+      "mouse",
+      "trackpad",
+      "keypad",
+      "numpad",
+      "\xe9\x94\xae\xe7\x9b\x98",            /* 键盘 */
+      "\xe9\xbc\xa0\xe6\xa0\x87",            /* 鼠标 */
+      "\xe8\xa7\xa6\xe6\x8e\xa7\xe6\x9d\xbf" /* 触控板 */
   };
   static const char *const apcAppleNonKb[] = {
-      "ipad", "iphone", "ipod", "airpods", "airtag", "apple watch",
-      "apple tv", "apple pencil", "homepod", "macbook", "imac",
-      "mac mini", "mac studio", "mac pro", "beats", "vision pro"
-  };
+      "ipad",       "iphone",       "ipod",    "airpods",   "airtag", "apple watch",
+      "apple tv",   "apple pencil", "homepod", "macbook",   "imac",   "mac mini",
+      "mac studio", "mac pro",      "beats",   "vision pro"};
   size_t i = 0u;
 
   if ((NULL == pcName) || ('\0' == pcName[0]))
@@ -86,7 +90,7 @@ bool_t af_kbd_is_apple_non_kb(in const char *pcName)
   return DM_FALSE;
 }
 
-bool_t af_kbd_device_allowed(in const af_bt_device_st *pstDev)
+bool_t af_kbd_device_allowed(dm_in const af_bt_device_st *pstDev)
 {
   if (NULL == pstDev)
   {

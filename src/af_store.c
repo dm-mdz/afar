@@ -12,9 +12,9 @@
 
 #include "af_store.h"
 #include <dm.h>
+#include <dm/json.h>
 #include <dm/log.h>
 #include <dm/pool.h>
-#include <yyjson.h>
 
 #include <errno.h>
 #include <fcntl.h>
@@ -46,7 +46,7 @@ static void af__store_defaults(void)
   g_stState.bKeyboardAuto = DM_TRUE;
 }
 
-static void af__copy_str(out char *pcDst, in size_t uCap, in yyjson_val *pstV)
+static void af__copy_str(dm_out char *pcDst, dm_in size_t uCap, dm_in yyjson_val *pstV)
 {
   const char *pcS = yyjson_get_str(pstV);
   if ((NULL != pcS) && (uCap > 0u))
@@ -55,7 +55,7 @@ static void af__copy_str(out char *pcDst, in size_t uCap, in yyjson_val *pstV)
   }
 }
 
-static char *af__read_file(in const char *pcPath, out size_t *puLen)
+static char *af__read_file(dm_in const char *pcPath, dm_out size_t *puLen)
 {
   FILE *pf = fopen(pcPath, "rb");
   long lSz = 0;
@@ -90,7 +90,7 @@ static char *af__read_file(in const char *pcPath, out size_t *puLen)
   return pcBuf;
 }
 
-int af_store_write_atomic(in const char *pcPath, in const void *pvData, in size_t uLen)
+int af_store_write_atomic(dm_in const char *pcPath, dm_in const void *pvData, dm_in size_t uLen)
 {
   char acTmp[640];
   int iFd = -1;
@@ -144,7 +144,7 @@ int af_store_write_atomic(in const char *pcPath, in const void *pvData, in size_
   return DM_SUCCESS;
 }
 
-static void af__parse_config_json(in const char *pcPath)
+static void af__parse_config_json(dm_in const char *pcPath)
 {
   size_t uLen = 0u;
   char *pcText = af__read_file(pcPath, &uLen);
@@ -156,7 +156,7 @@ static void af__parse_config_json(in const char *pcPath)
   {
     return;
   }
-  pstDoc = yyjson_read(pcText, uLen, 0u);
+  pstDoc = dm_json_read(pcText, uLen, 0u, NULL);
   dm_free_tag(pcText);
   if ((NULL == pstDoc) || (!yyjson_is_obj(yyjson_doc_get_root(pstDoc))))
   {
@@ -220,7 +220,30 @@ static void af__parse_config_json(in const char *pcPath)
   yyjson_doc_free(pstDoc);
 }
 
-static void af__parse_state_maps(in yyjson_val *pstRoot)
+static void af__parse_one_ipad_sizes(dm_in yyjson_val *pstKey, dm_in yyjson_val *pstVal)
+{
+  af_ipad_sizes_entry_st *pstE = NULL;
+  uint32 k = 0u;
+
+  if ((g_stState.u32SizesCnt >= AF_IPAD_MAP_MAX) || (!yyjson_is_arr(pstVal))
+      || (3u != yyjson_arr_size(pstVal)))
+  {
+    return;
+  }
+  pstE = &g_stState.astSizes[g_stState.u32SizesCnt++];
+  af__copy_str(pstE->acName, sizeof(pstE->acName), pstKey);
+  for (k = 0u; k < 3u; k++)
+  {
+    yyjson_val *pstPair = yyjson_arr_get(pstVal, k);
+    if (yyjson_is_arr(pstPair) && (2u == yyjson_arr_size(pstPair)))
+    {
+      pstE->aau32Sz[k][0] = (uint32)yyjson_get_uint(yyjson_arr_get(pstPair, 0u));
+      pstE->aau32Sz[k][1] = (uint32)yyjson_get_uint(yyjson_arr_get(pstPair, 1u));
+    }
+  }
+}
+
+static void af__parse_state_maps(dm_in yyjson_val *pstRoot)
 {
   yyjson_val *pstObj = NULL;
   yyjson_val *pstKey = NULL;
@@ -248,22 +271,7 @@ static void af__parse_state_maps(in yyjson_val *pstRoot)
   {
     yyjson_obj_foreach(pstObj, uIdx, uMax, pstKey, pstVal)
     {
-      if ((g_stState.u32SizesCnt < AF_IPAD_MAP_MAX) && yyjson_is_arr(pstVal)
-          && (3u == yyjson_arr_size(pstVal)))
-      {
-        af_ipad_sizes_entry_st *pstE = &g_stState.astSizes[g_stState.u32SizesCnt++];
-        uint32 k = 0u;
-        af__copy_str(pstE->acName, sizeof(pstE->acName), pstKey);
-        for (k = 0u; k < 3u; k++)
-        {
-          yyjson_val *pstPair = yyjson_arr_get(pstVal, k);
-          if (yyjson_is_arr(pstPair) && (2u == yyjson_arr_size(pstPair)))
-          {
-            pstE->aau32Sz[k][0] = (uint32)yyjson_get_uint(yyjson_arr_get(pstPair, 0u));
-            pstE->aau32Sz[k][1] = (uint32)yyjson_get_uint(yyjson_arr_get(pstPair, 1u));
-          }
-        }
-      }
+      af__parse_one_ipad_sizes(pstKey, pstVal);
     }
   }
   pstObj = yyjson_obj_get(pstRoot, "ipad_scales");
@@ -299,7 +307,7 @@ static void af__parse_state_maps(in yyjson_val *pstRoot)
   }
 }
 
-static void af__parse_state_json(in const char *pcPath)
+static void af__parse_state_json(dm_in const char *pcPath)
 {
   size_t uLen = 0u;
   char *pcText = af__read_file(pcPath, &uLen);
@@ -311,7 +319,7 @@ static void af__parse_state_json(in const char *pcPath)
   {
     return;
   }
-  pstDoc = yyjson_read(pcText, uLen, 0u);
+  pstDoc = dm_json_read(pcText, uLen, 0u, NULL);
   dm_free_tag(pcText);
   if ((NULL == pstDoc) || (!yyjson_is_obj(yyjson_doc_get_root(pstDoc))))
   {
@@ -379,8 +387,8 @@ static void af__parse_state_json(in const char *pcPath)
   yyjson_doc_free(pstDoc);
 }
 
-static void af__serialize_state_maps(io yyjson_mut_doc *pstDoc, io yyjson_mut_val *pstRoot,
-                                     in const af_state_st *pstSt)
+static void af__serialize_state_maps(dm_io yyjson_mut_doc *pstDoc, dm_io yyjson_mut_val *pstRoot,
+                                     dm_in const af_state_st *pstSt)
 {
   yyjson_mut_val *pstObj = NULL;
   uint32 u32N = 0u;
@@ -437,9 +445,9 @@ static void af__serialize_state_maps(io yyjson_mut_doc *pstDoc, io yyjson_mut_va
   yyjson_mut_obj_add_val(pstDoc, pstRoot, "display_modes", pstObj);
 }
 
-static char *af__serialize_state(in const af_state_st *pstSt, out size_t *puLen)
+static char *af__serialize_state(dm_in const af_state_st *pstSt, dm_out size_t *puLen)
 {
-  yyjson_mut_doc *pstDoc = yyjson_mut_doc_new(NULL);
+  yyjson_mut_doc *pstDoc = yyjson_mut_doc_new(dm_json_alc());
   yyjson_mut_val *pstRoot = NULL;
   char *pcJson = NULL;
 
@@ -483,12 +491,12 @@ static char *af__serialize_state(in const af_state_st *pstSt, out size_t *puLen)
     yyjson_mut_obj_add_val(pstDoc, pstRoot, "orig_screensaver", pstSs);
   }
   af__serialize_state_maps(pstDoc, pstRoot, pstSt);
-  pcJson = yyjson_mut_write(pstDoc, YYJSON_WRITE_PRETTY, puLen);
+  pcJson = yyjson_mut_write_opts(pstDoc, YYJSON_WRITE_PRETTY, dm_json_alc(), puLen, NULL);
   yyjson_mut_doc_free(pstDoc);
   return pcJson;
 }
 
-int af_store_load(in const char *pcDataDir)
+int af_store_load(dm_in const char *pcDataDir)
 {
   char acCfg[600];
   char acState[600];
@@ -506,7 +514,7 @@ int af_store_load(in const char *pcDataDir)
   return DM_SUCCESS;
 }
 
-int af_store_save_sync(in const char *pcDataDir)
+int af_store_save_sync(dm_in const char *pcDataDir)
 {
   char acPath[600];
   const char *pcDir = ((NULL != pcDataDir) && ('\0' != pcDataDir[0])) ? pcDataDir : g_acDataDir;
@@ -525,7 +533,7 @@ int af_store_save_sync(in const char *pcDataDir)
   }
   snprintf(acPath, sizeof(acPath), "%s/state.json", pcDir);
   iErr = af_store_write_atomic(acPath, pcJson, uLen);
-  free(pcJson);
+  dm_json_free_str(pcJson);
   return iErr;
 }
 
@@ -552,7 +560,7 @@ static void af__save_after(void *pvArg, int iStatus)
   af_store_saved_cb pfCb = pstJob->pfOnDone;
   void *pvCtx = pstJob->pvCtx;
 
-  free(pstJob->pcJson);
+  dm_json_free_str(pstJob->pcJson);
   dm_free_tag(pstJob);
   if (NULL != pfCb)
   {
@@ -560,7 +568,7 @@ static void af__save_after(void *pvArg, int iStatus)
   }
 }
 
-int af_store_save_async(in af_store_saved_cb pfOnDone, io void *pvCtx)
+int af_store_save_async(dm_in af_store_saved_cb pfOnDone, dm_io void *pvCtx)
 {
   af__save_job_st *pstJob = NULL;
   int iErr = DM_SUCCESS;
@@ -586,15 +594,15 @@ int af_store_save_async(in af_store_saved_cb pfOnDone, io void *pvCtx)
   iErr = dm_pool_submit(DM_LANE_DB, af__save_work, af__save_after, pstJob);
   if (DM_SUCCESS != iErr)
   {
-    free(pstJob->pcJson);
+    dm_json_free_str(pstJob->pcJson);
     dm_free_tag(pstJob);
   }
   return iErr;
 }
 
-static char *af__serialize_cfg(in const af_config_st *pstC, out size_t *puLen)
+static char *af__serialize_cfg(dm_in const af_config_st *pstC, dm_out size_t *puLen)
 {
-  yyjson_mut_doc *pstDoc = yyjson_mut_doc_new(NULL);
+  yyjson_mut_doc *pstDoc = yyjson_mut_doc_new(dm_json_alc());
   yyjson_mut_val *pstRoot = NULL;
   char *pcOut = NULL;
   uint32 i = 0u;
@@ -629,12 +637,12 @@ static char *af__serialize_cfg(in const af_config_st *pstC, out size_t *puLen)
     }
     yyjson_mut_obj_add_val(pstDoc, pstRoot, "extra_sizes", pstEx);
   }
-  pcOut = yyjson_mut_write(pstDoc, YYJSON_WRITE_PRETTY, puLen);
+  pcOut = yyjson_mut_write_opts(pstDoc, YYJSON_WRITE_PRETTY, dm_json_alc(), puLen, NULL);
   yyjson_mut_doc_free(pstDoc);
   return pcOut;
 }
 
-int af_store_save_cfg_async(in af_store_saved_cb pfOnDone, io void *pvCtx)
+int af_store_save_cfg_async(dm_in af_store_saved_cb pfOnDone, dm_io void *pvCtx)
 {
   af__save_job_st *pstJob = NULL;
   int iErr = DM_SUCCESS;
@@ -660,7 +668,7 @@ int af_store_save_cfg_async(in af_store_saved_cb pfOnDone, io void *pvCtx)
   iErr = dm_pool_submit(DM_LANE_DB, af__save_work, af__save_after, pstJob);
   if (DM_SUCCESS != iErr)
   {
-    free(pstJob->pcJson);
+    dm_json_free_str(pstJob->pcJson);
     dm_free_tag(pstJob);
   }
   return iErr;

@@ -18,13 +18,13 @@ extern "C"
 #include <dm/log.h>
 #include "../dm_internal.h"
 
-static dm_thread_t g_stMainThread;
+static dm_uv_thread_t g_stMainThread;
 static bool_t g_bMainBound = DM_FALSE;
 static bool_t g_bInInit = DM_FALSE;
 
 void dm_check_bind_main(void)
 {
-  g_stMainThread = dm_thread_self();
+  g_stMainThread = dm_uv_thread_self();
   g_bMainBound = DM_TRUE;
   return;
 }
@@ -36,7 +36,7 @@ void dm__check_unbind_main(void)
   return;
 }
 
-void dm__check_set_in_init(in bool_t bInInit)
+void dm__check_set_in_init(dm_in bool_t bInInit)
 {
   g_bInInit = bInInit;
   return;
@@ -44,14 +44,14 @@ void dm__check_set_in_init(in bool_t bInInit)
 
 bool_t dm_in_loop(void)
 {
-  dm_thread_t stSelf = {0};
+  dm_uv_thread_t stSelf = {0};
 
   if (!g_bMainBound)
   {
     return DM_TRUE; /* 不经 dm_main_ex、也没自己绑过：没有主线程可比，不拦 */
   }
-  stSelf = dm_thread_self();
-  return (0 != dm_thread_equal(&g_stMainThread, &stSelf)) ? DM_TRUE : DM_FALSE;
+  stSelf = dm_uv_thread_self();
+  return (0 != dm_uv_thread_equal(&g_stMainThread, &stSelf)) ? DM_TRUE : DM_FALSE;
 }
 
 bool_t dm_in_init(void)
@@ -59,7 +59,7 @@ bool_t dm_in_init(void)
   return g_bInInit;
 }
 
-void dm__wrong_thread(in const char *pcFunc)
+void dm__wrong_thread(dm_in const char *pcFunc)
 {
   DM_LOG_ERROR("%s called off the loop thread", pcFunc);
   return;

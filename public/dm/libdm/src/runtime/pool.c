@@ -58,14 +58,14 @@ typedef struct dm__pool_job
 typedef struct dm__pool_worker
 {
   dm_list_node_st stNode;
-  dm_thread_t stThread;
+  dm_uv_thread_t stThread;
   dm_pool_lane_et eLane;
 } dm__pool_worker_st;
 
 typedef struct dm__pool_lane
 {
-  dm_mutex_t stLock;
-  dm_cond_t stCond;
+  dm_uv_mutex_t stLock;
+  dm_uv_cond_t stCond;
   dm_list_st stQueue;
   dm_pool_lane_cfg_st stCfg;
   uint16 u16Live;
@@ -84,16 +84,16 @@ static bool_t g_abUserLaneSet[DM_LANE_MAX];
 
 /* 运行期池状态 */
 static dm__pool_lane_st g_astLane[DM_LANE_MAX];
-static dm_mutex_t g_stDoneLock;
+static dm_uv_mutex_t g_stDoneLock;
 static dm_list_st g_stDoneList;
-static dm_mutex_t g_stReapLock;
+static dm_uv_mutex_t g_stReapLock;
 static dm_list_st g_stReapList;
-static dm_mutex_t g_stLiveLock;
-static dm_cond_t g_stLiveZeroCond;
-static dm_cond_t g_stReadyCond;
+static dm_uv_mutex_t g_stLiveLock;
+static dm_uv_cond_t g_stLiveZeroCond;
+static dm_uv_cond_t g_stReadyCond;
 static uint32 g_u32TotalLive = 0;
 
-static dm_async_st g_stPoolAsync;
+static dm_uv_async_st g_stPoolAsync;
 static bool_t g_bPoolSyncInit = DM_FALSE;
 static bool_t g_bPoolUp = DM_FALSE;
 static bool_t g_bPoolAsyncRef = DM_FALSE;
@@ -103,8 +103,8 @@ static _Atomic uint64 g_u64ReapedThreads = 0;
 
 /* ============================ 内部工具 ============================ */
 
-static void dm__pool_default_cfg(in dm_pool_lane_et eLane, in const dm_cfg_st *pstCfg,
-                                 out dm_pool_lane_cfg_st *pstOut)
+static void dm__pool_default_cfg(dm_in dm_pool_lane_et eLane, dm_in const dm_cfg_st *pstCfg,
+                                 dm_out dm_pool_lane_cfg_st *pstOut)
 {
   uint32 u32Idle = ((NULL != pstCfg) && (0u != pstCfg->u32PoolIdleMs)) ? pstCfg->u32PoolIdleMs
                                                                        : DM__POOL_IDLE_MS_DEFAULT;
@@ -190,17 +190,17 @@ static void dm__pool_reap_workers(void)
   dm_list_node_st *pstNode = NULL;
 
   dm_list_init(&stLocal);
-  dm_mutex_lock(&g_stReapLock);
+  dm_uv_mutex_lock(&g_stReapLock);
   while (NULL != (pstNode = dm_list_del_head(&g_stReapList)))
   {
     dm_list_add_tail(&stLocal, pstNode);
   }
-  dm_mutex_unlock(&g_stReapLock);
+  dm_uv_mutex_unlock(&g_stReapLock);
 
   while (NULL != (pstNode = dm_list_del_head(&stLocal)))
   {
     dm__pool_worker_st *pstW = DM_LIST_ENTRY(pstNode, dm__pool_worker_st, stNode);
-    (void)dm_thread_join(&pstW->stThread);
+    (void)dm_uv_thread_join(&pstW->stThread);
     atomic_fetch_add_explicit(&g_u64ReapedThreads, 1u, memory_order_relaxed);
     dm_free_tag(pstW);
   }
@@ -215,18 +215,18 @@ static void dm__pool_async_update_ref(void)
   }
   if ((g_u32PoolInflight > 0u) && (!g_bPoolAsyncRef))
   {
-    dm_ref((dm_handle_st *)&g_stPoolAsync);
+    dm_uv_ref((dm_uv_handle_st *)&g_stPoolAsync);
     g_bPoolAsyncRef = DM_TRUE;
   }
   else if ((0u == g_u32PoolInflight) && g_bPoolAsyncRef)
   {
-    dm_unref((dm_handle_st *)&g_stPoolAsync);
+    dm_uv_unref((dm_uv_handle_st *)&g_stPoolAsync);
     g_bPoolAsyncRef = DM_FALSE;
   }
   return;
 }
 
-static void dm__pool_finish_job(io dm__pool_job_st *pstJob)
+static void dm__pool_finish_job(dm_io dm__pool_job_st *pstJob)
 {
   dm_pool_after_fn pfAfter = pstJob->pfAfter;
   void *pvArg = pstJob->pvArg;
@@ -269,7 +269,7 @@ static void dm__pool_finish_job(io dm__pool_job_st *pstJob)
   return;
 }
 
-static void dm__pool_run_after_item(io dm__qitem_st *pstItem)
+static void dm__pool_run_after_item(dm_io dm__qitem_st *pstItem)
 {
   dm__pool_job_st *pstJob = (dm__pool_job_st *)pstItem->pvCtx;
   if (NULL != pstJob)
@@ -279,18 +279,18 @@ static void dm__pool_run_after_item(io dm__qitem_st *pstItem)
   return;
 }
 
-static void dm__pool_drain_done(in bool_t bDirect)
+static void dm__pool_drain_done(dm_in bool_t bDirect)
 {
   dm_list_st stLocal = {0};
   dm_list_node_st *pstNode = NULL;
 
   dm_list_init(&stLocal);
-  dm_mutex_lock(&g_stDoneLock);
+  dm_uv_mutex_lock(&g_stDoneLock);
   while (NULL != (pstNode = dm_list_del_head(&g_stDoneList)))
   {
     dm_list_add_tail(&stLocal, pstNode);
   }
-  dm_mutex_unlock(&g_stDoneLock);
+  dm_uv_mutex_unlock(&g_stDoneLock);
 
   while (NULL != (pstNode = dm_list_del_head(&stLocal)))
   {
@@ -321,7 +321,7 @@ static void dm__pool_drain_done(in bool_t bDirect)
   return;
 }
 
-static void dm__pool_on_async(in dm_async_st *pstAsync)
+static void dm__pool_on_async(dm_in dm_uv_async_st *pstAsync)
 {
   (void)pstAsync;
   if (!g_bPoolUp)
@@ -335,13 +335,13 @@ static void dm__pool_on_async(in dm_async_st *pstAsync)
 
 /* ============================ 工作线程主循环 ============================ */
 
-static void dm__pool_worker_main(io void *pvArg)
+static void dm__pool_worker_main(dm_io void *pvArg)
 {
   dm__pool_worker_st *pstW = (dm__pool_worker_st *)pvArg;
   dm__pool_lane_st *pstLane = &g_astLane[pstW->eLane];
   bool_t bSignaledReady = DM_FALSE;
 
-  dm_mutex_lock(&pstLane->stLock);
+  dm_uv_mutex_lock(&pstLane->stLock);
   for (;;)
   {
     dm_list_node_st *pstNode = NULL;
@@ -357,7 +357,7 @@ static void dm__pool_worker_main(io void *pvArg)
       if (DM_LANE_DEFAULT == pstW->eLane)
       {
         pstLane->u16Ready++;
-        dm_cond_broadcast(&g_stReadyCond);
+        dm_uv_cond_broadcast(&g_stReadyCond);
       }
     }
 
@@ -366,8 +366,8 @@ static void dm__pool_worker_main(io void *pvArg)
       uint32 u32IdleMs =
           (pstLane->stCfg.u32IdleMs > 0x7FFFFFFFu) ? 0x7FFFFFFFu : pstLane->stCfg.u32IdleMs;
       uint64 u64TimeoutNs = (uint64)u32IdleMs * 1000000ULL;
-      int iRc = dm_cond_timedwait(&pstLane->stCond, &pstLane->stLock, u64TimeoutNs);
-      if ((DM_ETIMEDOUT == iRc) && dm_list_is_empty(&pstLane->stQueue) &&
+      int iRc = dm_uv_cond_timedwait(&pstLane->stCond, &pstLane->stLock, u64TimeoutNs);
+      if ((DM_UV_ETIMEDOUT == iRc) && dm_list_is_empty(&pstLane->stQueue) &&
           (pstLane->u16Live > pstLane->stCfg.u16MinThreads))
       {
         break; /* 闲时缩容自退出 */
@@ -385,7 +385,7 @@ static void dm__pool_worker_main(io void *pvArg)
       pstLane->u32Queued--;
     }
     pstLane->u16Busy++;
-    dm_mutex_unlock(&pstLane->stLock);
+    dm_uv_mutex_unlock(&pstLane->stLock);
 
     u64Start = dm_hrtime();
     pstJob->u64StartNs = u64Start;
@@ -398,7 +398,7 @@ static void dm__pool_worker_main(io void *pvArg)
     u64End = dm_hrtime();
     u64RunNs = (u64End >= u64Start) ? (u64End - u64Start) : 0u;
 
-    dm_mutex_lock(&pstLane->stLock);
+    dm_uv_mutex_lock(&pstLane->stLock);
     if (pstLane->u16Busy > 0u)
     {
       pstLane->u16Busy--;
@@ -412,14 +412,14 @@ static void dm__pool_worker_main(io void *pvArg)
     {
       pstLane->u64RunMaxNs = u64RunNs;
     }
-    dm_mutex_unlock(&pstLane->stLock);
+    dm_uv_mutex_unlock(&pstLane->stLock);
 
-    dm_mutex_lock(&g_stDoneLock);
+    dm_uv_mutex_lock(&g_stDoneLock);
     dm_list_add_tail(&g_stDoneList, &pstJob->stNode);
-    dm_mutex_unlock(&g_stDoneLock);
-    (void)dm_async_send(&g_stPoolAsync);
+    dm_uv_mutex_unlock(&g_stDoneLock);
+    (void)dm_uv_async_send(&g_stPoolAsync);
 
-    dm_mutex_lock(&pstLane->stLock);
+    dm_uv_mutex_lock(&pstLane->stLock);
   }
 
   /* 退出前更新本泳道存活计数 */
@@ -431,33 +431,33 @@ static void dm__pool_worker_main(io void *pvArg)
   {
     pstLane->u16Ready--;
   }
-  dm_mutex_unlock(&pstLane->stLock);
+  dm_uv_mutex_unlock(&pstLane->stLock);
 
   /* AUD-01：工作线程退出前强制回收 TLS SQLite 连接与槽位 */
   dm__ext_on_thread_exit();
 
   /* 挂入主线程待 join 链表并唤醒主循环 */
-  dm_mutex_lock(&g_stReapLock);
+  dm_uv_mutex_lock(&g_stReapLock);
   dm_list_add_tail(&g_stReapList, &pstW->stNode);
-  dm_mutex_unlock(&g_stReapLock);
-  (void)dm_async_send(&g_stPoolAsync);
+  dm_uv_mutex_unlock(&g_stReapLock);
+  (void)dm_uv_async_send(&g_stPoolAsync);
 
   /* 最后递减总存活数，通知 dm__pool_shutdown 可以安全回收句柄 */
-  dm_mutex_lock(&g_stLiveLock);
+  dm_uv_mutex_lock(&g_stLiveLock);
   if (g_u32TotalLive > 0u)
   {
     g_u32TotalLive--;
   }
   if (0u == g_u32TotalLive)
   {
-    dm_cond_broadcast(&g_stLiveZeroCond);
+    dm_uv_cond_broadcast(&g_stLiveZeroCond);
   }
-  dm_mutex_unlock(&g_stLiveLock);
+  dm_uv_mutex_unlock(&g_stLiveLock);
   return;
 }
 
 /* 必须在持有 pstLane->stLock 时调用，保证 pstW->stThread 写完前新线程无法退出 */
-static int dm__pool_spawn_locked(in dm_pool_lane_et eLane)
+static int dm__pool_spawn_locked(dm_in dm_pool_lane_et eLane)
 {
   dm__pool_lane_st *pstLane = &g_astLane[eLane];
   dm__pool_worker_st *pstW = NULL;
@@ -470,25 +470,25 @@ static int dm__pool_spawn_locked(in dm_pool_lane_et eLane)
   }
   pstW->eLane = eLane;
 
-  dm_mutex_lock(&g_stLiveLock);
+  dm_uv_mutex_lock(&g_stLiveLock);
   g_u32TotalLive++;
-  dm_mutex_unlock(&g_stLiveLock);
+  dm_uv_mutex_unlock(&g_stLiveLock);
 
-  iErr = dm_thread_create(&pstW->stThread, dm__pool_worker_main, pstW);
+  iErr = dm_uv_thread_create(&pstW->stThread, dm__pool_worker_main, pstW);
   if (DM_SUCCESS != iErr)
   {
-    dm_mutex_lock(&g_stLiveLock);
+    dm_uv_mutex_lock(&g_stLiveLock);
     if (g_u32TotalLive > 0u)
     {
       g_u32TotalLive--;
     }
     if (0u == g_u32TotalLive)
     {
-      dm_cond_broadcast(&g_stLiveZeroCond);
+      dm_uv_cond_broadcast(&g_stLiveZeroCond);
     }
-    dm_mutex_unlock(&g_stLiveLock);
+    dm_uv_mutex_unlock(&g_stLiveLock);
     dm_free_tag(pstW);
-    return ((DM_ENOMEM == iErr) || (DM_ALLOC == iErr)) ? DM_ALLOC : DM_FAILD;
+    return ((DM_UV_ENOMEM == iErr) || (DM_ALLOC == iErr)) ? DM_ALLOC : DM_FAILD;
   }
   pstLane->u16Live++;
   return DM_SUCCESS;
@@ -504,57 +504,57 @@ static int dm__pool_init_sync(void)
   {
     return DM_SUCCESS;
   }
-  if (DM_SUCCESS != dm_mutex_init(&g_stDoneLock))
+  if (DM_SUCCESS != dm_uv_mutex_init(&g_stDoneLock))
   {
     return DM_FAILD;
   }
-  if (DM_SUCCESS != dm_mutex_init(&g_stReapLock))
+  if (DM_SUCCESS != dm_uv_mutex_init(&g_stReapLock))
   {
-    dm_mutex_destroy(&g_stDoneLock);
+    dm_uv_mutex_destroy(&g_stDoneLock);
     return DM_FAILD;
   }
-  if (DM_SUCCESS != dm_mutex_init(&g_stLiveLock))
+  if (DM_SUCCESS != dm_uv_mutex_init(&g_stLiveLock))
   {
-    dm_mutex_destroy(&g_stReapLock);
-    dm_mutex_destroy(&g_stDoneLock);
+    dm_uv_mutex_destroy(&g_stReapLock);
+    dm_uv_mutex_destroy(&g_stDoneLock);
     return DM_FAILD;
   }
-  if (DM_SUCCESS != dm_cond_init(&g_stLiveZeroCond))
+  if (DM_SUCCESS != dm_uv_cond_init(&g_stLiveZeroCond))
   {
-    dm_mutex_destroy(&g_stLiveLock);
-    dm_mutex_destroy(&g_stReapLock);
-    dm_mutex_destroy(&g_stDoneLock);
+    dm_uv_mutex_destroy(&g_stLiveLock);
+    dm_uv_mutex_destroy(&g_stReapLock);
+    dm_uv_mutex_destroy(&g_stDoneLock);
     return DM_FAILD;
   }
-  if (DM_SUCCESS != dm_cond_init(&g_stReadyCond))
+  if (DM_SUCCESS != dm_uv_cond_init(&g_stReadyCond))
   {
-    dm_cond_destroy(&g_stLiveZeroCond);
-    dm_mutex_destroy(&g_stLiveLock);
-    dm_mutex_destroy(&g_stReapLock);
-    dm_mutex_destroy(&g_stDoneLock);
+    dm_uv_cond_destroy(&g_stLiveZeroCond);
+    dm_uv_mutex_destroy(&g_stLiveLock);
+    dm_uv_mutex_destroy(&g_stReapLock);
+    dm_uv_mutex_destroy(&g_stDoneLock);
     return DM_FAILD;
   }
   for (uiIdx = 0; uiIdx < (uint)DM_LANE_MAX; uiIdx++)
   {
-    bool_t bLockOk = (DM_SUCCESS == dm_mutex_init(&g_astLane[uiIdx].stLock));
-    bool_t bCondOk = bLockOk && (DM_SUCCESS == dm_cond_init(&g_astLane[uiIdx].stCond));
+    bool_t bLockOk = (DM_SUCCESS == dm_uv_mutex_init(&g_astLane[uiIdx].stLock));
+    bool_t bCondOk = bLockOk && (DM_SUCCESS == dm_uv_cond_init(&g_astLane[uiIdx].stCond));
     if (!bCondOk)
     {
       uint uiBack = 0;
       if (bLockOk)
       {
-        dm_mutex_destroy(&g_astLane[uiIdx].stLock);
+        dm_uv_mutex_destroy(&g_astLane[uiIdx].stLock);
       }
       for (uiBack = 0; uiBack < uiIdx; uiBack++)
       {
-        dm_cond_destroy(&g_astLane[uiBack].stCond);
-        dm_mutex_destroy(&g_astLane[uiBack].stLock);
+        dm_uv_cond_destroy(&g_astLane[uiBack].stCond);
+        dm_uv_mutex_destroy(&g_astLane[uiBack].stLock);
       }
-      dm_cond_destroy(&g_stReadyCond);
-      dm_cond_destroy(&g_stLiveZeroCond);
-      dm_mutex_destroy(&g_stLiveLock);
-      dm_mutex_destroy(&g_stReapLock);
-      dm_mutex_destroy(&g_stDoneLock);
+      dm_uv_cond_destroy(&g_stReadyCond);
+      dm_uv_cond_destroy(&g_stLiveZeroCond);
+      dm_uv_mutex_destroy(&g_stLiveLock);
+      dm_uv_mutex_destroy(&g_stReapLock);
+      dm_uv_mutex_destroy(&g_stDoneLock);
       return DM_FAILD;
     }
   }
@@ -572,19 +572,19 @@ void dm__pool_destroy_sync(void)
   }
   for (uiIdx = 0; uiIdx < (uint)DM_LANE_MAX; uiIdx++)
   {
-    dm_cond_destroy(&g_astLane[uiIdx].stCond);
-    dm_mutex_destroy(&g_astLane[uiIdx].stLock);
+    dm_uv_cond_destroy(&g_astLane[uiIdx].stCond);
+    dm_uv_mutex_destroy(&g_astLane[uiIdx].stLock);
   }
-  dm_cond_destroy(&g_stReadyCond);
-  dm_cond_destroy(&g_stLiveZeroCond);
-  dm_mutex_destroy(&g_stLiveLock);
-  dm_mutex_destroy(&g_stReapLock);
-  dm_mutex_destroy(&g_stDoneLock);
+  dm_uv_cond_destroy(&g_stReadyCond);
+  dm_uv_cond_destroy(&g_stLiveZeroCond);
+  dm_uv_mutex_destroy(&g_stLiveLock);
+  dm_uv_mutex_destroy(&g_stReapLock);
+  dm_uv_mutex_destroy(&g_stDoneLock);
   g_bPoolSyncInit = DM_FALSE;
   return;
 }
 
-int dm__pool_init(in const dm_cfg_st *pstCfg)
+int dm__pool_init(dm_in const dm_cfg_st *pstCfg)
 {
   uint uiIdx = 0;
   int iErr = DM_SUCCESS;
@@ -622,12 +622,12 @@ int dm__pool_init(in const dm_cfg_st *pstCfg)
 
   g_uiPoolReportedThreads = (uint)g_astLane[DM_LANE_DEFAULT].stCfg.u16MaxThreads;
 
-  iErr = dm_async_init(dm_default_loop(), &g_stPoolAsync, dm__pool_on_async);
+  iErr = dm_uv_async_init(dm_uv_default_loop(), &g_stPoolAsync, dm__pool_on_async);
   if (DM_SUCCESS != iErr)
   {
     return iErr;
   }
-  dm_unref((dm_handle_st *)&g_stPoolAsync);
+  dm_uv_unref((dm_uv_handle_st *)&g_stPoolAsync);
   g_bPoolUp = DM_TRUE;
 
   /* 若显式配了 uiWorkThreads 或 u16PoolMin（且 <= 8），预先拉起常驻线程并等待进入待命态，
@@ -639,7 +639,7 @@ int dm__pool_init(in const dm_cfg_st *pstCfg)
     {
       u16Prewarm = DM__POOL_PREWARM_CAP;
     }
-    dm_mutex_lock(&g_astLane[DM_LANE_DEFAULT].stLock);
+    dm_uv_mutex_lock(&g_astLane[DM_LANE_DEFAULT].stLock);
     for (uiIdx = 0; uiIdx < (uint)u16Prewarm; uiIdx++)
     {
       if (DM_SUCCESS != dm__pool_spawn_locked(DM_LANE_DEFAULT))
@@ -649,9 +649,9 @@ int dm__pool_init(in const dm_cfg_st *pstCfg)
     }
     while (g_astLane[DM_LANE_DEFAULT].u16Ready < g_astLane[DM_LANE_DEFAULT].u16Live)
     {
-      dm_cond_wait(&g_stReadyCond, &g_astLane[DM_LANE_DEFAULT].stLock);
+      dm_uv_cond_wait(&g_stReadyCond, &g_astLane[DM_LANE_DEFAULT].stLock);
     }
-    dm_mutex_unlock(&g_astLane[DM_LANE_DEFAULT].stLock);
+    dm_uv_mutex_unlock(&g_astLane[DM_LANE_DEFAULT].stLock);
   }
   return DM_SUCCESS;
 }
@@ -680,19 +680,19 @@ void dm__work_cancel_queued(void)
   for (uiIdx = 0; uiIdx < (uint)DM_LANE_MAX; uiIdx++)
   {
     dm__pool_lane_st *pstLane = &g_astLane[uiIdx];
-    dm_mutex_lock(&pstLane->stLock);
+    dm_uv_mutex_lock(&pstLane->stLock);
     while (NULL != (pstNode = dm_list_del_head(&pstLane->stQueue)))
     {
       dm_list_add_tail(&stCanceled, pstNode);
     }
     pstLane->u32Queued = 0;
-    dm_mutex_unlock(&pstLane->stLock);
+    dm_uv_mutex_unlock(&pstLane->stLock);
   }
 
   while (NULL != (pstNode = dm_list_del_head(&stCanceled)))
   {
     dm__pool_job_st *pstJob = DM_LIST_ENTRY(pstNode, dm__pool_job_st, stNode);
-    pstJob->iStatus = DM_ECANCELED;
+    pstJob->iStatus = DM_UV_ECANCELED;
     dm__pool_finish_job(pstJob);
   }
   return;
@@ -713,19 +713,19 @@ void dm__pool_shutdown(void)
   for (uiIdx = 0; uiIdx < (uint)DM_LANE_MAX; uiIdx++)
   {
     dm__pool_lane_st *pstLane = &g_astLane[uiIdx];
-    dm_mutex_lock(&pstLane->stLock);
+    dm_uv_mutex_lock(&pstLane->stLock);
     pstLane->bStopping = DM_TRUE;
-    dm_cond_broadcast(&pstLane->stCond);
-    dm_mutex_unlock(&pstLane->stLock);
+    dm_uv_cond_broadcast(&pstLane->stCond);
+    dm_uv_mutex_unlock(&pstLane->stLock);
   }
 
   /* 3. AUD-01：严格等待全部工作线程执行完 pfOnThreadExit 并归零后再回收异步句柄（零 UAF） */
-  dm_mutex_lock(&g_stLiveLock);
+  dm_uv_mutex_lock(&g_stLiveLock);
   while (g_u32TotalLive > 0u)
   {
-    dm_cond_wait(&g_stLiveZeroCond, &g_stLiveLock);
+    dm_uv_cond_wait(&g_stLiveZeroCond, &g_stLiveLock);
   }
-  dm_mutex_unlock(&g_stLiveLock);
+  dm_uv_mutex_unlock(&g_stLiveLock);
 
   /* 4. 回收全部已退出工作线程句柄并排干尾包完工任务 */
   dm__pool_reap_workers();
@@ -734,16 +734,17 @@ void dm__pool_shutdown(void)
   /* 5. 关闭异步唤醒句柄（此时零工作线程存活，不可能再触发 dm_async_send） */
   g_bPoolUp = DM_FALSE;
   g_bPoolAsyncRef = DM_FALSE;
-  if (!dm_is_closing((dm_handle_st *)&g_stPoolAsync))
+  if (!dm_uv_is_closing((dm_uv_handle_st *)&g_stPoolAsync))
   {
-    dm_close((dm_handle_st *)&g_stPoolAsync, NULL);
+    dm_uv_close((dm_uv_handle_st *)&g_stPoolAsync, NULL);
   }
   return;
 }
 
-int dm__pool_submit_internal(in dm_pool_lane_et eLane, in dm_pool_work_fn pfWork,
-                             in dm_pool_after_fn pfAfter, in void *pvArg, in uint32 u32StatKey,
-                             in uint16 u16Depth, in uint64 u64TraceID)
+int dm__pool_submit_internal(dm_in dm_pool_lane_et eLane, dm_in dm_pool_work_fn pfWork,
+                             dm_in dm_pool_after_fn pfAfter, dm_in void *pvArg,
+                             dm_in uint32 u32StatKey, dm_in uint16 u16Depth,
+                             dm_in uint64 u64TraceID)
 {
   dm__pool_lane_st *pstLane = NULL;
   dm__pool_job_st *pstJob = NULL;
@@ -786,16 +787,16 @@ int dm__pool_submit_internal(in dm_pool_lane_et eLane, in dm_pool_work_fn pfWork
   pstJob->iStatus = DM_SUCCESS;
 
   pstLane = &g_astLane[eLane];
-  dm_mutex_lock(&pstLane->stLock);
+  dm_uv_mutex_lock(&pstLane->stLock);
   if (pstLane->bStopping)
   {
-    dm_mutex_unlock(&pstLane->stLock);
+    dm_uv_mutex_unlock(&pstLane->stLock);
     dm_free_tag(pstJob);
     return DM_SHUTTING_DOWN;
   }
   if (pstLane->u32Queued >= pstLane->stCfg.u32QueueCap)
   {
-    dm_mutex_unlock(&pstLane->stLock);
+    dm_uv_mutex_unlock(&pstLane->stLock);
     dm_free_tag(pstJob);
     return DM_BUSY;
   }
@@ -812,13 +813,13 @@ int dm__pool_submit_internal(in dm_pool_lane_et eLane, in dm_pool_work_fn pfWork
       /* 一条存活线程都没有且扩容失败：回退本次入队 */
       dm_list_del_node(&pstJob->stNode);
       pstLane->u32Queued--;
-      dm_mutex_unlock(&pstLane->stLock);
+      dm_uv_mutex_unlock(&pstLane->stLock);
       dm_free_tag(pstJob);
       return iErr;
     }
   }
-  dm_cond_signal(&pstLane->stCond);
-  dm_mutex_unlock(&pstLane->stLock);
+  dm_uv_cond_signal(&pstLane->stCond);
+  dm_uv_mutex_unlock(&pstLane->stLock);
 
   g_u32PoolInflight++;
   dm__pool_async_update_ref();
@@ -827,7 +828,7 @@ int dm__pool_submit_internal(in dm_pool_lane_et eLane, in dm_pool_work_fn pfWork
 
 /* ============================ 公共 API ============================ */
 
-int dm_pool_set_lane(in dm_pool_lane_et eLane, in const dm_pool_lane_cfg_st *pstCfg)
+int dm_pool_set_lane(dm_in dm_pool_lane_et eLane, dm_in const dm_pool_lane_cfg_st *pstCfg)
 {
   DM__CHECK_LOOP();
   if ((uint)eLane >= (uint)DM_LANE_MAX)
@@ -854,8 +855,8 @@ int dm_pool_set_lane(in dm_pool_lane_et eLane, in const dm_pool_lane_cfg_st *pst
   return DM_SUCCESS;
 }
 
-int dm_pool_submit(in dm_pool_lane_et eLane, in dm_pool_work_fn pfWork, in dm_pool_after_fn pfAfter,
-                   in void *pvArg)
+int dm_pool_submit(dm_in dm_pool_lane_et eLane, dm_in dm_pool_work_fn pfWork,
+                   dm_in dm_pool_after_fn pfAfter, dm_in void *pvArg)
 {
   uint16 u16Depth = 0;
   uint64 u64TraceID = 0;
@@ -864,7 +865,7 @@ int dm_pool_submit(in dm_pool_lane_et eLane, in dm_pool_work_fn pfWork, in dm_po
   return dm__pool_submit_internal(eLane, pfWork, pfAfter, pvArg, 0u, u16Depth, u64TraceID);
 }
 
-int dm_pool_stat(in dm_pool_lane_et eLane, out dm_pool_stat_st *pstOut)
+int dm_pool_stat(dm_in dm_pool_lane_et eLane, dm_out dm_pool_stat_st *pstOut)
 {
   dm__pool_lane_st *pstLane = NULL;
 
@@ -879,14 +880,14 @@ int dm_pool_stat(in dm_pool_lane_et eLane, out dm_pool_stat_st *pstOut)
     return DM_SUCCESS;
   }
   pstLane = &g_astLane[eLane];
-  dm_mutex_lock(&pstLane->stLock);
+  dm_uv_mutex_lock(&pstLane->stLock);
   pstOut->u16LiveThreads = pstLane->u16Live;
   pstOut->u16BusyThreads = pstLane->u16Busy;
   pstOut->u32Queued = pstLane->u32Queued;
   pstOut->u64DoneCount = pstLane->u64DoneCount;
   pstOut->u64WaitMaxNs = pstLane->u64WaitMaxNs;
   pstOut->u64RunMaxNs = pstLane->u64RunMaxNs;
-  dm_mutex_unlock(&pstLane->stLock);
+  dm_uv_mutex_unlock(&pstLane->stLock);
   return DM_SUCCESS;
 }
 

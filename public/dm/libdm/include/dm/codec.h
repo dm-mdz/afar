@@ -25,37 +25,37 @@ extern "C"
 #endif
 
 /* ---- 基本类型编码:value → 缓冲,返回写字节数(NULL 返回 0) ---- */
-uint dm_encode_uint8(in uint8 u8Value, out void *pvbuffer);
-uint dm_encode_int8(in int8 iValue, out void *pvbuffer);
-uint dm_encode_uint16(in uint16 u16Value, out void *pvbuffer);
-uint dm_encode_int16(in int16 i16Value, out void *pvbuffer);
-uint dm_encode_uint32(in uint32 u32Value, out void *pvbuffer);
-uint dm_encode_int32(in int32 i32Value, out void *pvbuffer);
-uint dm_encode_uint64(in uint64 u64Value, out void *pvbuffer);
-uint dm_encode_int64(in int64 i64Value, out void *pvbuffer);
-uint dm_encode_float(in float flValue, out void *pvbuffer);
-uint dm_encode_double(in double dValue, out void *pvbuffer);
-uint dm_encode_bool(in bool_t bValue, out void *pvbuffer);
-uint dm_encode_uchar(in uchar ucValue, out void *pvbuffer);
-uint dm_encode_char(in char cValue, out void *pvbuffer);
-uint dm_encode_string(in const char *pcStr, out void *pvbuffer); /* 含结尾 NUL */
+uint dm_encode_uint8(dm_in uint8 u8Value, dm_out void *pvbuffer);
+uint dm_encode_int8(dm_in int8 iValue, dm_out void *pvbuffer);
+uint dm_encode_uint16(dm_in uint16 u16Value, dm_out void *pvbuffer);
+uint dm_encode_int16(dm_in int16 i16Value, dm_out void *pvbuffer);
+uint dm_encode_uint32(dm_in uint32 u32Value, dm_out void *pvbuffer);
+uint dm_encode_int32(dm_in int32 i32Value, dm_out void *pvbuffer);
+uint dm_encode_uint64(dm_in uint64 u64Value, dm_out void *pvbuffer);
+uint dm_encode_int64(dm_in int64 i64Value, dm_out void *pvbuffer);
+uint dm_encode_float(dm_in float flValue, dm_out void *pvbuffer);
+uint dm_encode_double(dm_in double dValue, dm_out void *pvbuffer);
+uint dm_encode_bool(dm_in bool_t bValue, dm_out void *pvbuffer);
+uint dm_encode_uchar(dm_in uchar ucValue, dm_out void *pvbuffer);
+uint dm_encode_char(dm_in char cValue, dm_out void *pvbuffer);
+uint dm_encode_string(dm_in const char *pcStr, dm_out void *pvbuffer); /* 含结尾 NUL */
 
 /* ---- 基本类型解码:缓冲 → 值,返回读字节数(NULL 返回 0) ---- */
-uint dm_decode_uint8(in const void *pvbuffer, out uint8 *pu8Value);
-uint dm_decode_int8(in const void *pvbuffer, out int8 *piValue);
-uint dm_decode_uint16(in const void *pvbuffer, out uint16 *pu16Value);
-uint dm_decode_int16(in const void *pvbuffer, out int16 *pi16Value);
-uint dm_decode_uint32(in const void *pvbuffer, out uint32 *pu32Value);
-uint dm_decode_int32(in const void *pvbuffer, out int32 *pi32Value);
-uint dm_decode_uint64(in const void *pvbuffer, out uint64 *pu64Value);
-uint dm_decode_int64(in const void *pvbuffer, out int64 *pi64Value);
-uint dm_decode_float(in const void *pvbuffer, out float *pflValue);
-uint dm_decode_double(in const void *pvbuffer, out double *pdValue);
-uint dm_decode_bool(in const void *pvbuffer, out bool_t *pbValue);
-uint dm_decode_uchar(in const void *pvbuffer, out uchar *pucValue);
-uint dm_decode_char(in const void *pvbuffer, out char *pcValue);
-uint dm_decode_string(in const void *pvbuffer,
-                      out const char **ppcStr); /* 读至 NUL,返回含 NUL 字节数 */
+uint dm_decode_uint8(dm_in const void *pvbuffer, dm_out uint8 *pu8Value);
+uint dm_decode_int8(dm_in const void *pvbuffer, dm_out int8 *piValue);
+uint dm_decode_uint16(dm_in const void *pvbuffer, dm_out uint16 *pu16Value);
+uint dm_decode_int16(dm_in const void *pvbuffer, dm_out int16 *pi16Value);
+uint dm_decode_uint32(dm_in const void *pvbuffer, dm_out uint32 *pu32Value);
+uint dm_decode_int32(dm_in const void *pvbuffer, dm_out int32 *pi32Value);
+uint dm_decode_uint64(dm_in const void *pvbuffer, dm_out uint64 *pu64Value);
+uint dm_decode_int64(dm_in const void *pvbuffer, dm_out int64 *pi64Value);
+uint dm_decode_float(dm_in const void *pvbuffer, dm_out float *pflValue);
+uint dm_decode_double(dm_in const void *pvbuffer, dm_out double *pdValue);
+uint dm_decode_bool(dm_in const void *pvbuffer, dm_out bool_t *pbValue);
+uint dm_decode_uchar(dm_in const void *pvbuffer, dm_out uchar *pucValue);
+uint dm_decode_char(dm_in const void *pvbuffer, dm_out char *pcValue);
+uint dm_decode_string(dm_in const void *pvbuffer,
+                      dm_out const char **ppcStr); /* 读至 NUL,返回含 NUL 字节数 */
 
 /* ---- 结构体封解函数数组(按编解码方案枚举做下标) ---- */
 /* 编解码方案列表宏:单一来源,同时生成枚举值、名称字符串表与"名称→方案"查找。 */
@@ -82,8 +82,9 @@ typedef enum dm_codec_schema
 
 /* 结构体封解回调:encode 把 pucData 封进 pvbuffer;decode 从 pvbuffer 解出 pucData。
  * 返回封解字节数或错误码;由业务实现,经方案注册挂接。 */
-typedef int (*dm_encode_cb)(in uchar *pucData, in uint uiDataLen, out void *pvbuffer);
-typedef int (*dm_decode_cb)(in const void *pvbuffer, in uint uiBufferLen, out uchar *pucData);
+typedef int (*dm_encode_cb)(dm_in uchar *pucData, dm_in uint uiDataLen, dm_out void *pvbuffer);
+typedef int (*dm_decode_cb)(dm_in const void *pvbuffer, dm_in uint uiBufferLen,
+                            dm_out uchar *pucData);
 
 typedef struct dm_codec_fn
 {
@@ -93,14 +94,15 @@ typedef struct dm_codec_fn
 
 /* 按名字注册一个方案的封解函数(可覆盖;传 NULL 表示该方向不注册)。
  * 名字未命中(不在方案表)返回 DM_INVALID。 */
-int dm_codec_register(in const char *pcName, in dm_encode_cb pfEncode, in dm_decode_cb pfDecode);
+int dm_codec_register(dm_in const char *pcName, dm_in dm_encode_cb pfEncode,
+                      dm_in dm_decode_cb pfDecode);
 
 /* 按名字封/解结构体:自动调用该方案注册的封解函数;
  * 名字未命中返回 DM_INVALID;该方向未注册返回 DM_NOT_FOUND。 */
-int dm_codec_encode(in const char *pcName, in uchar *pucData, in uint uiDataLen,
-                    out void *pvbuffer);
-int dm_codec_decode(in const char *pcName, in const void *pvbuffer, in uint uiBufferLen,
-                    out uchar *pucData);
+int dm_codec_encode(dm_in const char *pcName, dm_in uchar *pucData, dm_in uint uiDataLen,
+                    dm_out void *pvbuffer);
+int dm_codec_decode(dm_in const char *pcName, dm_in const void *pvbuffer, dm_in uint uiBufferLen,
+                    dm_out uchar *pucData);
 
 #ifdef __cplusplus
 }

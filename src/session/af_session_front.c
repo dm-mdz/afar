@@ -12,7 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 
-void af_front_start(out af_front_st *pstF, in const char *pcName, in uint64 u64NowMs)
+void af_front_start(dm_out af_front_st *pstF, dm_in const char *pcName, dm_in uint64 u64NowMs)
 {
   if (NULL == pstF)
   {
@@ -29,8 +29,8 @@ void af_front_start(out af_front_st *pstF, in const char *pcName, in uint64 u64N
   pstF->u64UntilMs = u64NowMs + (uint64)AF_FRONT_TIMEOUT_MS;
 }
 
-af_front_act_et af_front_step(io af_front_st *pstF, in uint64 u64NowMs, in bool_t bConnected,
-                              in bool_t bAvailable)
+af_front_act_et af_front_step(dm_io af_front_st *pstF, dm_in uint64 u64NowMs,
+                              dm_in bool_t bConnected, dm_in bool_t bAvailable)
 {
   if ((NULL == pstF) || (!pstF->bActive))
   {
@@ -80,7 +80,7 @@ af_front_act_et af_front_step(io af_front_st *pstF, in uint64 u64NowMs, in bool_
   return AF_FRONT_WAIT;
 }
 
-static size_t af__utf8_seq_len(in unsigned char ucLead)
+static size_t af__utf8_seq_len(dm_in unsigned char ucLead)
 {
   if (ucLead < 0x80u)
   {
@@ -101,8 +101,8 @@ static size_t af__utf8_seq_len(in unsigned char ucLead)
   return 0u;
 }
 
-size_t af_session_trunc_utf8_bytes(in const char *pcSrc, out char *pcDst, in size_t uDstCap,
-                                   in size_t uMaxBytes)
+size_t af_session_trunc_utf8_bytes(dm_in const char *pcSrc, dm_out char *pcDst,
+                                   dm_in size_t uDstCap, dm_in size_t uMaxBytes)
 {
   size_t uSrcLen = 0u;
   size_t uLimit = 0u;

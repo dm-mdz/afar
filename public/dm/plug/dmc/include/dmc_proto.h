@@ -59,59 +59,80 @@ typedef struct dmc_push
 typedef struct dmc_host
 {
   /* 发一帧：16 字节帧头 + 负载（可为空）。返回 0 成功；非 0 视作发送失败 */
-  int (*pfSend)(in void *pvUser, in const uint8 *pu8Head, in const void *pvBody, in uint32 u32Len);
+  int (*pfSend)(dm_in void *pvUser, dm_in const uint8 *pu8Head, dm_in const void *pvBody,
+                dm_in uint32 u32Len);
   /* 收到推送；NULL = 忽略 */
-  void (*pfOnPush)(in void *pvUser, in const dmc_push_st *pstPush);
+  void (*pfOnPush)(dm_in void *pvUser, dm_in const dmc_push_st *pstPush);
   /* 核心反向调用；NULL = 自动回复 DM_NOT_FOUND */
-  void (*pfOnCall)(in void *pvUser, in uint16 u16Func, in uint32 u32ReqID, in const uint8 *pu8Body,
-                   in uint32 u32Len);
+  void (*pfOnCall)(dm_in void *pvUser, dm_in uint16 u16Func, dm_in uint32 u32ReqID,
+                   dm_in const uint8 *pu8Body, dm_in uint32 u32Len);
   /* 收到坏帧回调；到下次 dmc_on_connected 前后续字节丢弃；可 NULL */
-  void (*pfOnWireError)(in void *pvUser, in int iErr);
+  void (*pfOnWireError)(dm_in void *pvUser, dm_in int iErr);
   /* 可选内存分配钩子（嵌入式零堆碎片）：pfAlloc 非 NULL 时 pfFree 必填，pfRealloc 可 NULL */
-  void *(*pfAlloc)(in void *pvUser, in size_t uSize);
-  void *(*pfRealloc)(in void *pvUser, io void *pvPtr, in size_t uSize);
-  void (*pfFree)(in void *pvUser, io void *pvPtr);
+  void *(*pfAlloc)(dm_in void *pvUser, dm_in size_t uSize);
+  void *(*pfRealloc)(dm_in void *pvUser, dm_io void *pvPtr, dm_in size_t uSize);
+  void (*pfFree)(dm_in void *pvUser, dm_io void *pvPtr);
   void *pvUser;       /* 原样透传给全部宿主回调 */
   uint32 u32FrameMax; /* 单帧负载上限；0 = DM_FRAME_MAX_DEFAULT */
 } dmc_host_st;
 
 /* 应答回调：iStatus 为核心返回值或 DMC_ERR_*；每个请求最多回调一次 */
-typedef void (*dmc_reply_cb)(in void *pvArg, in int iStatus, in uint8 u8Flag,
-                             in const uint8 *pu8Body, in uint32 u32Len);
+typedef void (*dmc_reply_cb)(dm_in void *pvArg, dm_in int iStatus, dm_in uint8 u8Flag,
+                             dm_in const uint8 *pu8Body, dm_in uint32 u32Len);
 
 /* 错误码转人类可读文本（永不返回 NULL） */
-DMC_API const char *dmc_err_str(in int iErr);
+DMC_API const char *dmc_err_str(dm_in int iErr);
 
 /* 创建与销毁：pfSend 必填；若提供 pfAlloc 则 pfFree 亦必填 */
-DMC_API dmc_st *dmc_new(in const dmc_host_st *pstHost);
-DMC_API void dmc_free(io dmc_st *pstDmc);
+DMC_API dmc_st *dmc_new(dm_in const dmc_host_st *pstHost);
+DMC_API void dmc_free(dm_io dmc_st *pstDmc);
 
 /* 连接生命周期通知 */
-DMC_API void dmc_on_connected(io dmc_st *pstDmc);
-DMC_API void dmc_on_disconnected(io dmc_st *pstDmc);
-DMC_API bool_t dmc_connected(in const dmc_st *pstDmc);
+DMC_API void dmc_on_connected(dm_io dmc_st *pstDmc);
+DMC_API void dmc_on_disconnected(dm_io dmc_st *pstDmc);
+DMC_API bool_t dmc_connected(dm_in const dmc_st *pstDmc);
 
 /* 喂入收到的字节流，返回消费字节数 */
-DMC_API size_t dmc_feed(io dmc_st *pstDmc, in const void *pvData, in size_t uLen);
+DMC_API size_t dmc_feed(dm_io dmc_st *pstDmc, dm_in const void *pvData, dm_in size_t uLen);
+
+/* 发起请求参数（零初始化友好） */
+typedef struct dmc_req_opt
+{
+  uint16 u16LinkID;     /* 目标接口 linkID */
+  uint8 u8Flag;         /* 帧标志（如 DM_FRAME_F_JSON / DM_FRAME_F_SENSITIVE） */
+  const void *pvBody;   /* 请求体（可 NULL） */
+  uint32 u32Len;        /* 请求体字节数 */
+  dmc_reply_cb pfReply; /* 应答回调（可 NULL） */
+  void *pvArg;          /* 回调透传上下文 */
+} dmc_req_opt_st;
 
 /* 发送请求（占 1 个在途槽）；非 DMC_OK 不触发 pfReply */
-DMC_API int dmc_request(io dmc_st *pstDmc, in uint16 u16LinkID, in uint8 u8Flag,
-                        in const void *pvBody, in uint32 u32Len, in dmc_reply_cb pfReply,
-                        in void *pvArg, out uint32 *pu32ReqID);
+DMC_API int dmc_request(dm_io dmc_st *pstDmc, dm_in const dmc_req_opt_st *pstReq,
+                        dm_out uint32 *pu32ReqID);
 
 /* 发送单向通知（reqID = 0，不占 64 在途槽，适合高频遥测/心跳） */
-DMC_API int dmc_notify(io dmc_st *pstDmc, in uint16 u16LinkID, in uint8 u8Flag,
-                       in const void *pvBody, in uint32 u32Len);
+DMC_API int dmc_notify(dm_io dmc_st *pstDmc, dm_in uint16 u16LinkID, dm_in uint8 u8Flag,
+                       dm_in const void *pvBody, dm_in uint32 u32Len);
 
 /* 取消在途请求并以 iStatus 立即回调一次 */
-DMC_API int dmc_cancel(io dmc_st *pstDmc, in uint32 u32ReqID, in int iStatus);
+DMC_API int dmc_cancel(dm_io dmc_st *pstDmc, dm_in uint32 u32ReqID, dm_in int iStatus);
+
+/* 回复反向调用参数（零初始化友好） */
+typedef struct dmc_ans_opt
+{
+  uint16 u16Func;     /* 反向调用功能号 */
+  uint32 u32ReqID;    /* 对应请求号（非 0） */
+  int32 i32Status;    /* 状态码 */
+  uint8 u8Flag;       /* 帧标志 */
+  const void *pvBody; /* 应答体（可 NULL） */
+  uint32 u32Len;      /* 应答体字节数 */
+} dmc_ans_opt_st;
 
 /* 回复核心的反向调用 */
-DMC_API int dmc_answer(io dmc_st *pstDmc, in uint16 u16Func, in uint32 u32ReqID, in int32 i32Status,
-                       in uint8 u8Flag, in const void *pvBody, in uint32 u32Len);
+DMC_API int dmc_answer(dm_io dmc_st *pstDmc, dm_in const dmc_ans_opt_st *pstAns);
 
 /* 当前在途请求数 */
-DMC_API uint32 dmc_inflight(in const dmc_st *pstDmc);
+DMC_API uint32 dmc_inflight(dm_in const dmc_st *pstDmc);
 
 #ifdef __cplusplus
 }

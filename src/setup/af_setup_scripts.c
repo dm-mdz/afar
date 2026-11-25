@@ -15,7 +15,7 @@
 #include <string.h>
 #include <time.h>
 
-uint32 af_setup_calc_todo(in const af_setup_view_st *pstV)
+uint32 af_setup_calc_todo(dm_in const af_setup_view_st *pstV)
 {
   uint32 u32Todo = 0u;
 
@@ -23,22 +23,48 @@ uint32 af_setup_calc_todo(in const af_setup_view_st *pstV)
   {
     return 0u;
   }
-  if (!pstV->bAgent) { u32Todo++; }
-  if (!pstV->bFw) { u32Todo++; }
-  if (!pstV->bPower) { u32Todo++; }
+  if (!pstV->bAgent)
+  {
+    u32Todo++;
+  }
+  if (!pstV->bFw)
+  {
+    u32Todo++;
+  }
+  if (!pstV->bPower)
+  {
+    u32Todo++;
+  }
+  if (!pstV->bPermSc)
+  {
+    u32Todo++;
+  }
+  if (!pstV->bPermAx)
+  {
+    u32Todo++;
+  }
   if (0 == strcmp(pstV->acPlan, "fv"))
   {
-    if (!pstV->bRemoteLogin) { u32Todo++; }
+    if (!pstV->bRemoteLogin)
+    {
+      u32Todo++;
+    }
   }
   else
   {
-    if (pstV->bFileVault) { u32Todo++; }
-    if (!pstV->bAutoLogin) { u32Todo++; }
+    if (pstV->bFileVault)
+    {
+      u32Todo++;
+    }
+    if (!pstV->bAutoLogin)
+    {
+      u32Todo++;
+    }
   }
   return u32Todo;
 }
 
-int af_setup_sh_quote(in const char *pcStr, out char *pcBuf, in size_t uCap)
+int af_setup_sh_quote(dm_in const char *pcStr, dm_out char *pcBuf, dm_in size_t uCap)
 {
   size_t uPos = 0u;
   const char *pcP = NULL;
@@ -79,7 +105,7 @@ int af_setup_sh_quote(in const char *pcStr, out char *pcBuf, in size_t uCap)
   return DM_SUCCESS;
 }
 
-int af_setup_applescript_str(in const char *pcStr, out char *pcBuf, in size_t uCap)
+int af_setup_applescript_str(dm_in const char *pcStr, dm_out char *pcBuf, dm_in size_t uCap)
 {
   size_t uPos = 0u;
   const char *pcP = NULL;
@@ -92,20 +118,41 @@ int af_setup_applescript_str(in const char *pcStr, out char *pcBuf, in size_t uC
   for (pcP = pcStr; '\0' != *pcP; pcP++)
   {
     char cEsc = '\0';
-    if ('\\' == *pcP) { cEsc = '\\'; }
-    else if ('"' == *pcP) { cEsc = '"'; }
-    else if ('\n' == *pcP) { cEsc = 'n'; }
-    else if ('\r' == *pcP) { cEsc = 'r'; }
-    else if ('\t' == *pcP) { cEsc = 't'; }
+    if ('\\' == *pcP)
+    {
+      cEsc = '\\';
+    }
+    else if ('"' == *pcP)
+    {
+      cEsc = '"';
+    }
+    else if ('\n' == *pcP)
+    {
+      cEsc = 'n';
+    }
+    else if ('\r' == *pcP)
+    {
+      cEsc = 'r';
+    }
+    else if ('\t' == *pcP)
+    {
+      cEsc = 't';
+    }
     if ('\0' != cEsc)
     {
-      if ((uPos + 2u) >= uCap) { return DM_TOO_BIG; }
+      if ((uPos + 2u) >= uCap)
+      {
+        return DM_TOO_BIG;
+      }
       pcBuf[uPos++] = '\\';
       pcBuf[uPos++] = cEsc;
     }
     else
     {
-      if ((uPos + 1u) >= uCap) { return DM_TOO_BIG; }
+      if ((uPos + 1u) >= uCap)
+      {
+        return DM_TOO_BIG;
+      }
       pcBuf[uPos++] = *pcP;
     }
   }
@@ -118,7 +165,7 @@ int af_setup_applescript_str(in const char *pcStr, out char *pcBuf, in size_t uC
   return DM_SUCCESS;
 }
 
-int af_setup_build_one_script(in const char *pcExePath, out char *pcBuf, in size_t uCap)
+int af_setup_build_one_script(dm_in const char *pcExePath, dm_out char *pcBuf, dm_in size_t uCap)
 {
   char acQuoted[1536];
   int iN = 0;
@@ -151,7 +198,7 @@ int af_setup_build_one_script(in const char *pcExePath, out char *pcBuf, in size
   return DM_SUCCESS;
 }
 
-int af_setup_build_ssh_script(out char *pcBuf, in size_t uCap)
+int af_setup_build_ssh_script(dm_out char *pcBuf, dm_in size_t uCap)
 {
   static const char acScript[] =
       "/bin/launchctl enable system/com.openssh.sshd\n"
@@ -174,7 +221,7 @@ int af_setup_build_ssh_script(out char *pcBuf, in size_t uCap)
   return DM_SUCCESS;
 }
 
-bool_t af_setup_parse_fail(in const char *pcOut, out char *pcErrOut, in size_t uErrCap)
+bool_t af_setup_parse_fail(dm_in const char *pcOut, dm_out char *pcErrOut, dm_in size_t uErrCap)
 {
   const char *pcTag = NULL;
   const char *pcStart = NULL;
@@ -225,7 +272,7 @@ bool_t af_setup_parse_fail(in const char *pcOut, out char *pcErrOut, in size_t u
   return DM_TRUE;
 }
 
-const char *af_setup_settings_url(in const char *pcWhat)
+const char *af_setup_settings_url(dm_in const char *pcWhat)
 {
   static const struct
   {
@@ -240,8 +287,11 @@ const char *af_setup_settings_url(in const char *pcWhat)
       {"users", "x-apple.systempreferences:com.apple.Users-Groups-Settings.extension"},
       {"sharing", "x-apple.systempreferences:com.apple.Sharing-Settings.extension"},
       {"energy", "x-apple.systempreferences:com.apple.preference.energysaver"},
-      {"firewall", "x-apple.systempreferences:com.apple.Network-Settings.extension?Firewall"}
-  };
+      {"firewall", "x-apple.systempreferences:com.apple.Network-Settings.extension?Firewall"},
+      {"screen_capture",
+       "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"},
+      {"accessibility",
+       "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"}};
   size_t i = 0u;
 
   if (NULL == pcWhat)
@@ -258,7 +308,8 @@ const char *af_setup_settings_url(in const char *pcWhat)
   return NULL;
 }
 
-void af_setup_format_date(in uint64 u64EpochSec, in int iCurYear, out char *pcBuf, in size_t uCap)
+void af_setup_format_date(dm_in uint64 u64EpochSec, dm_in int iCurYear, dm_out char *pcBuf,
+                          dm_in size_t uCap)
 {
   time_t tVal = (time_t)u64EpochSec;
   struct tm stTm;

@@ -64,7 +64,7 @@ typedef struct dmcmd__watch_ctx
   bool_t bJson;
 } dmcmd__watch_ctx_st;
 
-static void dmcmd__watch_on_push(in void *pvUser, in const dmc_push_st *pstPush)
+static void dmcmd__watch_on_push(dm_in void *pvUser, dm_in const dmc_push_st *pstPush)
 {
   dmcmd__watch_ctx_st *pstCtx = (dmcmd__watch_ctx_st *)pvUser;
   if ((0u != pstCtx->u32WantCount) && (pstCtx->u32GotCount >= pstCtx->u32WantCount))
@@ -126,7 +126,7 @@ static void dmcmd__watch_on_push(in void *pvUser, in const dmc_push_st *pstPush)
   return;
 }
 
-int dmcmd_cmd_watch(io dmcmd_opt_st *pstOpt, in int iArgc, in char **ppcArgv)
+int dmcmd_cmd_watch(dm_io dmcmd_opt_st *pstOpt, dm_in int iArgc, dm_in char **ppcArgv)
 {
   const char *apcTopics[33];
   char acTopicBuf[512];

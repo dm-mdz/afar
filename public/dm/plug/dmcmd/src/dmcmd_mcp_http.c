@@ -23,12 +23,12 @@ extern "C"
 
 #define DMCMD__MCP_HEAD_MAX (64u * 1024u)
 
-static unsigned char dmcmd__mcp_lower(in unsigned char u8Ch)
+static unsigned char dmcmd__mcp_lower(dm_in unsigned char u8Ch)
 {
   return ((u8Ch >= 'A') && (u8Ch <= 'Z')) ? (unsigned char)(u8Ch - 'A' + 'a') : u8Ch;
 }
 
-static bool_t dmcmd__mcp_strcasestr(in const char *pcHay, in const char *pcNeedle)
+static bool_t dmcmd__mcp_strcasestr(dm_in const char *pcHay, dm_in const char *pcNeedle)
 {
   size_t uN = 0u;
   const char *pc = pcHay;
@@ -60,7 +60,7 @@ static bool_t dmcmd__mcp_strcasestr(in const char *pcHay, in const char *pcNeedl
 
 /* ============================ HTTP 头解析（FIX-04 / FIX-08） ============================ */
 
-static int dmcmd__mcp_parse_status(in const char *pcHead, in size_t uHeadLen)
+static int dmcmd__mcp_parse_status(dm_in const char *pcHead, dm_in size_t uHeadLen)
 {
   const char *pcCrlf = NULL;
   size_t uLineLen = 0u;
@@ -87,8 +87,8 @@ static int dmcmd__mcp_parse_status(in const char *pcHead, in size_t uHeadLen)
   return iCode;
 }
 
-static bool_t dmcmd__mcp_get_header(in const char *pcHead, in const char *pcName, out char *pcVal,
-                                    in size_t uValCap)
+static bool_t dmcmd__mcp_get_header(dm_in const char *pcHead, dm_in const char *pcName,
+                                    dm_out char *pcVal, dm_in size_t uValCap)
 {
   size_t uName = strlen(pcName);
   const char *pc = strstr(pcHead, "\r\n");
@@ -128,7 +128,7 @@ static bool_t dmcmd__mcp_get_header(in const char *pcHead, in const char *pcName
   return DM_FALSE;
 }
 
-static bool_t dmcmd__mcp_parse_cl(in const char *pcVal, out size_t *puOut)
+static bool_t dmcmd__mcp_parse_cl(dm_in const char *pcVal, dm_out size_t *puOut)
 {
   unsigned long long ullVal = 0ull;
   char *pcEnd = NULL;
@@ -151,8 +151,8 @@ static bool_t dmcmd__mcp_parse_cl(in const char *pcVal, out size_t *puOut)
   return DM_TRUE;
 }
 
-static bool_t dmcmd__buf_append(io char **ppcBuf, io size_t *puLen, io size_t *puCap,
-                                in const char *pcData, in size_t uAdd, in size_t uMax)
+static bool_t dmcmd__buf_append(dm_io char **ppcBuf, dm_io size_t *puLen, dm_io size_t *puCap,
+                                dm_in const char *pcData, dm_in size_t uAdd, dm_in size_t uMax)
 {
   if ((uAdd > uMax) || (*puLen > uMax - uAdd))
   {
@@ -198,7 +198,7 @@ typedef struct dmcmd__sse_state
   bool_t bError;
 } dmcmd__sse_state_st;
 
-static void dmcmd__sse_flush_event(io dmcmd__sse_state_st *pstSse)
+static void dmcmd__sse_flush_event(dm_io dmcmd__sse_state_st *pstSse)
 {
   if (pstSse->uEventLen > 0u)
   {
@@ -209,7 +209,7 @@ static void dmcmd__sse_flush_event(io dmcmd__sse_state_st *pstSse)
   return;
 }
 
-static void dmcmd__sse_on_line(io dmcmd__sse_state_st *pstSse)
+static void dmcmd__sse_on_line(dm_io dmcmd__sse_state_st *pstSse)
 {
   char *pcLine = pstSse->pcLine;
   size_t uLen = pstSse->uLineLen;
@@ -261,7 +261,8 @@ static void dmcmd__sse_on_line(io dmcmd__sse_state_st *pstSse)
   return;
 }
 
-static void dmcmd__sse_feed(io dmcmd__sse_state_st *pstSse, in const char *pcData, in size_t uLen)
+static void dmcmd__sse_feed(dm_io dmcmd__sse_state_st *pstSse, dm_in const char *pcData,
+                            dm_in size_t uLen)
 {
   size_t uIdx = 0u;
   for (uIdx = 0u; !pstSse->bError && (uIdx < uLen); uIdx++)
@@ -289,7 +290,7 @@ typedef struct dmcmd__chunk_dec
   bool_t bInExt;
 } dmcmd__chunk_dec_st;
 
-static bool_t dmcmd__parse_chunk_hex(in const char *pcLine, out size_t *puOut)
+static bool_t dmcmd__parse_chunk_hex(dm_in const char *pcLine, dm_out size_t *puOut)
 {
   const unsigned char *pu8 = (const unsigned char *)pcLine;
   unsigned long long ullVal = 0ull;
@@ -323,9 +324,10 @@ static bool_t dmcmd__parse_chunk_hex(in const char *pcLine, out size_t *puOut)
   return DM_TRUE;
 }
 
-static bool_t dmcmd__chunk_feed(io dmcmd__chunk_dec_st *pstDec, in const char *pcIn, in size_t uLen,
-                                in void (*pfEmit)(io void *pvUser, in const char *pc, in size_t u),
-                                io void *pvUser)
+static bool_t
+dmcmd__chunk_feed(dm_io dmcmd__chunk_dec_st *pstDec, dm_in const char *pcIn, dm_in size_t uLen,
+                  dm_in void (*pfEmit)(dm_io void *pvUser, dm_in const char *pc, dm_in size_t u),
+                  dm_io void *pvUser)
 {
   size_t uIdx = 0u;
   while ((uIdx < uLen) && (pstDec->iState >= 0) && (3 != pstDec->iState))
@@ -426,7 +428,7 @@ typedef struct dmcmd__body_acc
   bool_t bTooBig;
 } dmcmd__body_acc_st;
 
-static void dmcmd__acc_emit(io void *pvUser, in const char *pcData, in size_t uLen)
+static void dmcmd__acc_emit(dm_io void *pvUser, dm_in const char *pcData, dm_in size_t uLen)
 {
   dmcmd__body_acc_st *pstAcc = (dmcmd__body_acc_st *)pvUser;
   if (!pstAcc->bTooBig && !dmcmd__buf_append(&pstAcc->pcBuf, &pstAcc->uLen, &pstAcc->uCap, pcData,
@@ -437,7 +439,7 @@ static void dmcmd__acc_emit(io void *pvUser, in const char *pcData, in size_t uL
   return;
 }
 
-static void dmcmd__sse_emit(io void *pvUser, in const char *pcData, in size_t uLen)
+static void dmcmd__sse_emit(dm_io void *pvUser, dm_in const char *pcData, dm_in size_t uLen)
 {
   dmcmd__sse_feed((dmcmd__sse_state_st *)pvUser, pcData, uLen);
   return;
@@ -445,10 +447,11 @@ static void dmcmd__sse_emit(io void *pvUser, in const char *pcData, in size_t uL
 
 /* ============================ 单请求 HTTP/SSE 处理 ============================ */
 
-static void dmcmd__mcp_handle_sse(io dmcmd_mcp_ctx_st *pstCtx, in dmcmd_mcp_sock_t iSock,
-                                  in int iStatus, in bool_t bChunked, in bool_t bHasCl,
-                                  in size_t uWantCl, in const char *pcInit, in size_t uInitLen,
-                                  in int iIdleMs, in const char *pcReq, in size_t uReqLen)
+static void dmcmd__mcp_handle_sse(dm_io dmcmd_mcp_ctx_st *pstCtx, dm_in dmcmd_mcp_sock_t iSock,
+                                  dm_in int iStatus, dm_in bool_t bChunked, dm_in bool_t bHasCl,
+                                  dm_in size_t uWantCl, dm_in const char *pcInit,
+                                  dm_in size_t uInitLen, dm_in int iIdleMs, dm_in const char *pcReq,
+                                  dm_in size_t uReqLen)
 {
   dmcmd__sse_state_st stSse;
   dmcmd__chunk_dec_st stDec;
@@ -531,10 +534,11 @@ static void dmcmd__mcp_handle_sse(io dmcmd_mcp_ctx_st *pstCtx, in dmcmd_mcp_sock
   return;
 }
 
-static void dmcmd__mcp_handle_body(io dmcmd_mcp_ctx_st *pstCtx, in dmcmd_mcp_sock_t iSock,
-                                   in int iStatus, in bool_t bChunked, in bool_t bHasCl,
-                                   in size_t uWantCl, in const char *pcInit, in size_t uInitLen,
-                                   in int iIdleMs, in const char *pcReq, in size_t uReqLen)
+static void dmcmd__mcp_handle_body(dm_io dmcmd_mcp_ctx_st *pstCtx, dm_in dmcmd_mcp_sock_t iSock,
+                                   dm_in int iStatus, dm_in bool_t bChunked, dm_in bool_t bHasCl,
+                                   dm_in size_t uWantCl, dm_in const char *pcInit,
+                                   dm_in size_t uInitLen, dm_in int iIdleMs,
+                                   dm_in const char *pcReq, dm_in size_t uReqLen)
 {
   dmcmd__body_acc_st stAcc;
   dmcmd__chunk_dec_st stDec;
@@ -631,7 +635,8 @@ static void dmcmd__mcp_handle_body(io dmcmd_mcp_ctx_st *pstCtx, in dmcmd_mcp_soc
   return;
 }
 
-void dmcmd_mcp_handle_one(io dmcmd_mcp_ctx_st *pstCtx, in const char *pcReq, in size_t uReqLen)
+void dmcmd_mcp_handle_one(dm_io dmcmd_mcp_ctx_st *pstCtx, dm_in const char *pcReq,
+                          dm_in size_t uReqLen)
 {
   dmcmd_mcp_sock_t iSock = DMCMD_MCP_SOCK_BAD;
   char acReqHead[4096];

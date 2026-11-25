@@ -17,7 +17,7 @@ extern "C"
 {
 #endif
 
-#define AF_IPAD_MAP_MAX    16u
+#define AF_IPAD_MAP_MAX 16u
 #define AF_DISP_MODES_SAVE 16u
 
 typedef struct af_config
@@ -90,17 +90,17 @@ typedef struct af_state
   bool_t bAntiUnplug;
 } af_state_st;
 
-int af_store_load(in const char *pcDataDir);
-int af_store_save_sync(in const char *pcDataDir);
+int af_store_load(dm_in const char *pcDataDir);
+int af_store_save_sync(dm_in const char *pcDataDir);
 const af_config_st *af_store_cfg(void);
 af_config_st *af_store_cfg_mut(void);
 af_state_st *af_store_state_mut(void);
 const af_state_st *af_store_state(void);
-int af_store_write_atomic(in const char *pcPath, in const void *pvData, in size_t uLen);
+int af_store_write_atomic(dm_in const char *pcPath, dm_in const void *pvData, dm_in size_t uLen);
 
-typedef void (*af_store_saved_cb)(in int iStatus, io void *pvCtx);
-int af_store_save_async(in af_store_saved_cb pfOnDone, io void *pvCtx);
-int af_store_save_cfg_async(in af_store_saved_cb pfOnDone, io void *pvCtx);
+typedef void (*af_store_saved_cb)(dm_in int iStatus, dm_io void *pvCtx);
+int af_store_save_async(dm_in af_store_saved_cb pfOnDone, dm_io void *pvCtx);
+int af_store_save_cfg_async(dm_in af_store_saved_cb pfOnDone, dm_io void *pvCtx);
 
 #ifdef __cplusplus
 }

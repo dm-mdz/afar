@@ -22,24 +22,27 @@ extern "C"
 /* 平台操作注入表（用于 L1/L2 无宿主机污染测试；NULL 成员默认回退真实 af_plat_*） */
 typedef struct af_power_ops
 {
-  int (*pfPowerHold)(in bool_t bHold);
-  int (*pfSsGet)(out int *piSec, out bool_t *pbExists);
-  int (*pfSsSet)(in int iSec);
+  int (*pfPowerHold)(dm_in bool_t bHold);
+  int (*pfSsGet)(dm_out int *piSec, dm_out bool_t *pbExists);
+  int (*pfSsSet)(dm_in int iSec);
   int (*pfSsDelete)(void);
 } af_power_ops_st;
 
 extern const dm_module_st g_stAfPowerMod;
 const dm_module_st *af_power_module(void);
 
-/* 纯 C 判定公式（Q8）：无实体屏或随航显示中即需保活 */
-bool_t af_power_should_hold(in uint32 u32PhysCount, in af_sc_state_et eScState);
+/* 纯 C 判定公式（Q8 + v0.6 直连保活）：无实体屏、随航显示中或日常直连中即需保活 */
+bool_t af_power_should_hold_ex(dm_in uint32 u32PhysCount, dm_in af_sc_state_et eScState,
+                               dm_in bool_t bDirectStreaming);
+bool_t af_power_should_hold(dm_in uint32 u32PhysCount, dm_in af_sc_state_et eScState);
 
-/* 退出 pfDrain 与离线 afar-agent uninstall 共用的屏保恢复函数（幂等，读写 af_store_state()->stOrigSs） */
-void af_power_restore_screensaver(io af_orig_ss_st *pstOrig, in bool_t bSyncSave,
-                                  in const char *pcDataDir);
+/* 退出 pfDrain 与离线 afar-agent uninstall 共用的屏保恢复函数（幂等，读写
+ * af_store_state()->stOrigSs） */
+void af_power_restore_screensaver(dm_io af_orig_ss_st *pstOrig, dm_in bool_t bSyncSave,
+                                  dm_in const char *pcDataDir);
 
 /* 测试注入与状态查询接口 */
-void af_power_set_ops(in const af_power_ops_st *pstOps);
+void af_power_set_ops(dm_in const af_power_ops_st *pstOps);
 bool_t af_power_is_holding(void);
 
 #ifdef __cplusplus

@@ -71,7 +71,7 @@ static af__setup_ctx_st g_stSetup = {.iDrainHold = -1};
 
 /* ============================ 辅助与 View 序列化 ============================ */
 
-static void af__resolve_exe(out char *pcBuf, in size_t uCap)
+static void af__resolve_exe(dm_out char *pcBuf, dm_in size_t uCap)
 {
   char acRaw[PATH_MAX];
   char acReal[PATH_MAX];
@@ -90,7 +90,7 @@ static void af__resolve_exe(out char *pcBuf, in size_t uCap)
   snprintf(pcBuf, uCap, "/Applications/Afar.app/Contents/MacOS/afar-agent");
 }
 
-static void af__fill_view_devices(out af_setup_view_st *pstV, in const af_sc_snap_st *pstSc)
+static void af__fill_view_devices(dm_out af_setup_view_st *pstV, dm_in const af_sc_snap_st *pstSc)
 {
   af_device_st astDevs[AF_DEV_MAX];
   uint32 u32Cnt = af_auth_list_devices(astDevs, AF_DEV_MAX);
@@ -119,7 +119,7 @@ static void af__fill_view_devices(out af_setup_view_st *pstV, in const af_sc_sna
   }
 }
 
-static void af__build_view(out af_setup_view_st *pstV)
+static void af__build_view(dm_out af_setup_view_st *pstV)
 {
   const af_state_st *pstSt = af_store_state();
   af_env_snap_st stEnv;
@@ -162,13 +162,15 @@ static void af__build_view(out af_setup_view_st *pstV)
   pstV->bFileVault = stEnv.bFileVault;
   pstV->bAutoLogin = stEnv.bAutoLogin;
   pstV->bRemoteLogin = stEnv.bRemoteLogin;
+  pstV->bPermSc = stEnv.bPermSc;
+  pstV->bPermAx = stEnv.bPermAx;
   snprintf(pstV->acPlan, sizeof(pstV->acPlan), "%s",
            (0 == strcmp(pstSt->acPlan, "fv")) ? "fv" : "auto");
   snprintf(pstV->acBusy, sizeof(pstV->acBusy), "%s", g_stSetup.acBusy);
   snprintf(pstV->acError, sizeof(pstV->acError), "%s", g_stSetup.acError);
 }
 
-static char *af__serialize_view(in const af_setup_view_st *pstV)
+static char *af__serialize_view(dm_in const af_setup_view_st *pstV)
 {
   yyjson_mut_doc *pstDoc = yyjson_mut_doc_new(dm_json_alc());
   yyjson_mut_val *pstRoot = NULL;
@@ -208,6 +210,8 @@ static char *af__serialize_view(in const af_setup_view_st *pstV)
   yyjson_mut_obj_add_bool(pstDoc, pstRoot, "filevault", pstV->bFileVault ? true : false);
   yyjson_mut_obj_add_bool(pstDoc, pstRoot, "auto_login", pstV->bAutoLogin ? true : false);
   yyjson_mut_obj_add_bool(pstDoc, pstRoot, "remote_login", pstV->bRemoteLogin ? true : false);
+  yyjson_mut_obj_add_bool(pstDoc, pstRoot, "perm_sc", pstV->bPermSc ? true : false);
+  yyjson_mut_obj_add_bool(pstDoc, pstRoot, "perm_ax", pstV->bPermAx ? true : false);
   yyjson_mut_obj_add_str(pstDoc, pstRoot, "plan", pstV->acPlan);
   yyjson_mut_obj_add_str(pstDoc, pstRoot, "busy", pstV->acBusy);
   yyjson_mut_obj_add_str(pstDoc, pstRoot, "error", pstV->acError);
@@ -216,7 +220,7 @@ static char *af__serialize_view(in const af_setup_view_st *pstV)
   return pcJson;
 }
 
-static void af__publish_todo_and_push(in bool_t bForcePush)
+static void af__publish_todo_and_push(dm_in bool_t bForcePush)
 {
   af_setup_view_st stV;
   uint32 u32Todo = 0u;
@@ -242,13 +246,11 @@ static void af__publish_todo_and_push(in bool_t bForcePush)
   }
 }
 
-static void af__set_win(in bool_t bShow)
+static void af__set_win(dm_in bool_t bShow)
 {
   g_stSetup.bWinOpen = bShow;
-  if (NULL != g_stSetup.pfWin)
-  {
-    g_stSetup.pfWin(bShow);
-  }
+  if (bShow) { af_env_start_fast_perm_poll(120000u); }
+  if (NULL != g_stSetup.pfWin) { g_stSetup.pfWin(bShow); }
 }
 
 static void af__env_probe_now(void)
@@ -265,7 +267,7 @@ static void af__env_probe_now(void)
 
 /* ============================ 管理员脚本后台任务 ============================ */
 
-static void af__cmd_work(io void *pvArg)
+static void af__cmd_work(dm_io void *pvArg)
 {
   af__setup_cmd_job_st *pstJob = (af__setup_cmd_job_st *)pvArg;
   char acAsArg[3200];
@@ -286,7 +288,7 @@ static void af__cmd_work(io void *pvArg)
                                  sizeof(pstJob->acOut), pstJob->u32TimeoutMs, &pstJob->iExit);
 }
 
-static void af__trim_err(in const char *pcSrc, out char *pcDst, in size_t uCap)
+static void af__trim_err(dm_in const char *pcSrc, dm_out char *pcDst, dm_in size_t uCap)
 {
   const char *pcS = pcSrc;
   const char *pcE = NULL;
@@ -304,7 +306,7 @@ static void af__trim_err(in const char *pcSrc, out char *pcDst, in size_t uCap)
   pcDst[uLen] = '\0';
 }
 
-static void af__cmd_after(io void *pvArg, in int iStatus)
+static void af__cmd_after(dm_io void *pvArg, dm_in int iStatus)
 {
   af__setup_cmd_job_st *pstJob = (af__setup_cmd_job_st *)pvArg;
   char acFail[256];
@@ -352,7 +354,7 @@ static void af__cmd_after(io void *pvArg, in int iStatus)
   af__publish_todo_and_push(DM_TRUE);
 }
 
-static void af__start_admin_cmd(in const char *pcKind)
+static void af__start_admin_cmd(dm_in const char *pcKind)
 {
   af__setup_cmd_job_st *pstJob = NULL;
   char acExe[PATH_MAX];
@@ -402,22 +404,25 @@ static void af__start_admin_cmd(in const char *pcKind)
 
 /* ============================ 12 条 setup.html 指令处理 ============================ */
 
-static void af__open_url_on_main(io void *pvCtx)
+static void af__open_url_on_main(dm_io void *pvCtx)
 {
   char *pcUrl = (char *)pvCtx;
   if (NULL != pcUrl)
   {
+    if (NULL != strstr(pcUrl, "Privacy_ScreenCapture")) { af_plat_request_screen_capture(); }
+    else if (NULL != strstr(pcUrl, "Privacy_Accessibility")) { af_plat_request_accessibility(); }
     (void)af_plat_open_url(pcUrl);
     dm_free_tag(pcUrl);
   }
 }
 
-static void af__handle_open_cmd(in const char *pcWhat)
+static void af__handle_open_cmd(dm_in const char *pcWhat)
 {
   const char *pcUrl = af_setup_settings_url(pcWhat);
-  if (NULL == pcUrl)
+  if (NULL == pcUrl) { return; }
+  if ((0 == strcmp(pcWhat, "screen_capture")) || (0 == strcmp(pcWhat, "accessibility")))
   {
-    return;
+    af_env_start_fast_perm_poll(120000u);
   }
   if (NULL != g_stSetup.stOps.pfOpenUrl)
   {
@@ -443,7 +448,7 @@ static void af__handle_open_cmd(in const char *pcWhat)
   }
 }
 
-static void af__handle_unpair_cmd(in const char *pcId)
+static void af__handle_unpair_cmd(dm_in const char *pcId)
 {
   yyjson_mut_doc *pstDoc = NULL;
   yyjson_mut_val *pstRoot = NULL;
@@ -468,7 +473,7 @@ static void af__handle_unpair_cmd(in const char *pcId)
   }
 }
 
-static void af__dispatch_setup_cmd(in const char *pcCmd, in yyjson_val *pstRoot)
+static void af__dispatch_setup_cmd(dm_in const char *pcCmd, dm_in yyjson_val *pstRoot)
 {
   if (0 == strcmp(pcCmd, "ready"))
   {
@@ -531,7 +536,7 @@ static void af__dispatch_setup_cmd(in const char *pcCmd, in yyjson_val *pstRoot)
 
 /* ============================ LinkID / RPC / 事件回调 ============================ */
 
-static int af__on_ui_setup_msg(io void *pvArg)
+static int af__on_ui_setup_msg(dm_io void *pvArg)
 {
   dm_link_msg_st *pstMsg = (dm_link_msg_st *)pvArg;
   yyjson_doc *pstDoc = NULL;
@@ -558,7 +563,7 @@ static int af__on_ui_setup_msg(io void *pvArg)
   return DM_SUCCESS;
 }
 
-static void af__apply_go_target(in const char *pcTarget, in bool_t bReset)
+static void af__apply_go_target(dm_in const char *pcTarget, dm_in bool_t bReset)
 {
   if (bReset || ((NULL != pcTarget) && ((0 == strcmp(pcTarget, "w1"))
                                         || (0 == strcmp(pcTarget, "reset")))))
@@ -582,7 +587,7 @@ static void af__apply_go_target(in const char *pcTarget, in bool_t bReset)
   af__publish_todo_and_push(DM_TRUE);
 }
 
-static int af__on_ui_setup_go(io void *pvArg)
+static int af__on_ui_setup_go(dm_io void *pvArg)
 {
   dm_link_msg_st *pstMsg = (dm_link_msg_st *)pvArg;
   char acTarget[32] = {0};
@@ -618,7 +623,7 @@ static int af__on_ui_setup_go(io void *pvArg)
   return DM_SUCCESS;
 }
 
-static int af__on_cli_win_open(io void *pvArg)
+static int af__on_cli_win_open(dm_io void *pvArg)
 {
   dm_link_msg_st *pstMsg = (dm_link_msg_st *)pvArg;
   dm_reply_st stReply;
@@ -632,7 +637,7 @@ static int af__on_cli_win_open(io void *pvArg)
   return DM_SUCCESS;
 }
 
-static int af__on_setup_ev(io void *pvArg)
+static int af__on_setup_ev(dm_io void *pvArg)
 {
   const dm_link_msg_st *pstMsg = (const dm_link_msg_st *)pvArg;
 
@@ -649,7 +654,7 @@ static int af__on_setup_ev(io void *pvArg)
   return DM_SUCCESS;
 }
 
-static int af__on_setup_tick(io void *pvArg)
+static int af__on_setup_tick(dm_io void *pvArg)
 {
   af_pair_view_st stPair;
 
@@ -672,7 +677,7 @@ static int af__on_setup_tick(io void *pvArg)
   return DM_SUCCESS;
 }
 
-static int af__on_setup_ready(io void *pvArg)
+static int af__on_setup_ready(dm_io void *pvArg)
 {
   (void)pvArg;
   (void)dm_timer_add(AF_SETUP_TICK_MS, AF_SETUP_TICK_MS, DM_MOD_LINKID(AF_MOD_SETUP, 0x04u), 0u,
@@ -683,18 +688,18 @@ static int af__on_setup_ready(io void *pvArg)
 
 /* ============================ 公开装配与 DM 模块生命周期 ============================ */
 
-void af_setup_set_ui_cb(in af_setup_push_cb pfPush, in af_setup_win_cb pfWin)
+void af_setup_set_ui_cb(dm_in af_setup_push_cb pfPush, dm_in af_setup_win_cb pfWin)
 {
   g_stSetup.pfPush = pfPush;
   g_stSetup.pfWin = pfWin;
 }
 
-void af_setup_set_ui_cbs(in af_setup_push_cb pfPush, in af_setup_win_cb pfWin)
+void af_setup_set_ui_cbs(dm_in af_setup_push_cb pfPush, dm_in af_setup_win_cb pfWin)
 {
   af_setup_set_ui_cb(pfPush, pfWin);
 }
 
-void af_setup_set_ops(in const af_setup_ops_st *pstOps)
+void af_setup_set_ops(dm_in const af_setup_ops_st *pstOps)
 {
   if (NULL == pstOps)
   {
@@ -747,7 +752,7 @@ static int af__setup_init(void)
   return DM_SUCCESS;
 }
 
-static void af__setup_drain(io dm_drain_st *pstDrain)
+static void af__setup_drain(dm_io dm_drain_st *pstDrain)
 {
   g_stSetup.bDraining = DM_TRUE;
   if (0u != g_stSetup.u32TickTimerId)
@@ -768,16 +773,11 @@ static void af__setup_fini(void)
   (void)dm_event_unsubscribe(AF_EV_AUTH_CHANGED, af__on_setup_ev);
   (void)dm_event_unsubscribe(AF_EV_ENV_UPDATED, af__on_setup_ev);
   (void)dm_event_unsubscribe(DM_EV_READY, af__on_setup_ready);
-  g_stSetup.acGo[0] = '\0';
-  g_stSetup.acPairDone[0] = '\0';
-  g_stSetup.acBusy[0] = '\0';
-  g_stSetup.acError[0] = '\0';
-  g_stSetup.bWinOpen = DM_FALSE;
-  g_stSetup.bDraining = DM_FALSE;
-  g_stSetup.bTodoPublished = DM_FALSE;
-  g_stSetup.bPairWasActive = DM_FALSE;
-  g_stSetup.u32TickTimerId = 0u;
-  g_stSetup.iDrainHold = -1;
+  g_stSetup.acGo[0] = '\0'; g_stSetup.acPairDone[0] = '\0';
+  g_stSetup.acBusy[0] = '\0'; g_stSetup.acError[0] = '\0';
+  g_stSetup.bWinOpen = DM_FALSE; g_stSetup.bDraining = DM_FALSE;
+  g_stSetup.bTodoPublished = DM_FALSE; g_stSetup.bPairWasActive = DM_FALSE;
+  g_stSetup.u32TickTimerId = 0u; g_stSetup.iDrainHold = -1;
 }
 
 const dm_module_st g_stAfSetupMod = {

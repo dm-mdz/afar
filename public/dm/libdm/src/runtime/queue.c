@@ -47,8 +47,8 @@ static _Atomic uint64 g_u64QueueExtAtomic = 0;
 static _Atomic uint64 g_u64QueueMaxAtomic = DM__QUEUE_MAX_DEFAULT;
 static _Atomic uint64 g_u64AsyncDrainingAtomic = 0;
 static bool_t g_bQueueFull = DM_FALSE; /* 正在因为满了停读 */
-static dm_idle_st g_stQueueIdle;
-static dm_async_st g_stQueueAsync;
+static dm_uv_idle_st g_stQueueIdle;
+static dm_uv_async_st g_stQueueAsync;
 static bool_t g_bQueueUp = DM_FALSE; /* idle/async 句柄已 init */
 static bool_t g_bQueueIdleOn = DM_FALSE;
 static dm_list_st g_stFlows; /* 登记了的流（连接、子进程管道） */
@@ -62,8 +62,8 @@ static uint16 g_u16MaxDepthSeen = 0;
 static bool_t g_bLoopAssert = DM_TRUE;
 
 /* 跨线程 dm_queue_post_async 同步原语（进程级单次初始化，绝不销毁以防退出后并发调 UAF） */
-static dm_once_t g_stAsyncOnce = DM_ONCE_INIT;
-static dm_mutex_t g_stAsyncLock;
+static dm_uv_once_t g_stAsyncOnce = DM_UV_ONCE_INIT;
+static dm_uv_mutex_t g_stAsyncLock;
 static bool_t g_bAsyncLockReady = DM_FALSE;
 static dm_list_st g_stAsyncList;
 static uint64 g_u64AsyncPendingBytes = 0;
@@ -72,7 +72,7 @@ static _Atomic bool_t g_bAsyncAccepting = DM_FALSE;
 
 static void dm__async_lock_init(void)
 {
-  if (DM_SUCCESS == dm_mutex_init(&g_stAsyncLock))
+  if (DM_SUCCESS == dm_uv_mutex_init(&g_stAsyncLock))
   {
     dm_list_init(&g_stAsyncList);
     g_bAsyncLockReady = DM_TRUE;
@@ -88,7 +88,7 @@ static void dm__queue_ext_sync(void)
 
 /* ============================ 负载 ============================ */
 
-dm__qbuf_st *dm__qbuf_new_ex(in const void *pvData, in uint32 u32Len, in uint8 u8Flags)
+dm__qbuf_st *dm__qbuf_new_ex(dm_in const void *pvData, dm_in uint32 u32Len, dm_in uint8 u8Flags)
 {
   dm__qbuf_st *pstBuf = NULL;
   size_t uLen = (size_t)u32Len;
@@ -113,12 +113,12 @@ dm__qbuf_st *dm__qbuf_new_ex(in const void *pvData, in uint32 u32Len, in uint8 u
   return pstBuf;
 }
 
-dm__qbuf_st *dm__qbuf_new(in const void *pvData, in uint32 u32Len)
+dm__qbuf_st *dm__qbuf_new(dm_in const void *pvData, dm_in uint32 u32Len)
 {
   return dm__qbuf_new_ex(pvData, u32Len, 0u);
 }
 
-void dm__qbuf_get(io dm__qbuf_st *pstBuf)
+void dm__qbuf_get(dm_io dm__qbuf_st *pstBuf)
 {
   if (NULL != pstBuf)
   {
@@ -127,7 +127,7 @@ void dm__qbuf_get(io dm__qbuf_st *pstBuf)
   return;
 }
 
-void dm__qbuf_put(io dm__qbuf_st *pstBuf)
+void dm__qbuf_put(dm_io dm__qbuf_st *pstBuf)
 {
   if (NULL == pstBuf)
   {
@@ -157,7 +157,8 @@ uint64 dm__trace_next(void)
   return g_u64TraceSeq;
 }
 
-void dm__dispatch_ctx_get(out bool_t *pbInDispatch, out uint16 *pu16Depth, out uint64 *pu64TraceID)
+void dm__dispatch_ctx_get(dm_out bool_t *pbInDispatch, dm_out uint16 *pu16Depth,
+                          dm_out uint64 *pu64TraceID)
 {
   if (NULL != pbInDispatch)
   {
@@ -174,7 +175,7 @@ void dm__dispatch_ctx_get(out bool_t *pbInDispatch, out uint16 *pu16Depth, out u
   return;
 }
 
-void dm__dispatch_ctx_set(in bool_t bInDispatch, in uint16 u16Depth, in uint64 u64TraceID)
+void dm__dispatch_ctx_set(dm_in bool_t bInDispatch, dm_in uint16 u16Depth, dm_in uint64 u64TraceID)
 {
   g_bInDispatch = bInDispatch;
   g_u16CurDepth = u16Depth;
@@ -182,8 +183,8 @@ void dm__dispatch_ctx_set(in bool_t bInDispatch, in uint16 u16Depth, in uint64 u
   return;
 }
 
-int dm__dispatch_next_hop(in bool_t bExternal, in uint uiTargetID, out uint16 *pu16Depth,
-                          out uint64 *pu64TraceID)
+int dm__dispatch_next_hop(dm_in bool_t bExternal, dm_in uint uiTargetID, dm_out uint16 *pu16Depth,
+                          dm_out uint64 *pu64TraceID)
 {
   uint16 u16Next = 0;
   uint64 u64Trace = 0;
@@ -228,7 +229,7 @@ uint16 dm__queue_max_depth(void)
   return g_u16MaxDepthSeen;
 }
 
-void dm__queue_set_loop_assert(in bool_t bAssert)
+void dm__queue_set_loop_assert(dm_in bool_t bAssert)
 {
   g_bLoopAssert = bAssert;
   return;
@@ -236,25 +237,25 @@ void dm__queue_set_loop_assert(in bool_t bAssert)
 
 /* ============================ 停读 ============================ */
 
-static void dm__flow_apply(io dm__flow_st *pstFlow)
+static void dm__flow_apply(dm_io dm__flow_st *pstFlow)
 {
   if ((0u == pstFlow->u8Stop) && (!pstFlow->bReading))
   {
-    if (DM_SUCCESS == dm_read_start(pstFlow->pstStream, pstFlow->pfAlloc, pstFlow->pfRead))
+    if (DM_SUCCESS == dm_uv_read_start(pstFlow->pstStream, pstFlow->pfAlloc, pstFlow->pfRead))
     {
       pstFlow->bReading = DM_TRUE;
     }
   }
   else if ((0u != pstFlow->u8Stop) && pstFlow->bReading)
   {
-    (void)dm_read_stop(pstFlow->pstStream); /* 对已关的流也只是返回 0 */
+    (void)dm_uv_read_stop(pstFlow->pstStream); /* 对已关的流也只是返回 0 */
     pstFlow->bReading = DM_FALSE;
   }
   return;
 }
 
-int dm__flow_start(io dm__flow_st *pstFlow, in dm_stream_st *pstStream, in dm_alloc_cb pfAlloc,
-                   in dm_read_cb pfRead)
+int dm__flow_start(dm_io dm__flow_st *pstFlow, dm_in dm_uv_stream_st *pstStream,
+                   dm_in dm_uv_alloc_cb pfAlloc, dm_in dm_uv_read_cb pfRead)
 {
   if ((NULL == pstFlow) || (NULL == pstStream) || (NULL == pfAlloc) || (NULL == pfRead))
   {
@@ -274,7 +275,7 @@ int dm__flow_start(io dm__flow_st *pstFlow, in dm_stream_st *pstStream, in dm_al
   return ((0u != pstFlow->u8Stop) || pstFlow->bReading) ? DM_SUCCESS : DM_IO;
 }
 
-void dm__flow_remove(io dm__flow_st *pstFlow)
+void dm__flow_remove(dm_io dm__flow_st *pstFlow)
 {
   if ((NULL != pstFlow) && (NULL != pstFlow->pstStream))
   {
@@ -284,14 +285,14 @@ void dm__flow_remove(io dm__flow_st *pstFlow)
   return;
 }
 
-void dm__flow_stop(io dm__flow_st *pstFlow, in uint8 u8Why)
+void dm__flow_stop(dm_io dm__flow_st *pstFlow, dm_in uint8 u8Why)
 {
   pstFlow->u8Stop |= u8Why;
   dm__flow_apply(pstFlow);
   return;
 }
 
-void dm__flow_resume(io dm__flow_st *pstFlow, in uint8 u8Why)
+void dm__flow_resume(dm_io dm__flow_st *pstFlow, dm_in uint8 u8Why)
 {
   pstFlow->u8Stop &= (uint8)~u8Why;
   dm__flow_apply(pstFlow);
@@ -299,7 +300,7 @@ void dm__flow_resume(io dm__flow_st *pstFlow, in uint8 u8Why)
 }
 
 /* 总队列满了 / 降下来了：对所有登记了的流加上 / 去掉「队列满」那一位 */
-static void dm__queue_set_full(in bool_t bFull)
+static void dm__queue_set_full(dm_in bool_t bFull)
 {
   dm_list_node_st *pstNode = NULL;
   dm_list_node_st *pstNext = NULL;
@@ -343,7 +344,7 @@ dm__qitem_st *dm__qitem_new(void)
   return pstItem;
 }
 
-void dm__qitem_free(io dm__qitem_st *pstItem)
+void dm__qitem_free(dm_io dm__qitem_st *pstItem)
 {
   if (NULL == pstItem)
   {
@@ -356,7 +357,7 @@ void dm__qitem_free(io dm__qitem_st *pstItem)
 
 /* 交一条：DM 内部动作直接跑；否则拼好消息交给目标的 before。
  * 返回 DM_TRUE 表示外部字节计数所有权已移交给无状态直通任务（dm__queue_on_idle 勿重复扣减）。 */
-static bool_t dm__queue_deliver(io dm__qitem_st *pstItem)
+static bool_t dm__queue_deliver(dm_io dm__qitem_st *pstItem)
 {
   dm_link_msg_st stMsg = {0};
   uint64 u64Start = 0;
@@ -417,7 +418,7 @@ static bool_t dm__queue_deliver(io dm__qitem_st *pstItem)
 }
 
 /* DD-01 §3.2 单圈时间片批处理：最多 DM_QUEUE_TICK_MAX(64) 条或 DM_QUEUE_TICK_BUDGET_MS(4ms) */
-static void dm__queue_on_idle(in dm_idle_st *pstIdle)
+static void dm__queue_on_idle(dm_in dm_uv_idle_st *pstIdle)
 {
   uint64 u64TickStart = dm_hrtime();
   uint64 u64BudgetNs = (uint64)DM_QUEUE_TICK_BUDGET_MS * 1000000ULL;
@@ -460,13 +461,13 @@ static void dm__queue_on_idle(in dm_idle_st *pstIdle)
   }
   if (g_bQueueUp && (0u == g_uQueueLen) && g_bQueueIdleOn)
   {
-    (void)dm_idle_stop(&g_stQueueIdle);
+    (void)dm_uv_idle_stop(&g_stQueueIdle);
     g_bQueueIdleOn = DM_FALSE;
   }
   return;
 }
 
-void dm__queue_ext_add(in uint32 u32Bytes)
+void dm__queue_ext_add(dm_in uint32 u32Bytes)
 {
   if (0u == u32Bytes)
   {
@@ -481,7 +482,7 @@ void dm__queue_ext_add(in uint32 u32Bytes)
   return;
 }
 
-void dm__queue_ext_release(in uint32 u32Bytes)
+void dm__queue_ext_release(dm_in uint32 u32Bytes)
 {
   if (0u == u32Bytes)
   {
@@ -498,20 +499,20 @@ void dm__queue_ext_release(in uint32 u32Bytes)
 
 /* ============================ 跨线程异步投递（AUD-11） ============================ */
 
-static void dm__queue_on_async(in dm_async_st *pstAsync)
+static void dm__queue_on_async(dm_in dm_uv_async_st *pstAsync)
 {
   dm_list_st stBatch = {0};
   dm_list_node_st *pstNode = NULL;
   (void)pstAsync;
 
-  dm_once(&g_stAsyncOnce, dm__async_lock_init);
+  dm_uv_once(&g_stAsyncOnce, dm__async_lock_init);
   if (!g_bAsyncLockReady)
   {
     return;
   }
   dm_list_init(&stBatch);
 
-  dm_mutex_lock(&g_stAsyncLock);
+  dm_uv_mutex_lock(&g_stAsyncLock);
   if (g_u64AsyncPendingBytes > 0u)
   {
     atomic_fetch_add_explicit(&g_u64AsyncDrainingAtomic, g_u64AsyncPendingBytes,
@@ -523,7 +524,7 @@ static void dm__queue_on_async(in dm_async_st *pstAsync)
   }
   g_u64AsyncPendingBytes = 0u;
   g_u32AsyncPendingCount = 0u;
-  dm_mutex_unlock(&g_stAsyncLock);
+  dm_uv_mutex_unlock(&g_stAsyncLock);
 
   while (NULL != (pstNode = dm_list_del_head(&stBatch)))
   {
@@ -572,7 +573,7 @@ static void dm__queue_on_async(in dm_async_st *pstAsync)
   return;
 }
 
-int dm_queue_post_async(in uint uiLinkID, in const void *pvData, in uint32 u32Len)
+int dm_queue_post_async(dm_in uint uiLinkID, dm_in const void *pvData, dm_in uint32 u32Len)
 {
   dm__async_item_st *pstItem = NULL;
   dm__qbuf_st *pstBuf = NULL;
@@ -583,7 +584,7 @@ int dm_queue_post_async(in uint uiLinkID, in const void *pvData, in uint32 u32Le
   {
     return DM_INVALID;
   }
-  dm_once(&g_stAsyncOnce, dm__async_lock_init);
+  dm_uv_once(&g_stAsyncOnce, dm__async_lock_init);
   if (!g_bAsyncLockReady)
   {
     return DM_ALLOC;
@@ -616,10 +617,10 @@ int dm_queue_post_async(in uint uiLinkID, in const void *pvData, in uint32 u32Le
   pstItem->uiLinkID = uiLinkID;
   pstItem->pstBuf = pstBuf;
 
-  dm_mutex_lock(&g_stAsyncLock);
+  dm_uv_mutex_lock(&g_stAsyncLock);
   if (!atomic_load_explicit(&g_bAsyncAccepting, memory_order_relaxed))
   {
-    dm_mutex_unlock(&g_stAsyncLock);
+    dm_uv_mutex_unlock(&g_stAsyncLock);
     dm__qbuf_put(pstBuf);
     dm_free_tag(pstItem);
     return DM_SHUTTING_DOWN;
@@ -635,7 +636,7 @@ int dm_queue_post_async(in uint uiLinkID, in const void *pvData, in uint32 u32Le
     if ((uTotalCount >= (size_t)DM__ASYNC_PENDING_MAX) || ((uint64)u32Len > u64Max) ||
         (u64Cur > u64Max) || ((uint64)u32Len > (u64Max - u64Cur)))
     {
-      dm_mutex_unlock(&g_stAsyncLock);
+      dm_uv_mutex_unlock(&g_stAsyncLock);
       dm__qbuf_put(pstBuf);
       dm_free_tag(pstItem);
       return DM_BUSY;
@@ -645,19 +646,19 @@ int dm_queue_post_async(in uint uiLinkID, in const void *pvData, in uint32 u32Le
   g_u64AsyncPendingBytes += u32Len;
   g_u32AsyncPendingCount++;
   /* 在持锁期内发 dm_async_send，与 dm__queue_close 严格互斥（杜绝句柄关闭竞态 UAF） */
-  (void)dm_async_send(&g_stQueueAsync);
-  dm_mutex_unlock(&g_stAsyncLock);
+  (void)dm_uv_async_send(&g_stQueueAsync);
+  dm_uv_mutex_unlock(&g_stAsyncLock);
   return DM_SUCCESS;
 }
 
 void dm__queue_stop_async(void)
 {
-  dm_once(&g_stAsyncOnce, dm__async_lock_init);
+  dm_uv_once(&g_stAsyncOnce, dm__async_lock_init);
   if (g_bAsyncLockReady)
   {
-    dm_mutex_lock(&g_stAsyncLock);
+    dm_uv_mutex_lock(&g_stAsyncLock);
     atomic_store_explicit(&g_bAsyncAccepting, DM_FALSE, memory_order_release);
-    dm_mutex_unlock(&g_stAsyncLock);
+    dm_uv_mutex_unlock(&g_stAsyncLock);
   }
   return;
 }
@@ -672,7 +673,7 @@ int dm__queue_init(void)
   {
     return DM_SUCCESS;
   }
-  dm_once(&g_stAsyncOnce, dm__async_lock_init);
+  dm_uv_once(&g_stAsyncOnce, dm__async_lock_init);
   if (!g_bAsyncLockReady)
   {
     return DM_ALLOC;
@@ -693,25 +694,25 @@ int dm__queue_init(void)
   g_u64CurTraceID = 0;
   g_u16MaxDepthSeen = 0;
 
-  iErrCode = dm_idle_init(dm_default_loop(), &g_stQueueIdle);
+  iErrCode = dm_uv_idle_init(dm_uv_default_loop(), &g_stQueueIdle);
   if (DM_SUCCESS != iErrCode)
   {
     return iErrCode;
   }
-  iErrCode = dm_async_init(dm_default_loop(), &g_stQueueAsync, dm__queue_on_async);
+  iErrCode = dm_uv_async_init(dm_uv_default_loop(), &g_stQueueAsync, dm__queue_on_async);
   if (DM_SUCCESS != iErrCode)
   {
-    dm_close((dm_handle_st *)&g_stQueueIdle, NULL);
+    dm_uv_close((dm_uv_handle_st *)&g_stQueueIdle, NULL);
     return iErrCode;
   }
   /* 不靠 g_stQueueAsync 吊住空循环；有活跃句柄（服务/定时器等）时唤醒立即生效 */
-  dm_unref((dm_handle_st *)&g_stQueueAsync);
+  dm_uv_unref((dm_uv_handle_st *)&g_stQueueAsync);
 
-  dm_mutex_lock(&g_stAsyncLock);
+  dm_uv_mutex_lock(&g_stAsyncLock);
   g_u64AsyncPendingBytes = 0u;
   g_u32AsyncPendingCount = 0u;
   atomic_store_explicit(&g_bAsyncAccepting, DM_TRUE, memory_order_release);
-  dm_mutex_unlock(&g_stAsyncLock);
+  dm_uv_mutex_unlock(&g_stAsyncLock);
 
   g_bQueueUp = DM_TRUE;
   g_bQueueIdleOn = DM_FALSE;
@@ -730,7 +731,7 @@ void dm__queue_close(void)
   dm_list_init(&stLeft);
   if (g_bAsyncLockReady)
   {
-    dm_mutex_lock(&g_stAsyncLock);
+    dm_uv_mutex_lock(&g_stAsyncLock);
     atomic_store_explicit(&g_bAsyncAccepting, DM_FALSE, memory_order_release);
     while (NULL != (pstNode = dm_list_del_head(&g_stAsyncList)))
     {
@@ -738,7 +739,7 @@ void dm__queue_close(void)
     }
     g_u64AsyncPendingBytes = 0u;
     g_u32AsyncPendingCount = 0u;
-    dm_mutex_unlock(&g_stAsyncLock);
+    dm_uv_mutex_unlock(&g_stAsyncLock);
   }
   while (NULL != (pstNode = dm_list_del_head(&stLeft)))
   {
@@ -761,21 +762,21 @@ void dm__queue_close(void)
   g_bInDispatch = DM_FALSE;
   g_u16CurDepth = 0;
   g_u64CurTraceID = 0;
-  dm_close((dm_handle_st *)&g_stQueueIdle, NULL);
-  dm_close((dm_handle_st *)&g_stQueueAsync, NULL);
+  dm_uv_close((dm_uv_handle_st *)&g_stQueueIdle, NULL);
+  dm_uv_close((dm_uv_handle_st *)&g_stQueueAsync, NULL);
   g_bQueueUp = DM_FALSE;
   g_bQueueIdleOn = DM_FALSE;
   return;
 }
 
-void dm__queue_set_max(in uint32 u32Max)
+void dm__queue_set_max(dm_in uint32 u32Max)
 {
   g_u64QueueMax = (0u != u32Max) ? (uint64)u32Max : DM__QUEUE_MAX_DEFAULT;
   atomic_store_explicit(&g_u64QueueMaxAtomic, g_u64QueueMax, memory_order_release);
   return;
 }
 
-int dm__queue_push(io dm__qitem_st *pstItem)
+int dm__queue_push(dm_io dm__qitem_st *pstItem)
 {
   if (NULL == pstItem)
   {
@@ -804,7 +805,7 @@ int dm__queue_push(io dm__qitem_st *pstItem)
   }
   if (!g_bQueueIdleOn)
   {
-    if (DM_SUCCESS == dm_idle_start(&g_stQueueIdle, dm__queue_on_idle))
+    if (DM_SUCCESS == dm_uv_idle_start(&g_stQueueIdle, dm__queue_on_idle))
     {
       g_bQueueIdleOn = DM_TRUE;
     }
@@ -812,7 +813,7 @@ int dm__queue_push(io dm__qitem_st *pstItem)
   return DM_SUCCESS;
 }
 
-int dm__queue_run(in dm__qrun_cb pfRun, in void *pvCtx)
+int dm__queue_run(dm_in dm__qrun_cb pfRun, dm_in void *pvCtx)
 {
   dm__qitem_st *pstItem = dm__qitem_new();
   if (NULL == pstItem)

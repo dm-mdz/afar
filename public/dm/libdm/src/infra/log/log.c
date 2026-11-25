@@ -75,32 +75,32 @@ static dm_log_stat_st g_stLogStat;
 /* ============================ 跨线程锁 ============================
  * 走适配层的 dm_mutex_*，不写 #ifdef _WIN32 / pthread。
  * 锁随进程存活，不销毁 —— 免去「close 之后再 init」的悬垂竞态。 */
-static dm_mutex_t g_stLogLock;
-static dm_once_t g_stLogLockOnce = DM_ONCE_INIT;
+static dm_uv_mutex_t g_stLogLock;
+static dm_uv_once_t g_stLogLockOnce = DM_UV_ONCE_INIT;
 
 static void dm__log_lock_init(void)
 {
-  dm_mutex_init(&g_stLogLock);
+  dm_uv_mutex_init(&g_stLogLock);
   return;
 }
 
 /* 多个线程可能同时写第一条日志：用 dm_once 保证锁只初始化一次 */
 static void dm__log_lock(void)
 {
-  dm_once(&g_stLogLockOnce, dm__log_lock_init);
-  dm_mutex_lock(&g_stLogLock);
+  dm_uv_once(&g_stLogLockOnce, dm__log_lock_init);
+  dm_uv_mutex_lock(&g_stLogLock);
   return;
 }
 
 static void dm__log_unlock(void)
 {
-  dm_mutex_unlock(&g_stLogLock);
+  dm_uv_mutex_unlock(&g_stLogLock);
   return;
 }
 
 /* ============================ 行头 ============================ */
 
-static char dm__log_level_char(in dm_log_level_et eLevel)
+static char dm__log_level_char(dm_in dm_log_level_et eLevel)
 {
   switch (eLevel)
   {
@@ -118,14 +118,14 @@ static char dm__log_level_char(in dm_log_level_et eLevel)
 }
 
 /* 取「年-月-日 时:分:秒」，同一秒复用。毫秒由 pu32Ms 带出。调用点必须已持锁 */
-static const char *dm__log_timestamp(out uint32 *pu32Ms)
+static const char *dm__log_timestamp(dm_out uint32 *pu32Ms)
 {
-  dm_timeval64_st stTv = {0};
+  dm_uv_timeval64_st stTv = {0};
   time_t tNow = (time_t)0;
   struct tm *pstTm = NULL;
 
   memset(&stTv, 0, sizeof(stTv));
-  if (DM_SUCCESS != dm_gettimeofday(&stTv))
+  if (DM_SUCCESS != dm_uv_gettimeofday(&stTv))
   {
     stTv.tv_sec = (int64_t)time(NULL);
     stTv.tv_usec = 0;
@@ -157,7 +157,7 @@ static int dm__log_tid(void)
 }
 
 /* 只留文件名，去掉路径 */
-static const char *dm__log_short_file(in const char *pcFile)
+static const char *dm__log_short_file(dm_in const char *pcFile)
 {
   const char *pcSlash = NULL;
   const char *pcBack = NULL;
@@ -185,7 +185,7 @@ static const char *const g_apcLogSecretWord[] = {
 };
 
 /* pcAt 处是不是 pcWord（不分大小写）；是就返回它的长度，不是返回 0 */
-static size_t dm__log_word_at(in const char *pcAt, in const char *pcWord)
+static size_t dm__log_word_at(dm_in const char *pcAt, dm_in const char *pcWord)
 {
   size_t uIdx = 0;
   for (uIdx = 0; '\0' != pcWord[uIdx]; uIdx++)
@@ -198,20 +198,20 @@ static size_t dm__log_word_at(in const char *pcAt, in const char *pcWord)
   return uIdx;
 }
 
-static int dm__log_is_sep(in char c)
+static int dm__log_is_sep(dm_in char c)
 {
   return (' ' == c) || ('\t' == c) || (':' == c) || ('=' == c) || ('"' == c) || ('\'' == c);
 }
 
-static int dm__log_is_value_end(in char c)
+static int dm__log_is_value_end(dm_in char c)
 {
   return ('\0' == c) || (' ' == c) || ('\t' == c) || (',' == c) || (';' == c) || ('&' == c) ||
          ('"' == c) || ('\'' == c) || ('\r' == c) || ('\n' == c) || ('}' == c) || (')' == c);
 }
 
 /* 往 pcOut 里追加 uLen 个字节，满了就不再写；返回新的长度 */
-static size_t dm__log_put(io char *pcOut, in size_t uCap, in size_t uPos, in const char *pc,
-                          in size_t uLen)
+static size_t dm__log_put(dm_io char *pcOut, dm_in size_t uCap, dm_in size_t uPos,
+                          dm_in const char *pc, dm_in size_t uLen)
 {
   size_t uRoom = (uPos + 1u < uCap) ? (uCap - 1u - uPos) : 0u;
   if (uLen > uRoom)
@@ -223,7 +223,7 @@ static size_t dm__log_put(io char *pcOut, in size_t uCap, in size_t uPos, in con
 }
 
 /* 把 pcIn 打码后写进 pcOut（容量 uCap，结尾补 '\0'）；返回写了多长 */
-static size_t dm__log_mask_secrets(in const char *pcIn, out char *pcOut, in size_t uCap)
+static size_t dm__log_mask_secrets(dm_in const char *pcIn, dm_out char *pcOut, dm_in size_t uCap)
 {
   const char *pc = pcIn;
   size_t uPos = 0;
@@ -321,7 +321,7 @@ static size_t dm__log_mask_secrets(in const char *pcIn, out char *pcOut, in size
 /* ============================ 最近一批 ============================ */
 
 /* 存一行（去掉行尾换行，超长截掉）。调用点必须已持锁 */
-static void dm__log_recent_put(in const char *pcLine, in size_t uLen)
+static void dm__log_recent_put(dm_in const char *pcLine, dm_in size_t uLen)
 {
   char *pcSlot = g_aacLogRecent[g_u32LogRecentHead];
 
@@ -348,17 +348,17 @@ static void dm__log_recent_put(in const char *pcLine, in size_t uLen)
 
 /* 同步建一级目录。dm_fs_mkdir 的 req 不能为 NULL（libuv 会直接回 UV_EINVAL），
  * 要给一个真实请求体，再 cleanup 掉它内部的路径分配。 */
-static void dm__log_mkdir_one(in const char *pcPath)
+static void dm__log_mkdir_one(dm_in const char *pcPath)
 {
-  dm_fs_st stReq = {0};
+  dm_uv_fs_st stReq = {0};
   memset(&stReq, 0, sizeof(stReq));
-  (void)dm_fs_mkdir(NULL, &stReq, pcPath, 0755, NULL); /* 已存在会失败，不用管 */
-  dm_fs_req_cleanup(&stReq);
+  (void)dm_uv_fs_mkdir(NULL, &stReq, pcPath, 0755, NULL); /* 已存在会失败，不用管 */
+  dm_uv_fs_req_cleanup(&stReq);
   return;
 }
 
 /* 递归建目录，支持 "a"、"a/b"、"a/b/c"。已存在不算错 */
-static void dm__log_make_dirs(in const char *pcPath)
+static void dm__log_make_dirs(dm_in const char *pcPath)
 {
   char acTmp[DM_LOG_DIR_MAX] = {0};
   size_t uLen = 0;
@@ -458,8 +458,8 @@ static void dm__log_rotate(void)
 
 /* ============================ 对外接口 ============================ */
 
-int dm_log_init(in const char *pcDir, in const char *pcBaseName, in dm_log_level_et eLevel,
-                in int iMaxSizeMb, in int iMaxFiles)
+int dm_log_init(dm_in const char *pcDir, dm_in const char *pcBaseName, dm_in dm_log_level_et eLevel,
+                dm_in int iMaxSizeMb, dm_in int iMaxFiles)
 {
   dm__log_lock();
   if (g_iLogInited)
@@ -515,7 +515,7 @@ void dm_log_close(void)
   return;
 }
 
-void dm_log_set_level(in dm_log_level_et eLevel)
+void dm_log_set_level(dm_in dm_log_level_et eLevel)
 {
   dm__log_lock();
   atomic_store_explicit(&g_eLogLevel, (int)eLevel, memory_order_relaxed);
@@ -528,7 +528,7 @@ dm_log_level_et dm_log_get_level(void)
   return (dm_log_level_et)atomic_load_explicit(&g_eLogLevel, memory_order_relaxed);
 }
 
-void dm_log_set_console(in int iEnable)
+void dm_log_set_console(dm_in int iEnable)
 {
   dm__log_lock();
   g_iLogConsole = iEnable ? 1 : 0;
@@ -536,7 +536,7 @@ void dm_log_set_console(in int iEnable)
   return;
 }
 
-void dm_log_set_flush(in int iEnable)
+void dm_log_set_flush(dm_in int iEnable)
 {
   dm__log_lock();
   g_iLogFlush = iEnable ? 1 : 0;
@@ -545,7 +545,7 @@ void dm_log_set_flush(in int iEnable)
 }
 
 /* 记一行的开销（只记主线程的，持锁调） */
-static void dm__log_cost(in uint64 u64T0, in uint64 u64T1)
+static void dm__log_cost(dm_in uint64 u64T0, dm_in uint64 u64T1)
 {
   uint64 u64Lock = u64T1 - u64T0;
   uint64 u64Write = dm_hrtime() - u64T1;
@@ -567,8 +567,7 @@ static void dm__log_cost(in uint64 u64T0, in uint64 u64T1)
   return;
 }
 
-void dm_log_write(in dm_log_level_et eLevel, in const char *pcMod, in const char *pcFile,
-                  in int iLine, in const char *pcFmt, ...)
+void dm_log_write(dm_in const dm_log_loc_st *pstLoc, dm_in const char *pcFmt, ...)
 {
   char acRaw[DM_LOG_BODY_MAX] = {0};
   char acBody[DM_LOG_BODY_MAX] = {0};
@@ -581,9 +580,13 @@ void dm_log_write(in dm_log_level_et eLevel, in const char *pcMod, in const char
   uint64 u64T0 = 0;
   uint64 u64T1 = 0;
 
+  if ((NULL == pstLoc) || (NULL == pcFmt))
+  {
+    return;
+  }
   /* 级别过滤（原子无锁读，TSAN 干净） */
-  if (((int)eLevel < atomic_load_explicit(&g_eLogLevel, memory_order_relaxed)) ||
-      (eLevel >= DM_LOG_LEVEL_NONE))
+  if (((int)pstLoc->eLevel < atomic_load_explicit(&g_eLogLevel, memory_order_relaxed)) ||
+      (pstLoc->eLevel >= DM_LOG_LEVEL_NONE))
   {
     return;
   }
@@ -603,8 +606,9 @@ void dm_log_write(in dm_log_level_et eLevel, in const char *pcMod, in const char
   u64T1 = dm_hrtime();
   pcTs = dm__log_timestamp(&u32Ms);
   iLen = snprintf(acLine, sizeof(acLine), "%s.%03u %c T%02d %-5s %s:%d  %s\n", pcTs,
-                  (unsigned)u32Ms, dm__log_level_char(eLevel), dm__log_tid(),
-                  (NULL != pcMod) ? pcMod : "dm", dm__log_short_file(pcFile), iLine, acBody);
+                  (unsigned)u32Ms, dm__log_level_char(pstLoc->eLevel), dm__log_tid(),
+                  (NULL != pstLoc->pcMod) ? pstLoc->pcMod : "dm",
+                  dm__log_short_file(pstLoc->pcFile), pstLoc->iLine, acBody);
   if (iLen < 0)
   {
     dm__log_unlock();
@@ -656,7 +660,7 @@ void dm_log_write(in dm_log_level_et eLevel, in const char *pcMod, in const char
   return;
 }
 
-void dm_log_stat(out dm_log_stat_st *pstOut)
+void dm_log_stat(dm_out dm_log_stat_st *pstOut)
 {
   if (NULL == pstOut)
   {
@@ -668,7 +672,7 @@ void dm_log_stat(out dm_log_stat_st *pstOut)
   return;
 }
 
-uint32 dm_log_recent(in uint32 u32Max, in dm_log_line_cb pfLine, in void *pvArg)
+uint32 dm_log_recent(dm_in uint32 u32Max, dm_in dm_log_line_cb pfLine, dm_in void *pvArg)
 {
   uint32 u32Alloc = 0;
   uint32 u32Count = 0;
@@ -749,7 +753,7 @@ uint32 dm_log_recent(in uint32 u32Max, in dm_log_line_cb pfLine, in void *pvArg)
   return u32Delivered;
 }
 
-size_t dm_log_redact(in const char *pcIn, out char *pcOut, in size_t uCap)
+size_t dm_log_redact(dm_in const char *pcIn, dm_out char *pcOut, dm_in size_t uCap)
 {
   if ((NULL == pcOut) || (0u == uCap))
   {
@@ -763,7 +767,7 @@ size_t dm_log_redact(in const char *pcIn, out char *pcOut, in size_t uCap)
   return dm__log_mask_secrets(pcIn, pcOut, uCap);
 }
 
-const char *dm_log_mask(in const char *pcVal, out char *pcBuf, in uint32 u32Size)
+const char *dm_log_mask(dm_in const char *pcVal, dm_out char *pcBuf, dm_in uint32 u32Size)
 {
   size_t uLen = 0;
 
@@ -783,7 +787,7 @@ const char *dm_log_mask(in const char *pcVal, out char *pcBuf, in uint32 u32Size
   return pcBuf;
 }
 
-void dm__log_stat(out dm_log_stat_st *pstOut)
+void dm__log_stat(dm_out dm_log_stat_st *pstOut)
 {
   dm_log_stat(pstOut);
   return;

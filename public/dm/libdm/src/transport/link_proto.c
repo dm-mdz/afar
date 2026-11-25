@@ -50,10 +50,10 @@ extern "C"
 #define DM__TOKEN_STEP() /* 白盒测试数口令比较走了几步（T-LINK-13）；平时是空的 */
 #endif
 
-static dm_tcp_st *g_pstServer =
+static dm_uv_tcp_st *g_pstServer =
     NULL; /* 二进制口的监听句柄：每次绑定新分配一个（没绑上的那个关完才释放） */
 static int g_iBoundPort = 0;
-static dm_tcp_st *g_pstHttpServer = NULL; /* HTTP 监听句柄 */
+static dm_uv_tcp_st *g_pstHttpServer = NULL; /* HTTP 监听句柄 */
 static int g_iHttpPort = 0;
 
 /* 由 dm_main_ex 交过来的配置（dm__link_config） */
@@ -67,7 +67,16 @@ static bool_t g_bPortForced = DM_FALSE;
 static int g_iPortForced = 0;
 static bool_t g_bDisableLocalHttp = DM_FALSE;
 
-void dm__link_config(in const dm_cfg_st *pstCfg)
+/* 跨节点 Peer 与移动端验签/入站推送回调（由业务层在 init 期注册，libdm 零业务词） */
+static dm_peer_hello_verify_cb g_pfPeerHelloVerify = NULL;
+static void *g_pvPeerHelloCtx = NULL;
+static dm_peer_push_cb g_pfPeerPushCb = NULL;
+static void *g_pvPeerPushCtx = NULL;
+static dm_mobile_hello_verify_cb g_pfMobileHelloVerify = NULL;
+static void *g_pvMobileHelloCtx = NULL;
+static uint32 g_u32PeerHelloSeq = 0u;
+
+void dm__link_config(dm_in const dm_cfg_st *pstCfg)
 {
   uint uiIdx = 0;
 
@@ -77,7 +86,6 @@ void dm__link_config(in const dm_cfg_st *pstCfg)
   g_u32FrameMax = ((NULL != pstCfg) && (0u != pstCfg->u32FrameMax)) ? pstCfg->u32FrameMax
                                                                     : DM_FRAME_MAX_DEFAULT;
   g_bDisableLocalHttp = (NULL != pstCfg) ? pstCfg->bDisableLocalHttp : DM_FALSE;
-  g_iHttpPort = 0;
   dm__http_config(pstCfg);
   for (uiIdx = 0; (NULL != g_pastRole) && (uiIdx < g_uiRoleCount); uiIdx++)
   {
@@ -90,7 +98,7 @@ void dm__link_config(in const dm_cfg_st *pstCfg)
   return;
 }
 
-void dm_set_listen_port(in uint16 u16Port)
+void dm_set_listen_port(dm_in uint16 u16Port)
 {
   g_bPortForced = DM_TRUE;
   g_iPortForced = (int)u16Port;
@@ -110,7 +118,7 @@ int dm__link_port(void)
 /* ============================ 握手 ============================ */
 
 /* 口令按字节比较，不提前退出（防按时间猜） */
-static bool_t dm__token_equal(in const char *pcA, in const char *pcB)
+static bool_t dm__token_equal(dm_in const char *pcA, dm_in const char *pcB)
 {
   size_t uLenA = (NULL != pcA) ? strlen(pcA) : 0u;
   size_t uLenB = (NULL != pcB) ? strlen(pcB) : 0u;
@@ -124,10 +132,40 @@ static bool_t dm__token_equal(in const char *pcA, in const char *pcB)
   return (0u == u8Diff) ? DM_TRUE : DM_FALSE;
 }
 
+/* 校验 C 字符串形式的 peer_id：非空、长度 < DM_PEER_ID_MAX、仅允许可见 ASCII（0x21..0x7E） */
+static bool_t dm__peer_id_str_valid(dm_in const char *pcStr, dm_out size_t *puLenOut)
+{
+  size_t uLen = 0u;
+  size_t uIdx = 0u;
+
+  if (NULL == pcStr)
+  {
+    return DM_FALSE;
+  }
+  uLen = strlen(pcStr);
+  if ((0u == uLen) || (uLen >= DM_PEER_ID_MAX))
+  {
+    return DM_FALSE;
+  }
+  for (uIdx = 0u; uIdx < uLen; uIdx++)
+  {
+    uint8 u8Ch = (uint8)pcStr[uIdx];
+    if ((u8Ch <= 0x20u) || (u8Ch >= 0x7Fu))
+    {
+      return DM_FALSE;
+    }
+  }
+  if (NULL != puLenOut)
+  {
+    *puLenOut = uLen;
+  }
+  return DM_TRUE;
+}
+
 /* 校验 peer_id：非空、长度 < DM_PEER_ID_MAX、仅允许可见 ASCII（0x21..0x7E，无空白/控制/非 ASCII）
  */
-static bool_t dm__peer_id_valid(in const yyjson_val *pstVal, out const char **ppcOut,
-                                out size_t *puLenOut)
+static bool_t dm__peer_id_valid(dm_in const yyjson_val *pstVal, dm_out const char **ppcOut,
+                                dm_out size_t *puLenOut)
 {
   const char *pcStr = NULL;
   size_t uLen = 0u;
@@ -156,7 +194,65 @@ static bool_t dm__peer_id_valid(in const yyjson_val *pstVal, out const char **pp
   return DM_TRUE;
 }
 
-static void dm__conn_authed(io dm__conn_st *pstConn, in uint32 u32Role)
+/* 检查并关闭同 peer_id 的旧代数连接；若存在同代或更新代数的活跃连接返回 DM_EXISTS */
+static int dm__conn_check_gen_conflict(dm_in const char *pcPeerID, dm_in uint64 u64ConnGen,
+                                       dm_in bool_t bMobile, dm_in const dm__conn_st *pstSkip)
+{
+  dm_list_node_st *pstNode = NULL;
+
+  if ((NULL == pcPeerID) || ('\0' == pcPeerID[0]) || (NULL == g_stConnList.stHead.pstNext))
+  {
+    return DM_SUCCESS;
+  }
+  DM_LIST_FOREACH(&g_stConnList, pstNode)
+  {
+    const dm__conn_st *pstOther = DM_LIST_ENTRY(pstNode, dm__conn_st, stNode);
+    bool_t bSameKind = bMobile ? pstOther->bMobileAdopted : pstOther->bPeerAdopted;
+    if ((pstOther == pstSkip) || dm__conn_dead(pstOther) ||
+        (pstOther->bMobileAdopted && !pstOther->bAuthed))
+    {
+      continue;
+    }
+    if (0 != strcmp(pstOther->acPeerID, pcPeerID))
+    {
+      continue;
+    }
+    if (!bSameKind || (u64ConnGen <= pstOther->u64ConnGen))
+    {
+      return DM_EXISTS;
+    }
+  }
+  return DM_SUCCESS;
+}
+
+static void dm__conn_close_superseded(dm_in const char *pcPeerID, dm_in uint64 u64ConnGen,
+                                      dm_in bool_t bMobile, dm_in const dm__conn_st *pstKeep)
+{
+  dm_list_node_st *pstNode = NULL;
+  dm_list_node_st *pstNext = NULL;
+
+  if ((NULL == pcPeerID) || ('\0' == pcPeerID[0]) || (NULL == g_stConnList.stHead.pstNext))
+  {
+    return;
+  }
+  DM_LIST_FOREACH_SAFE(&g_stConnList, pstNode, pstNext)
+  {
+    dm__conn_st *pstOther = DM_LIST_ENTRY(pstNode, dm__conn_st, stNode);
+    bool_t bSameKind = bMobile ? pstOther->bMobileAdopted : pstOther->bPeerAdopted;
+    if ((pstOther == pstKeep) || dm__conn_dead(pstOther) || !bSameKind ||
+        (pstOther->bMobileAdopted && !pstOther->bAuthed))
+    {
+      continue;
+    }
+    if ((0 == strcmp(pstOther->acPeerID, pcPeerID)) && (pstOther->u64ConnGen < u64ConnGen))
+    {
+      dm__conn_close(pstOther, "superseded by newer conn_gen");
+    }
+  }
+  return;
+}
+
+static void dm__conn_authed(dm_io dm__conn_st *pstConn, dm_in uint32 u32Role)
 {
   dm_conn_ev_st stEv = {0};
 
@@ -166,7 +262,7 @@ static void dm__conn_authed(io dm__conn_st *pstConn, in uint32 u32Role)
   {
     memcpy(pstConn->acPeerID, "local", 6u);
   }
-  (void)dm_timer_stop(&pstConn->stHsTimer);
+  (void)dm_uv_timer_stop(&pstConn->stHsTimer);
   memset(&stEv, 0, sizeof(stEv));
   stEv.u32Role = u32Role;
   memcpy(stEv.acPeerID, pstConn->acPeerID, sizeof(stEv.acPeerID));
@@ -175,8 +271,137 @@ static void dm__conn_authed(io dm__conn_st *pstConn, in uint32 u32Role)
   return;
 }
 
+static void dm__run_hello_peer(dm_io dm__conn_st *pstConn, dm_in const dm__qitem_st *pstItem,
+                               dm_in yyjson_val *pstRoot)
+{
+  const uint8 *pu8Raw = (NULL != pstItem->pstBuf) ? pstItem->pstBuf->au8Data : NULL;
+  uint32 u32RawLen = (NULL != pstItem->pstBuf) ? pstItem->pstBuf->u32Len : 0u;
+  char *pcAckJson = NULL;
+  const char *pcSend = NULL;
+  uint32 u32AckLen = 0u;
+  int iVerifyErr = DM_PERM;
+
+  if (NULL == g_pfPeerHelloVerify)
+  {
+    DM_LOG_WARN("conn %u: peer hello verifier not registered", pstConn->u32Id);
+    (void)dm__conn_reply(pstConn, DM_LINKID_HELLO, pstItem->stReply.u32ReqID, DM_PERM, NULL, 0);
+    dm__conn_close_after_write(pstConn);
+    return;
+  }
+  iVerifyErr =
+      g_pfPeerHelloVerify(pstConn->acPeerID, pu8Raw, u32RawLen, g_pvPeerHelloCtx, &pcAckJson);
+  if (DM_SUCCESS != iVerifyErr)
+  {
+    if (NULL != pcAckJson)
+    {
+      dm_secure_zero(pcAckJson, strlen(pcAckJson));
+      dm_free_tag(pcAckJson);
+    }
+    DM_LOG_WARN("conn %u: peer hello rejected (%d)", pstConn->u32Id, iVerifyErr);
+    (void)dm__conn_reply(pstConn, DM_LINKID_HELLO, pstItem->stReply.u32ReqID, iVerifyErr, NULL, 0);
+    dm__conn_close_after_write(pstConn);
+    return;
+  }
+  dm__conn_parse_push(pstConn, pstRoot);
+  dm__conn_authed(pstConn, DM_ROLE_PEER);
+  pcSend = (NULL != pcAckJson) ? pcAckJson : "{}";
+  u32AckLen = (uint32)strlen(pcSend);
+  (void)dm__conn_reply_ex(pstConn, DM_LINKID_HELLO, pstItem->stReply.u32ReqID, DM_SUCCESS,
+                          DM_FRAME_F_SENSITIVE, pcSend, u32AckLen);
+  if (NULL != pcAckJson)
+  {
+    dm_secure_zero(pcAckJson, u32AckLen);
+    dm_free_tag(pcAckJson);
+  }
+  return;
+}
+
+static void dm__run_hello_mobile(dm_io dm__conn_st *pstConn, dm_in const dm__qitem_st *pstItem,
+                                 dm_in yyjson_val *pstRoot, dm_in const char *pcBoot)
+{
+  dm_mobile_hello_in_st stIn = {0};
+  dm_mobile_hello_out_st stOut = {0};
+  const char *pcResume = NULL;
+  uint64 u64Seen = 0u;
+  size_t uPeerLen = 0u;
+  const char *pcSend = NULL;
+  uint32 u32AckLen = 0u;
+  int iErrCode = DM_PERM;
+
+  if (NULL == g_pfMobileHelloVerify)
+  {
+    DM_LOG_WARN("conn %u: mobile hello verifier not registered", pstConn->u32Id);
+    (void)dm__conn_reply(pstConn, DM_LINKID_HELLO, pstItem->stReply.u32ReqID, DM_PERM, NULL, 0);
+    dm__conn_close_after_write(pstConn);
+    return;
+  }
+  pcResume =
+      dm__push_resume(pcBoot, yyjson_is_uint(yyjson_obj_get(pstRoot, "seq")) ? DM_TRUE : DM_FALSE,
+                      (uint64)dm_json_int(pstRoot, "/seq", 0));
+  u64Seen = (uint64)dm_json_int(pstRoot, "/seq", 0);
+  stIn.pcHintPeerID = ('\0' != pstConn->acHintPeerID[0]) ? pstConn->acHintPeerID : NULL;
+  stIn.pu8Body = (NULL != pstItem->pstBuf) ? pstItem->pstBuf->au8Data : NULL;
+  stIn.u32Len = (NULL != pstItem->pstBuf) ? pstItem->pstBuf->u32Len : 0u;
+  stIn.pcResume = pcResume;
+  stIn.u64CurSeq = dm_push_seq();
+
+  iErrCode = g_pfMobileHelloVerify(&stIn, g_pvMobileHelloCtx, &stOut);
+  if (DM_SUCCESS != iErrCode)
+  {
+    if (NULL != stOut.pcAckJson)
+    {
+      dm_secure_zero(stOut.pcAckJson, strlen(stOut.pcAckJson));
+      dm_free_tag(stOut.pcAckJson);
+    }
+    DM_LOG_WARN("conn %u: mobile hello rejected (%d)", pstConn->u32Id, iErrCode);
+    (void)dm__conn_reply(pstConn, DM_LINKID_HELLO, pstItem->stReply.u32ReqID, iErrCode, NULL, 0);
+    dm__conn_close_after_write(pstConn);
+    return;
+  }
+  if (!dm__peer_id_str_valid(stOut.acVerifiedPeerID, &uPeerLen))
+  {
+    iErrCode = DM_INVALID;
+  }
+  else
+  {
+    iErrCode = dm__conn_check_gen_conflict(stOut.acVerifiedPeerID, stOut.u64VerifiedConnGen,
+                                           DM_TRUE, pstConn);
+  }
+  if (DM_SUCCESS != iErrCode)
+  {
+    if (NULL != stOut.pcAckJson)
+    {
+      dm_secure_zero(stOut.pcAckJson, strlen(stOut.pcAckJson));
+      dm_free_tag(stOut.pcAckJson);
+    }
+    (void)dm__conn_reply(pstConn, DM_LINKID_HELLO, pstItem->stReply.u32ReqID, iErrCode, NULL, 0);
+    dm__conn_close_after_write(pstConn);
+    return;
+  }
+  memcpy(pstConn->acPeerID, stOut.acVerifiedPeerID, uPeerLen + 1u);
+  pstConn->u64ConnGen = stOut.u64VerifiedConnGen;
+  dm__conn_close_superseded(pstConn->acPeerID, pstConn->u64ConnGen, DM_TRUE, pstConn);
+  dm__conn_parse_push(pstConn, pstRoot);
+  dm__conn_authed(pstConn, DM_ROLE_MOBILE);
+
+  pcSend = (NULL != stOut.pcAckJson) ? stOut.pcAckJson : "{}";
+  u32AckLen = (uint32)strlen(pcSend);
+  (void)dm__conn_reply_ex(pstConn, DM_LINKID_HELLO, pstItem->stReply.u32ReqID, DM_SUCCESS,
+                          DM_FRAME_F_SENSITIVE, pcSend, u32AckLen);
+  if (NULL != stOut.pcAckJson)
+  {
+    dm_secure_zero(stOut.pcAckJson, u32AckLen);
+    dm_free_tag(stOut.pcAckJson);
+  }
+  if (0 == strcmp(pcResume, "ok"))
+  {
+    dm__push_replay(pstConn->u32Id, u64Seen);
+  }
+  return;
+}
+
 /* 握手在总队列里做（排在就绪事件后面：「就绪先于连接」） */
-static void dm__run_hello(io dm__qitem_st *pstItem)
+static void dm__run_hello(dm_io dm__qitem_st *pstItem)
 {
   dm__conn_st *pstConn = dm__conn_find(pstItem->stReply.u32ConnID);
   yyjson_doc *pstDoc = NULL;
@@ -190,7 +415,7 @@ static void dm__run_hello(io dm__qitem_st *pstItem)
   size_t uPeerLen = 0u;
   uint64 u64Seen = 0;
   const dm_role_st *pstRole = NULL;
-  char acReply[160] = {0};
+  char acReply[512] = {0};
   uint uiIdx = 0;
   int iLen = 0;
 
@@ -204,9 +429,21 @@ static void dm__run_hello(io dm__qitem_st *pstItem)
                                     DM_PRE_AUTH_MAX, NULL);
   }
   pstRoot = (NULL != pstDoc) ? yyjson_doc_get_root(pstDoc) : NULL;
+  pcBoot = dm_json_str(pstRoot, "/boot", NULL);
+  if (!pstConn->bAuthed && pstConn->bPeerAdopted)
+  {
+    dm__run_hello_peer(pstConn, pstItem, pstRoot);
+    yyjson_doc_free(pstDoc);
+    return;
+  }
+  if (!pstConn->bAuthed && pstConn->bMobileAdopted)
+  {
+    dm__run_hello_mobile(pstConn, pstItem, pstRoot, pcBoot);
+    yyjson_doc_free(pstDoc);
+    return;
+  }
   pcRole = dm_json_str(pstRoot, "/role", "");
   pcToken = dm_json_str(pstRoot, "/token", "");
-  pcBoot = dm_json_str(pstRoot, "/boot", NULL);
   pstPeerVal = (NULL != pstRoot) ? yyjson_obj_get(pstRoot, "peer_id") : NULL;
 
   if (!pstConn->bAuthed)
@@ -293,10 +530,11 @@ static void dm__run_hello(io dm__qitem_st *pstItem)
   return;
 }
 
-static void dm__on_hs_timeout(in dm_timer_st *pstTimer)
+static void dm__on_hs_timeout(dm_in dm_uv_timer_st *pstTimer)
 {
   dm__conn_st *pstConn = container_of(pstTimer, dm__conn_st, stHsTimer);
   DM_LOG_WARN("conn %u: no handshake within %u ms", pstConn->u32Id, (unsigned)DM_HANDSHAKE_MS);
+  dm__conn_notify_peer_hello(pstConn, DM_TIMEOUT, 0u, NULL, 0u);
   dm__conn_close(pstConn, "handshake timeout");
   return;
 }
@@ -304,8 +542,8 @@ static void dm__on_hs_timeout(in dm_timer_st *pstTimer)
 /* ============================ 收 ============================ */
 
 /* 处理一帧；返回非 0 表示这条连接已经开始关，别再往下读 */
-int dm__conn_on_frame(io dm__conn_st *pstConn, in const dm_frame_head_st *pstHead,
-                      in uint8 *pu8Body)
+int dm__conn_on_frame(dm_io dm__conn_st *pstConn, dm_in const dm_frame_head_st *pstHead,
+                      dm_in uint8 *pu8Body)
 {
   dm_link_msg_st stMsg = {0};
   dm__qitem_st *pstItem = NULL;
@@ -317,13 +555,28 @@ int dm__conn_on_frame(io dm__conn_st *pstConn, in const dm_frame_head_st *pstHea
     pstConn->bHadSensitive = DM_TRUE;
   }
 
-  /* 握手前仅接受握手请求；其余任意帧一律回 DM_NOT_READY 并断开 */
-  if (!pstConn->bAuthed &&
-      ((DM_FRAME_T_REQ != pstHead->u8Type) || (DM_LINKID_HELLO != pstHead->u16LinkID)))
+  /* 握手前门禁：主动出站 Peer 仅允许 HELLO REP，其余连接仅允许 HELLO REQ */
+  if (!pstConn->bAuthed)
   {
-    (void)dm__conn_reply(pstConn, pstHead->u16LinkID, pstHead->u32ReqID, DM_NOT_READY, NULL, 0);
-    dm__conn_close_after_write(pstConn);
-    return 1;
+    if (pstConn->bPeerAdopted && pstConn->bPeerInitiator)
+    {
+      if ((DM_FRAME_T_REP == pstHead->u8Type) && (DM_LINKID_HELLO == pstHead->u16LinkID) &&
+          pstConn->bPeerHelloSent && (pstHead->u32ReqID == pstConn->u32PeerHelloReq))
+      {
+        dm__conn_notify_peer_hello(pstConn, (int)pstHead->i32Status, pstHead->u8Flag, pu8Body,
+                                   pstHead->u32Len);
+        return 0;
+      }
+      (void)dm__conn_reply(pstConn, pstHead->u16LinkID, pstHead->u32ReqID, DM_NOT_READY, NULL, 0);
+      dm__conn_close_after_write(pstConn);
+      return 1;
+    }
+    if ((DM_FRAME_T_REQ != pstHead->u8Type) || (DM_LINKID_HELLO != pstHead->u16LinkID))
+    {
+      (void)dm__conn_reply(pstConn, pstHead->u16LinkID, pstHead->u32ReqID, DM_NOT_READY, NULL, 0);
+      dm__conn_close_after_write(pstConn);
+      return 1;
+    }
   }
   if (DM_FRAME_T_REQ != pstHead->u8Type)
   {
@@ -332,6 +585,21 @@ int dm__conn_on_frame(io dm__conn_st *pstConn, in const dm_frame_head_st *pstHea
       if (!dm__call_reply(pstConn->u32Id, pstHead, pu8Body))
       {
         DM_LOG_DEBUG("conn %u: reply frame with no call waiting, dropped", pstConn->u32Id);
+      }
+      return 0;
+    }
+    if ((DM_FRAME_T_PUSH == pstHead->u8Type) && pstConn->bPeerAdopted &&
+        (0u != (pstConn->u32Role & DM_ROLE_PEER)))
+    {
+      if ((pstHead->u32Len >= DM_FRAME_PUSH_HEAD) && (NULL != g_pfPeerPushCb))
+      {
+        dm_peer_push_msg_st stPush = {0};
+        stPush.pcPeerID = pstConn->acPeerID;
+        stPush.u16Topic = (uint16)dm_frame_rd16(pu8Body + 8u);
+        stPush.u64Key = dm_frame_rd64(pu8Body + 10u);
+        stPush.pu8Val = pu8Body + DM_FRAME_PUSH_HEAD;
+        stPush.u32Len = pstHead->u32Len - DM_FRAME_PUSH_HEAD;
+        g_pfPeerPushCb(&stPush, g_pvPeerPushCtx);
       }
       return 0;
     }
@@ -405,8 +673,8 @@ int dm__conn_on_frame(io dm__conn_st *pstConn, in const dm_frame_head_st *pstHea
   return 0;
 }
 
-static void dm__conn_on_alloc(in dm_handle_st *pstHandle, in size_t uSuggested,
-                              out dm_buf_st *pstBuf)
+static void dm__conn_on_alloc(dm_in dm_uv_handle_st *pstHandle, dm_in size_t uSuggested,
+                              dm_out dm_uv_buf_st *pstBuf)
 {
   dm__conn_st *pstConn = (dm__conn_st *)pstHandle;
   (void)uSuggested;
@@ -416,7 +684,7 @@ static void dm__conn_on_alloc(in dm_handle_st *pstHandle, in size_t uSuggested,
 }
 
 /* 接收缓冲长到能装下 u32Need 字节（不超过单条上限 + 帧头） */
-static int dm__conn_rx_grow(io dm__conn_st *pstConn, in uint32 u32Need)
+static int dm__conn_rx_grow(dm_io dm__conn_st *pstConn, dm_in uint32 u32Need)
 {
   uint8 *pu8New = NULL;
   if (u32Need <= pstConn->u32RxCap)
@@ -450,7 +718,7 @@ static int dm__conn_rx_grow(io dm__conn_st *pstConn, in uint32 u32Need)
   return DM_SUCCESS;
 }
 
-static void dm__conn_rx_shrink(io dm__conn_st *pstConn)
+static void dm__conn_rx_shrink(dm_io dm__conn_st *pstConn)
 {
   uint8 *pu8Small = NULL;
 
@@ -481,8 +749,8 @@ static void dm__conn_rx_shrink(io dm__conn_st *pstConn)
   return;
 }
 
-static void dm__conn_on_read(in dm_stream_st *pstStream, in ssize_t iNRead,
-                             in const dm_buf_st *pstBuf)
+static void dm__conn_on_read(dm_in dm_uv_stream_st *pstStream, dm_in ssize_t iNRead,
+                             dm_in const dm_uv_buf_st *pstBuf)
 {
   dm__conn_st *pstConn = (dm__conn_st *)pstStream;
   dm_frame_head_st stHead = {0};
@@ -492,7 +760,7 @@ static void dm__conn_on_read(in dm_stream_st *pstStream, in ssize_t iNRead,
 
   if (iNRead < 0)
   {
-    dm__conn_close(pstConn, (DM_EOF == iNRead) ? "closed by peer" : "read error");
+    dm__conn_close(pstConn, (DM_UV_EOF == iNRead) ? "closed by peer" : "read error");
     return;
   }
   if (dm__conn_dead(pstConn))
@@ -591,7 +859,7 @@ static void dm__conn_on_read(in dm_stream_st *pstStream, in ssize_t iNRead,
 /* ============================ 接入 ============================ */
 
 /* 接一条连接进连接表；失败返回 NULL（已经收拾干净） */
-static dm__conn_st *dm__conn_accept(in dm_stream_st *pstServer, in uint8 u8Kind)
+static dm__conn_st *dm__conn_accept(dm_in dm_uv_stream_st *pstServer, dm_in uint8 u8Kind)
 {
   dm__conn_st *pstConn =
       (dm__conn_st *)dm_calloc_tag(1u, sizeof(dm__conn_st), DM_MEM_TAG_LINK_CONN);
@@ -612,22 +880,23 @@ static dm__conn_st *dm__conn_accept(in dm_stream_st *pstServer, in uint8 u8Kind)
     return NULL;
   }
   pstConn->u32RxCap = DM__RX_KEEP;
-  (void)dm_tcp_init(dm_default_loop(), &pstConn->stTcp);
-  (void)dm_timer_init(dm_default_loop(), &pstConn->stHsTimer);
+  pstConn->u8StreamKind = DM__STREAM_TCP;
+  (void)dm_uv_tcp_init(dm_uv_default_loop(), &pstConn->uStream.stTcp);
+  (void)dm_uv_timer_init(dm_uv_default_loop(), &pstConn->stHsTimer);
   g_u32ConnNext++;
   pstConn->u32Id = g_u32ConnNext;
   dm_list_add_tail(&g_stConnList, &pstConn->stNode);
-  if ((DM_SUCCESS != dm_accept(pstServer, (dm_stream_st *)&pstConn->stTcp)) ||
+  if ((DM_SUCCESS != dm_uv_accept(pstServer, dm__conn_stream(pstConn))) ||
       (DM_SUCCESS != dm_hash_add(&g_stConnTable, pstConn->u32Id, pstConn)))
   {
     dm_list_del_node(&pstConn->stNode);
     pstConn->bClosing = DM_TRUE;
-    dm_close((dm_handle_st *)&pstConn->stHsTimer, dm__hs_timer_closed);
+    dm_uv_close((dm_uv_handle_st *)&pstConn->stHsTimer, dm__hs_timer_closed);
     return NULL;
   }
-  (void)dm_tcp_nodelay(&pstConn->stTcp, 1);
-  if (DM_SUCCESS != dm__flow_start(&pstConn->stFlow, (dm_stream_st *)&pstConn->stTcp,
-                                   dm__conn_on_alloc, dm__conn_on_read))
+  (void)dm_uv_tcp_nodelay(&pstConn->uStream.stTcp, 1);
+  if (DM_SUCCESS != dm__flow_start(&pstConn->stFlow, dm__conn_stream(pstConn), dm__conn_on_alloc,
+                                   dm__conn_on_read))
   {
     dm__conn_close(pstConn, "read start failed");
     return NULL;
@@ -636,14 +905,14 @@ static dm__conn_st *dm__conn_accept(in dm_stream_st *pstServer, in uint8 u8Kind)
 }
 
 /* 开始走 link 的规矩（二进制口一连上；WebSocket 升级以后）：要握手的起握手定时器 */
-void dm__conn_start_link(io dm__conn_st *pstConn)
+void dm__conn_start_link(dm_io dm__conn_st *pstConn)
 {
   if (NULL == g_pastRole)
   {
     dm__conn_authed(pstConn, DM_ROLE_ALL); /* 不要求握手（DM 自己的测试用）：连接带全部的位 */
     return;
   }
-  (void)dm_timer_start(&pstConn->stHsTimer, dm__on_hs_timeout, DM_HANDSHAKE_MS, 0);
+  (void)dm_uv_timer_start(&pstConn->stHsTimer, dm__on_hs_timeout, DM_HANDSHAKE_MS, 0);
   return;
 }
 
@@ -652,7 +921,7 @@ uint32 dm__link_frame_max(void)
   return g_u32FrameMax;
 }
 
-static void dm__on_new_connection(in dm_stream_st *pstServer, in int iStatus)
+static void dm__on_new_connection(dm_in dm_uv_stream_st *pstServer, dm_in int iStatus)
 {
   dm__conn_st *pstConn = NULL;
   if (DM_SUCCESS != iStatus)
@@ -667,7 +936,7 @@ static void dm__on_new_connection(in dm_stream_st *pstServer, in int iStatus)
   return;
 }
 
-static void dm__on_new_http(in dm_stream_st *pstServer, in int iStatus)
+static void dm__on_new_http(dm_in dm_uv_stream_st *pstServer, dm_in int iStatus)
 {
   dm__conn_st *pstConn = NULL;
   if (DM_SUCCESS != iStatus)
@@ -684,56 +953,56 @@ static void dm__on_new_http(in dm_stream_st *pstServer, in int iStatus)
 
 /* ============================ 端口 ============================ */
 
-static void dm__server_on_closed(in dm_handle_st *pstHandle)
+static void dm__server_on_closed(dm_in dm_uv_handle_st *pstHandle)
 {
   dm_free_tag(pstHandle);
   return;
 }
 
-static void dm__server_close(io dm_tcp_st **ppstServer)
+static void dm__server_close(dm_io dm_uv_tcp_st **ppstServer)
 {
   if (NULL != *ppstServer)
   {
-    dm_close((dm_handle_st *)*ppstServer, dm__server_on_closed);
+    dm_uv_close((dm_uv_handle_st *)*ppstServer, dm__server_on_closed);
     *ppstServer = NULL;
   }
   return;
 }
 
 /* 绑定并监听 127.0.0.1:iPort；返回 DM_SUCCESS 或错误码（端口被占要到 listen 才报） */
-static int dm__listen_on(out dm_tcp_st **ppstServer, in int iPort, in dm_connection_cb pfOnNew,
-                         out int *piBound)
+static int dm__listen_on(dm_out dm_uv_tcp_st **ppstServer, dm_in int iPort,
+                         dm_in dm_uv_connection_cb pfOnNew, dm_out int *piBound)
 {
   struct sockaddr_in stAddr = {0};
   struct sockaddr_storage stName = {0};
   int iNameLen = (int)sizeof(stName);
   int iErrCode = DM_SUCCESS;
 
-  iErrCode = dm_ip4_addr("127.0.0.1", iPort, &stAddr);
+  iErrCode = dm_uv_ip4_addr("127.0.0.1", iPort, &stAddr);
   if (DM_SUCCESS != iErrCode)
   {
     return iErrCode;
   }
-  *ppstServer = (dm_tcp_st *)dm_malloc_tag(sizeof(dm_tcp_st), DM_MEM_TAG_LINK_CONN);
+  *ppstServer = (dm_uv_tcp_st *)dm_malloc_tag(sizeof(dm_uv_tcp_st), DM_MEM_TAG_LINK_CONN);
   if (NULL == *ppstServer)
   {
     return DM_ALLOC;
   }
-  iErrCode = dm_tcp_init(dm_default_loop(), *ppstServer);
+  iErrCode = dm_uv_tcp_init(dm_uv_default_loop(), *ppstServer);
   if (DM_SUCCESS != iErrCode)
   {
     dm_free_tag(*ppstServer);
     *ppstServer = NULL;
     return iErrCode;
   }
-  iErrCode = dm_tcp_bind(*ppstServer, (const struct sockaddr *)&stAddr, 0);
+  iErrCode = dm_uv_tcp_bind(*ppstServer, (const struct sockaddr *)&stAddr, 0);
   if (DM_SUCCESS == iErrCode)
   {
-    iErrCode = dm_listen((dm_stream_st *)*ppstServer, 128, pfOnNew);
+    iErrCode = dm_uv_listen((dm_uv_stream_st *)*ppstServer, 128, pfOnNew);
   }
   if (DM_SUCCESS == iErrCode)
   {
-    iErrCode = dm_tcp_getsockname(*ppstServer, (struct sockaddr *)&stName, &iNameLen);
+    iErrCode = dm_uv_tcp_getsockname(*ppstServer, (struct sockaddr *)&stName, &iNameLen);
   }
   if (DM_SUCCESS != iErrCode)
   {
@@ -745,10 +1014,12 @@ static int dm__listen_on(out dm_tcp_st **ppstServer, in int iPort, in dm_connect
 }
 
 /* 先试 iLast（上次记下的，0 = 没有），被占了记 WARN 再让系统挑 */
-static int dm__listen_pick(out dm_tcp_st **ppstServer, in int iLast, in dm_connection_cb pfOnNew,
-                           out int *piBound, in const char *pcWhat)
+static int dm__listen_pick(dm_out dm_uv_tcp_st **ppstServer, dm_in int iLast,
+                           dm_in dm_uv_connection_cb pfOnNew, dm_out int *piBound,
+                           dm_in const char *pcWhat)
 {
-  int iErrCode = (0 != iLast) ? dm__listen_on(ppstServer, iLast, pfOnNew, piBound) : DM_EADDRINUSE;
+  int iErrCode =
+      (0 != iLast) ? dm__listen_on(ppstServer, iLast, pfOnNew, piBound) : DM_UV_EADDRINUSE;
   if (DM_SUCCESS != iErrCode)
   {
     if (0 != iLast)
@@ -787,6 +1058,10 @@ int dm__proto_init(void)
   {
     iErrCode = dm__listen_pick(&g_pstHttpServer, iLastHttp, dm__on_new_http, &g_iHttpPort, "http");
   }
+  else if (g_bDisableLocalHttp)
+  {
+    g_iHttpPort = 0;
+  }
   if (DM_SUCCESS != iErrCode)
   {
     DM_LOG_ERROR("listen on 127.0.0.1 failed: %s", dm_errno_str(iErrCode));
@@ -818,6 +1093,299 @@ void dm__link_stop_accept(void)
   return;
 }
 
+/* ============================ 跨节点 Peer 与移动端 fd 纳管 ============================ */
+
+int dm_link_set_peer_hello_verifier(dm_in dm_peer_hello_verify_cb pfVerify, dm_in void *pvCtx)
+{
+  DM__CHECK_LOOP();
+  g_pfPeerHelloVerify = pfVerify;
+  g_pvPeerHelloCtx = (NULL != pfVerify) ? pvCtx : NULL;
+  return DM_SUCCESS;
+}
+
+int dm_link_set_peer_push_cb(dm_in dm_peer_push_cb pfPush, dm_in void *pvCtx)
+{
+  DM__CHECK_LOOP();
+  g_pfPeerPushCb = pfPush;
+  g_pvPeerPushCtx = (NULL != pfPush) ? pvCtx : NULL;
+  return DM_SUCCESS;
+}
+
+int dm_link_set_mobile_hello_verifier(dm_in dm_mobile_hello_verify_cb pfVerify, dm_in void *pvCtx)
+{
+  DM__CHECK_LOOP();
+  g_pfMobileHelloVerify = pfVerify;
+  g_pvMobileHelloCtx = (NULL != pfVerify) ? pvCtx : NULL;
+  return DM_SUCCESS;
+}
+
+typedef struct dm__adopt_req
+{
+  dm_peer_fd_t tFd;
+  const char *pcPeerID;
+  uint64 u64ConnGen;
+  bool_t bIsPipe;
+  bool_t bIsInitiator;
+  bool_t bMobile;
+} dm__adopt_req_st;
+
+static int dm__conn_adopt_fd(dm_in const dm__adopt_req_st *pstReq)
+{
+  dm__conn_st *pstConn = NULL;
+  size_t uPeerLen = 0u;
+  int iErrCode = DM_SUCCESS;
+
+  DM__CHECK_LOOP();
+  if (DM_PEER_FD_INVALID == pstReq->tFd)
+  {
+    return DM_INVALID;
+  }
+  if (!pstReq->bMobile || ((NULL != pstReq->pcPeerID) && ('\0' != pstReq->pcPeerID[0])))
+  {
+    if (!dm__peer_id_str_valid(pstReq->pcPeerID, &uPeerLen))
+    {
+      return DM_INVALID;
+    }
+  }
+  if (dm__phase() >= DM__PHASE_TEARDOWN)
+  {
+    return DM_SHUTTING_DOWN;
+  }
+  if (NULL == g_stConnTable.pstBuckets)
+  {
+    return DM_LINK_ERR_STATE;
+  }
+  if (!pstReq->bMobile && (uPeerLen > 0u))
+  {
+    iErrCode = dm__conn_check_gen_conflict(pstReq->pcPeerID, pstReq->u64ConnGen, DM_FALSE, NULL);
+    if (DM_SUCCESS != iErrCode)
+    {
+      return iErrCode;
+    }
+  }
+
+  pstConn = (dm__conn_st *)dm_calloc_tag(1u, sizeof(dm__conn_st), DM_MEM_TAG_LINK_CONN);
+  if (NULL == pstConn)
+  {
+    return DM_ALLOC;
+  }
+  pstConn->u8Kind = DM__CONN_BIN;
+  pstConn->u8StreamKind = pstReq->bIsPipe ? DM__STREAM_PIPE : DM__STREAM_TCP;
+  pstConn->bPeerAdopted = pstReq->bMobile ? DM_FALSE : DM_TRUE;
+  pstConn->bPeerInitiator = (!pstReq->bMobile && pstReq->bIsInitiator) ? DM_TRUE : DM_FALSE;
+  pstConn->bMobileAdopted = pstReq->bMobile ? DM_TRUE : DM_FALSE;
+  pstConn->u64ConnGen = pstReq->bMobile ? 0u : pstReq->u64ConnGen;
+  if (uPeerLen > 0u)
+  {
+    if (pstReq->bMobile)
+    {
+      memcpy(pstConn->acHintPeerID, pstReq->pcPeerID, uPeerLen + 1u);
+    }
+    else
+    {
+      memcpy(pstConn->acPeerID, pstReq->pcPeerID, uPeerLen + 1u);
+    }
+  }
+  pstConn->pu8Rx = (uint8 *)dm_malloc_tag(DM__RX_KEEP, DM_MEM_TAG_LINK_RX);
+  pstConn->pstKillItem = dm__qitem_new();
+  if ((NULL == pstConn->pu8Rx) || (NULL == pstConn->pstKillItem) ||
+      (DM_SUCCESS != dm_hash_init(&pstConn->stPending, DM__PEND_BUCKETS, NULL)))
+  {
+    dm__qitem_free(pstConn->pstKillItem);
+    dm_free_tag(pstConn->pu8Rx);
+    dm_free_tag(pstConn);
+    return DM_ALLOC;
+  }
+  pstConn->u32RxCap = DM__RX_KEEP;
+
+  if (pstReq->bIsPipe)
+  {
+    iErrCode = dm_uv_pipe_init(dm_uv_default_loop(), &pstConn->uStream.stPipe, 0);
+  }
+  else
+  {
+    iErrCode = dm_uv_tcp_init(dm_uv_default_loop(), &pstConn->uStream.stTcp);
+  }
+  if (DM_SUCCESS != iErrCode)
+  {
+    dm_hash_destroy(&pstConn->stPending, NULL);
+    dm__qitem_free(pstConn->pstKillItem);
+    dm_free_tag(pstConn->pu8Rx);
+    dm_free_tag(pstConn);
+    return iErrCode;
+  }
+  (void)dm_uv_timer_init(dm_uv_default_loop(), &pstConn->stHsTimer);
+
+  g_u32ConnNext++;
+  pstConn->u32Id = g_u32ConnNext;
+  iErrCode = dm_hash_add(&g_stConnTable, pstConn->u32Id, pstConn);
+  if (DM_SUCCESS != iErrCode)
+  {
+    pstConn->bClosing = DM_TRUE;
+    dm_uv_close((dm_uv_handle_st *)&pstConn->stHsTimer, dm__hs_timer_closed);
+    return iErrCode;
+  }
+  if (pstReq->bIsPipe)
+  {
+    iErrCode = dm_uv_pipe_open(&pstConn->uStream.stPipe, (dm_uv_file)pstReq->tFd);
+  }
+  else
+  {
+    iErrCode = dm_uv_tcp_open(&pstConn->uStream.stTcp, (dm_uv_os_sock_t)pstReq->tFd);
+  }
+  if (DM_SUCCESS != iErrCode)
+  {
+    /* open 失败时未接管 tFd，异步清理空句柄，调用方保留 tFd 所有权 */
+    (void)dm_hash_del(&g_stConnTable, pstConn->u32Id, NULL);
+    pstConn->bClosing = DM_TRUE;
+    dm_uv_close((dm_uv_handle_st *)&pstConn->stHsTimer, dm__hs_timer_closed);
+    return iErrCode;
+  }
+  dm_list_add_tail(&g_stConnList, &pstConn->stNode);
+  if (!pstReq->bIsPipe)
+  {
+    (void)dm_uv_tcp_nodelay(&pstConn->uStream.stTcp, 1);
+  }
+  if (DM_SUCCESS != dm__flow_start(&pstConn->stFlow, dm__conn_stream(pstConn), dm__conn_on_alloc,
+                                   dm__conn_on_read))
+  {
+    DM_LOG_WARN("conn %u: adopted fd read_start failed", pstConn->u32Id);
+  }
+  if (!pstReq->bMobile && (uPeerLen > 0u))
+  {
+    dm__conn_close_superseded(pstConn->acPeerID, pstConn->u64ConnGen, DM_FALSE, pstConn);
+  }
+  (void)dm_uv_timer_start(&pstConn->stHsTimer, dm__on_hs_timeout, DM_HANDSHAKE_MS, 0);
+  return DM_SUCCESS;
+}
+
+int dm_link_adopt_peer_fd(dm_in dm_peer_fd_t tFd, dm_in const char *pcPeerID,
+                          dm_in uint64 u64ConnGen, dm_in bool_t bIsPipe, dm_in bool_t bIsInitiator)
+{
+  dm__adopt_req_st stReq = {0};
+
+  stReq.tFd = tFd;
+  stReq.pcPeerID = pcPeerID;
+  stReq.u64ConnGen = u64ConnGen;
+  stReq.bIsPipe = bIsPipe;
+  stReq.bIsInitiator = bIsInitiator;
+  stReq.bMobile = DM_FALSE;
+  return dm__conn_adopt_fd(&stReq);
+}
+
+int dm_link_adopt_mobile_fd(dm_in dm_peer_fd_t tFd, dm_in const char *pcHintPeerID,
+                            dm_in uint64 u64ConnGen, dm_in bool_t bIsPipe)
+{
+  dm__adopt_req_st stReq = {0};
+
+  stReq.tFd = tFd;
+  stReq.pcPeerID = pcHintPeerID;
+  stReq.u64ConnGen = u64ConnGen;
+  stReq.bIsPipe = bIsPipe;
+  stReq.bIsInitiator = DM_FALSE;
+  stReq.bMobile = DM_TRUE;
+  return dm__conn_adopt_fd(&stReq);
+}
+
+int dm_link_peer_send_hello(dm_in const dm_peer_hello_req_st *pstReq)
+{
+  dm__conn_st *pstConn = NULL;
+  dm_frame_head_st stHead = {0};
+  uint32 u32TimeoutMs = 0u;
+  int iErrCode = DM_SUCCESS;
+
+  DM__CHECK_LOOP();
+  if ((NULL == pstReq) || (NULL == pstReq->pcPeerID) || ('\0' == pstReq->pcPeerID[0]) ||
+      (NULL == pstReq->pvBody) || (0u == pstReq->u32Len))
+  {
+    return DM_INVALID;
+  }
+  if (pstReq->u32Len > DM_PRE_AUTH_MAX)
+  {
+    return DM_TOO_BIG;
+  }
+  if (dm__phase() >= DM__PHASE_TEARDOWN)
+  {
+    return DM_SHUTTING_DOWN;
+  }
+  if (NULL == dm__link_lookup(pstReq->uiReplyLinkID))
+  {
+    return DM_LINK_ERR_NOT_FOUND;
+  }
+  pstConn = dm__conn_find_peer_preauth(pstReq->pcPeerID, pstReq->u64ConnGen);
+  if (NULL == pstConn)
+  {
+    return DM_CONN_GONE;
+  }
+  if (pstConn->bPeerHelloSent)
+  {
+    return DM_EXISTS;
+  }
+  g_u32PeerHelloSeq++;
+  if (0u == g_u32PeerHelloSeq)
+  {
+    g_u32PeerHelloSeq = 1u;
+  }
+  pstConn->bPeerHelloSent = DM_TRUE;
+  pstConn->u32PeerHelloReq = g_u32PeerHelloSeq;
+  pstConn->uiPeerHelloReply = pstReq->uiReplyLinkID;
+  pstConn->u64PeerHelloTag = pstReq->u64Tag;
+
+  stHead.u16LinkID = DM_LINKID_HELLO;
+  stHead.u8Type = DM_FRAME_T_REQ;
+  stHead.u8Flag = (uint8)(DM_FRAME_F_JSON | DM_FRAME_F_SENSITIVE);
+  stHead.u32ReqID = pstConn->u32PeerHelloReq;
+  stHead.u32Len = pstReq->u32Len;
+  iErrCode = dm__conn_write(pstConn, &stHead, pstReq->pvBody);
+  if (DM_SUCCESS != iErrCode)
+  {
+    pstConn->bPeerHelloSent = DM_FALSE;
+    return iErrCode;
+  }
+  u32TimeoutMs = (0u != pstReq->u32TimeoutMs) ? pstReq->u32TimeoutMs : DM_HANDSHAKE_MS;
+  (void)dm_uv_timer_stop(&pstConn->stHsTimer);
+  (void)dm_uv_timer_start(&pstConn->stHsTimer, dm__on_hs_timeout, u32TimeoutMs, 0);
+  return DM_SUCCESS;
+}
+
+int dm_link_peer_mark_ready(dm_in const char *pcPeerID, dm_in uint64 u64ConnGen,
+                            dm_in const char *pcRemotePushJson)
+{
+  dm__conn_st *pstConn = NULL;
+
+  DM__CHECK_LOOP();
+  if ((NULL == pcPeerID) || ('\0' == pcPeerID[0]))
+  {
+    return DM_INVALID;
+  }
+  if (dm__phase() >= DM__PHASE_TEARDOWN)
+  {
+    return DM_SHUTTING_DOWN;
+  }
+  pstConn = dm__conn_find_peer_preauth(pcPeerID, u64ConnGen);
+  if (NULL == pstConn)
+  {
+    return DM_CONN_GONE;
+  }
+  if ((NULL != pcRemotePushJson) && ('\0' != pcRemotePushJson[0]))
+  {
+    yyjson_doc *pstDoc =
+        dm_json_read(pcRemotePushJson, strlen(pcRemotePushJson), DM_PRE_AUTH_MAX, NULL);
+    yyjson_val *pstRoot = (NULL != pstDoc) ? yyjson_doc_get_root(pstDoc) : NULL;
+    if (yyjson_is_arr(pstRoot))
+    {
+      dm__conn_parse_push_arr(pstConn, pstRoot);
+    }
+    else if (yyjson_is_obj(pstRoot))
+    {
+      dm__conn_parse_push(pstConn, pstRoot);
+    }
+    yyjson_doc_free(pstDoc);
+  }
+  dm__conn_authed(pstConn, DM_ROLE_PEER);
+  return DM_SUCCESS;
+}
+
 /* 关监听和所有连接 */
 void dm__proto_fini(void)
 {
@@ -834,6 +1402,12 @@ void dm__proto_fini(void)
   }
   dm_hash_destroy(&g_stConnTable, NULL);
   memset(&g_stConnTable, 0, sizeof(g_stConnTable));
+  g_pfPeerHelloVerify = NULL;
+  g_pvPeerHelloCtx = NULL;
+  g_pfPeerPushCb = NULL;
+  g_pvPeerPushCtx = NULL;
+  g_pfMobileHelloVerify = NULL;
+  g_pvMobileHelloCtx = NULL;
   return;
 }
 

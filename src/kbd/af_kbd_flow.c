@@ -12,8 +12,8 @@
 #include <stdio.h>
 #include <string.h>
 
-static bool_t af__kbd_name_in_list(in const char *pcTarget, in const char *const *ppcList,
-                                   in uint32 u32Cnt)
+static bool_t af__kbd_name_in_list(dm_in const char *pcTarget, dm_in const char *const *ppcList,
+                                   dm_in uint32 u32Cnt)
 {
   uint32 i = 0u;
 
@@ -31,14 +31,14 @@ static bool_t af__kbd_name_in_list(in const char *pcTarget, in const char *const
   return DM_FALSE;
 }
 
-static void af__kbd_clear_arm(io af_kbd_flow_st *pstFlow)
+static void af__kbd_clear_arm(dm_io af_kbd_flow_st *pstFlow)
 {
   pstFlow->bHasTakeFor = DM_FALSE;
   pstFlow->acTakeFor[0] = '\0';
   pstFlow->u64TakeUntilMs = 0u;
 }
 
-void af_kbd_flow_init(out af_kbd_flow_st *pstFlow, in bool_t bShowing, in bool_t bTaken)
+void af_kbd_flow_init(dm_out af_kbd_flow_st *pstFlow, dm_in bool_t bShowing, dm_in bool_t bTaken)
 {
   if (NULL == pstFlow)
   {
@@ -49,8 +49,8 @@ void af_kbd_flow_init(out af_kbd_flow_st *pstFlow, in bool_t bShowing, in bool_t
   pstFlow->bTaken = bTaken ? DM_TRUE : DM_FALSE;
 }
 
-void af_kbd_flow_on_connect(io af_kbd_flow_st *pstFlow, in const char *pcTarget,
-                            in bool_t bKeyboard, in uint64 u64NowMs)
+void af_kbd_flow_on_connect(dm_io af_kbd_flow_st *pstFlow, dm_in const char *pcTarget,
+                            dm_in bool_t bKeyboard, dm_in uint64 u64NowMs)
 {
   if (NULL == pstFlow)
   {
@@ -68,7 +68,7 @@ void af_kbd_flow_on_connect(io af_kbd_flow_st *pstFlow, in const char *pcTarget,
   }
 }
 
-void af_kbd_flow_hold(io af_kbd_flow_st *pstFlow, in uint64 u64UntilMs)
+void af_kbd_flow_hold(dm_io af_kbd_flow_st *pstFlow, dm_in uint64 u64UntilMs)
 {
   if (NULL == pstFlow)
   {
@@ -77,8 +77,8 @@ void af_kbd_flow_hold(io af_kbd_flow_st *pstFlow, in uint64 u64UntilMs)
   pstFlow->u64HoldUntilMs = u64UntilMs;
 }
 
-void af_kbd_flow_on_disconnect(io af_kbd_flow_st *pstFlow, in bool_t bShowingNow,
-                               in uint64 u64NowMs)
+void af_kbd_flow_on_disconnect(dm_io af_kbd_flow_st *pstFlow, dm_in bool_t bShowingNow,
+                               dm_in uint64 u64NowMs)
 {
   if (NULL == pstFlow)
   {
@@ -90,10 +90,11 @@ void af_kbd_flow_on_disconnect(io af_kbd_flow_st *pstFlow, in bool_t bShowingNow
   pstFlow->u64GapUntilMs = bShowingNow ? (u64NowMs + (uint64)AF_KBD_GAP_MS) : 0u;
 }
 
-static af_kbd_act_et af__kbd_check_take(io af_kbd_flow_st *pstFlow,
-                                        in const char *const *ppcConnected, in uint32 u32ConnCnt,
-                                        in bool_t bKbOnMac, in uint64 u64NowMs,
-                                        in bool_t bWasShowing, in bool_t bShowing)
+static af_kbd_act_et af__kbd_check_take(dm_io af_kbd_flow_st *pstFlow,
+                                        dm_in const char *const *ppcConnected,
+                                        dm_in uint32 u32ConnCnt, dm_in bool_t bKbOnMac,
+                                        dm_in uint64 u64NowMs, dm_in bool_t bWasShowing,
+                                        dm_in bool_t bShowing)
 {
   if (pstFlow->bHasTakeFor)
   {
@@ -121,8 +122,9 @@ static af_kbd_act_et af__kbd_check_take(io af_kbd_flow_st *pstFlow,
   return AF_KBD_ACT_NONE;
 }
 
-af_kbd_act_et af_kbd_flow_tick(io af_kbd_flow_st *pstFlow, in const char *const *ppcConnected,
-                               in uint32 u32ConnCnt, in bool_t bKbOnMac, in uint64 u64NowMs)
+af_kbd_act_et af_kbd_flow_tick(dm_io af_kbd_flow_st *pstFlow, dm_in const char *const *ppcConnected,
+                               dm_in uint32 u32ConnCnt, dm_in bool_t bKbOnMac,
+                               dm_in uint64 u64NowMs)
 {
   bool_t bShowing = DM_FALSE;
   bool_t bWas = DM_FALSE;
@@ -135,8 +137,8 @@ af_kbd_act_et af_kbd_flow_tick(io af_kbd_flow_st *pstFlow, in const char *const 
   bShowing = (u32ConnCnt > 0u) ? DM_TRUE : DM_FALSE;
   bWas = pstFlow->bWasShowing;
   pstFlow->bWasShowing = bShowing;
-  bHolding = ((pstFlow->u64HoldUntilMs > 0u) && (u64NowMs < pstFlow->u64HoldUntilMs)) ? DM_TRUE
-                                                                                       : DM_FALSE;
+  bHolding =
+      ((pstFlow->u64HoldUntilMs > 0u) && (u64NowMs < pstFlow->u64HoldUntilMs)) ? DM_TRUE : DM_FALSE;
 
   if (!bShowing)
   {
@@ -195,7 +197,7 @@ af_kbd_act_et af_kbd_flow_tick(io af_kbd_flow_st *pstFlow, in const char *const 
   return af__kbd_check_take(pstFlow, ppcConnected, u32ConnCnt, bKbOnMac, u64NowMs, bWas, bShowing);
 }
 
-af_kbd_act_et af_kbd_flow_take(io af_kbd_flow_st *pstFlow, in bool_t bKbOnMac)
+af_kbd_act_et af_kbd_flow_take(dm_io af_kbd_flow_st *pstFlow, dm_in bool_t bKbOnMac)
 {
   if (NULL == pstFlow)
   {
@@ -210,7 +212,7 @@ af_kbd_act_et af_kbd_flow_take(io af_kbd_flow_st *pstFlow, in bool_t bKbOnMac)
   return AF_KBD_ACT_TAKE;
 }
 
-af_kbd_act_et af_kbd_flow_release(io af_kbd_flow_st *pstFlow)
+af_kbd_act_et af_kbd_flow_release(dm_io af_kbd_flow_st *pstFlow)
 {
   if (NULL == pstFlow)
   {
@@ -225,7 +227,7 @@ af_kbd_act_et af_kbd_flow_release(io af_kbd_flow_st *pstFlow)
   return AF_KBD_ACT_RELEASE;
 }
 
-af_kbd_act_et af_kbd_flow_release_now(io af_kbd_flow_st *pstFlow)
+af_kbd_act_et af_kbd_flow_release_now(dm_io af_kbd_flow_st *pstFlow)
 {
   if (NULL == pstFlow)
   {

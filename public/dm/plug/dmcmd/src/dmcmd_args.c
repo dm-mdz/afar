@@ -21,7 +21,7 @@ extern "C"
 #include <stdlib.h>
 #include <string.h>
 
-static void dmcmd__zero_mem(out void *pvBuf, in size_t uLen)
+static void dmcmd__zero_mem(dm_out void *pvBuf, dm_in size_t uLen)
 {
   volatile uint8 *pu8 = (volatile uint8 *)pvBuf;
   size_t uIdx = 0u;
@@ -34,8 +34,8 @@ static void dmcmd__zero_mem(out void *pvBuf, in size_t uLen)
 
 /* ============================ 统一输出（CLI-01 / CLI-04） ============================ */
 
-void dmcmd_emit_error(in bool_t bJson, in int iStatus, in const char *pcErr,
-                      in const char *pcDetail)
+void dmcmd_emit_error(dm_in bool_t bJson, dm_in int iStatus, dm_in const char *pcErr,
+                      dm_in const char *pcDetail)
 {
   const char *pcMsg = (NULL != pcErr) ? pcErr : dmc_err_str(iStatus);
   if (bJson)
@@ -80,7 +80,7 @@ void dmcmd_emit_error(in bool_t bJson, in int iStatus, in const char *pcErr,
   return;
 }
 
-static void dmcmd__cell(io FILE *pstOut, in yyjson_val *pstVal)
+static void dmcmd__cell(dm_io FILE *pstOut, dm_in yyjson_val *pstVal)
 {
   char *pcText = NULL;
   if (yyjson_is_str(pstVal))
@@ -97,7 +97,7 @@ static void dmcmd__cell(io FILE *pstOut, in yyjson_val *pstVal)
   return;
 }
 
-static void dmcmd__obj(io FILE *pstOut, in yyjson_val *pstObj, in const char *pcPrefix)
+static void dmcmd__obj(dm_io FILE *pstOut, dm_in yyjson_val *pstObj, dm_in const char *pcPrefix)
 {
   yyjson_val *pstKey = NULL;
   yyjson_obj_iter stIter;
@@ -121,7 +121,7 @@ static void dmcmd__obj(io FILE *pstOut, in yyjson_val *pstObj, in const char *pc
   return;
 }
 
-static void dmcmd__arr(io FILE *pstOut, in yyjson_val *pstArr)
+static void dmcmd__arr(dm_io FILE *pstOut, dm_in yyjson_val *pstArr)
 {
   yyjson_val *pstFirst = yyjson_arr_get_first(pstArr);
   yyjson_val *pstOne = NULL;
@@ -142,7 +142,8 @@ static void dmcmd__arr(io FILE *pstOut, in yyjson_val *pstArr)
   (void)yyjson_obj_iter_init(pstFirst, &stCols);
   while (NULL != (pstKey = yyjson_obj_iter_next(&stCols)))
   {
-    fprintf(pstOut, "%-16s ", yyjson_get_str(pstKey));
+    const char *pcKey = yyjson_get_str(pstKey);
+    fprintf(pstOut, "%-16s ", (NULL != pcKey) ? pcKey : "");
   }
   fputc('\n', pstOut);
   (void)yyjson_arr_iter_init(pstArr, &stRows);
@@ -160,7 +161,8 @@ static void dmcmd__arr(io FILE *pstOut, in yyjson_val *pstArr)
   return;
 }
 
-static void dmcmd__emit_json_envelope(in bool_t bRaw, in const char *pcBody, in size_t uLen)
+static void dmcmd__emit_json_envelope(dm_in bool_t bRaw, dm_in const char *pcBody,
+                                      dm_in size_t uLen)
 {
   yyjson_doc *pstDoc =
       ((NULL != pcBody) && (uLen > 0u)) ? yyjson_read(pcBody, uLen, YYJSON_READ_NOFLAG) : NULL;
@@ -225,7 +227,8 @@ static void dmcmd__emit_json_envelope(in bool_t bRaw, in const char *pcBody, in 
   return;
 }
 
-void dmcmd_emit_ok(in bool_t bJson, in bool_t bRaw, in const char *pcBody, in size_t uLen)
+void dmcmd_emit_ok(dm_in bool_t bJson, dm_in bool_t bRaw, dm_in const char *pcBody,
+                   dm_in size_t uLen)
 {
   yyjson_doc *pstDoc = NULL;
   yyjson_val *pstRoot = NULL;
@@ -282,7 +285,7 @@ void dmcmd_emit_ok(in bool_t bJson, in bool_t bRaw, in const char *pcBody, in si
 
 /* ============================ --body-* 载荷加载 ============================ */
 
-static char *dmcmd__read_stdin_all(out size_t *puLen)
+static char *dmcmd__read_stdin_all(dm_out size_t *puLen)
 {
   size_t uCap = 4096u;
   size_t uLen = 0u;
@@ -331,7 +334,7 @@ static char *dmcmd__read_stdin_all(out size_t *puLen)
   return pcBuf;
 }
 
-int dmcmd_load_body_opt(in const dmcmd_opt_st *pstOpt, out char **ppcBody)
+int dmcmd_load_body_opt(dm_in const dmcmd_opt_st *pstOpt, dm_out char **ppcBody)
 {
   char *pcRaw = NULL;
   size_t uRaw = 0u;
@@ -398,19 +401,19 @@ int dmcmd_load_body_opt(in const dmcmd_opt_st *pstOpt, out char **ppcBody)
 
 /* ============================ Schema 参数解析 ============================ */
 
-static yyjson_val *dmcmd__props(in yyjson_val *pstSchema)
+static yyjson_val *dmcmd__props(dm_in yyjson_val *pstSchema)
 {
   yyjson_val *pstProps = yyjson_obj_get(pstSchema, "properties");
   return yyjson_is_obj(pstProps) ? pstProps : NULL;
 }
 
-static const char *dmcmd__type(in yyjson_val *pstProp)
+static const char *dmcmd__type(dm_in yyjson_val *pstProp)
 {
   const char *pcType = yyjson_get_str(yyjson_obj_get(pstProp, "type"));
   return (NULL != pcType) ? pcType : "string";
 }
 
-static bool_t dmcmd__required(in yyjson_val *pstSchema, in const char *pcName)
+static bool_t dmcmd__required(dm_in yyjson_val *pstSchema, dm_in const char *pcName)
 {
   yyjson_val *pstReq = yyjson_obj_get(pstSchema, "required");
   yyjson_val *pstOne = NULL;
@@ -431,8 +434,8 @@ static bool_t dmcmd__required(in yyjson_val *pstSchema, in const char *pcName)
   return DM_FALSE;
 }
 
-static bool_t dmcmd__put(io yyjson_mut_doc *pstDoc, io yyjson_mut_val *pstObj, in const char *pcKey,
-                         in const char *pcType, in const char *pcVal)
+static bool_t dmcmd__put(dm_io yyjson_mut_doc *pstDoc, dm_io yyjson_mut_val *pstObj,
+                         dm_in const char *pcKey, dm_in const char *pcType, dm_in const char *pcVal)
 {
   char *pcEnd = NULL;
   yyjson_doc *pstJson = NULL;
@@ -486,9 +489,13 @@ static bool_t dmcmd__put(io yyjson_mut_doc *pstDoc, io yyjson_mut_val *pstObj, i
   return yyjson_mut_obj_add(pstObj, yyjson_mut_strcpy(pstDoc, pcKey), pstVal) ? DM_TRUE : DM_FALSE;
 }
 
-int dmcmd_args_build(in const dmcmd_opt_st *pstOpt, in const char *pcName, in const char *pcSchema,
-                     in int iArgc, in char **ppcArgv, out char **ppcBody)
+int dmcmd_args_build(dm_in const dmcmd_args_req_st *pstReq, dm_out char **ppcBody)
 {
+  const dmcmd_opt_st *pstOpt = (NULL != pstReq) ? pstReq->pstOpt : NULL;
+  const char *pcName = (NULL != pstReq) ? pstReq->pcName : NULL;
+  const char *pcSchema = (NULL != pstReq) ? pstReq->pcSchema : NULL;
+  int iArgc = (NULL != pstReq) ? pstReq->iArgc : 0;
+  char **ppcArgv = (NULL != pstReq) ? pstReq->ppcArgv : NULL;
   yyjson_doc *pstSchemaDoc = NULL;
   yyjson_val *pstSchema = NULL;
   yyjson_val *pstProps = NULL;
@@ -621,8 +628,8 @@ int dmcmd_args_build(in const dmcmd_opt_st *pstOpt, in const char *pcName, in co
   return iErr;
 }
 
-void dmcmd_args_help(io FILE *pstOut, in const char *pcName, in const char *pcDesc,
-                     in const char *pcSchema)
+void dmcmd_args_help(dm_io FILE *pstOut, dm_in const char *pcName, dm_in const char *pcDesc,
+                     dm_in const char *pcSchema)
 {
   yyjson_doc *pstDoc = NULL;
   yyjson_val *pstSchema = NULL;
@@ -659,7 +666,7 @@ void dmcmd_args_help(io FILE *pstOut, in const char *pcName, in const char *pcDe
   return;
 }
 
-int dmcmd_read_http_port(in const char *pcDataDir)
+int dmcmd_read_http_port(dm_in const char *pcDataDir)
 {
   char acPath[768];
   char *pcText = NULL;

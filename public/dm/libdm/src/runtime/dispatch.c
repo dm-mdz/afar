@@ -47,7 +47,7 @@ int dm__link_table_init(void)
   return DM_SUCCESS;
 }
 
-static void dm__link_handler_free(in void *pvValue)
+static void dm__link_handler_free(dm_in void *pvValue)
 {
   dm_free_tag(pvValue);
   return;
@@ -60,7 +60,7 @@ void dm__link_table_destroy(void)
   return;
 }
 
-dm_link_handler_st *dm__link_lookup(in uint uiLinkID)
+dm_link_handler_st *dm__link_lookup(dm_in uint uiLinkID)
 {
   if (NULL == g_stLinkHashTable.pstBuckets)
   {
@@ -76,8 +76,9 @@ bool_t dm__link_table_ready(void)
 
 /* ============================ 处理项（对称三形态） ============================ */
 
-int dm__link_register_ex(in uint uiLinkID, in dm_pool_lane_et eLane, in dm_link_before_cb pfBefore,
-                         in dm_link_work_cb pfWork, in dm_link_after_cb pfAfter)
+int dm__link_register_ex(dm_in uint uiLinkID, dm_in dm_pool_lane_et eLane,
+                         dm_in dm_link_before_cb pfBefore, dm_in dm_link_work_cb pfWork,
+                         dm_in dm_link_after_cb pfAfter)
 {
   dm_link_handler_st *pstHandler = NULL;
 
@@ -124,22 +125,22 @@ int dm__link_register_ex(in uint uiLinkID, in dm_pool_lane_et eLane, in dm_link_
   return DM_SUCCESS;
 }
 
-int dm__link_register(in uint uiLinkID, in dm_link_before_cb pfBefore, in dm_link_work_cb pfWork,
-                      in dm_link_after_cb pfAfter)
+int dm__link_register(dm_in uint uiLinkID, dm_in dm_link_before_cb pfBefore,
+                      dm_in dm_link_work_cb pfWork, dm_in dm_link_after_cb pfAfter)
 {
   return dm__link_register_ex(uiLinkID, DM_LANE_DEFAULT, pfBefore, pfWork, pfAfter);
 }
 
-int dm_link_register_handler_ex(in uint uiLinkID, in dm_pool_lane_et eLane,
-                                in dm_link_before_cb pfBefore, in dm_link_work_cb pfWork,
-                                in dm_link_after_cb pfAfter)
+int dm_link_register_handler_ex(dm_in uint uiLinkID, dm_in dm_pool_lane_et eLane,
+                                dm_in dm_link_before_cb pfBefore, dm_in dm_link_work_cb pfWork,
+                                dm_in dm_link_after_cb pfAfter)
 {
   DM__CHECK_LOOP();
   return dm__link_register_ex(uiLinkID, eLane, pfBefore, pfWork, pfAfter);
 }
 
-int dm_link_register_handler(in uint uiLinkID, in dm_link_before_cb pfBefore,
-                             in dm_link_work_cb pfWork, in dm_link_after_cb pfAfter)
+int dm_link_register_handler(dm_in uint uiLinkID, dm_in dm_link_before_cb pfBefore,
+                             dm_in dm_link_work_cb pfWork, dm_in dm_link_after_cb pfAfter)
 {
   if (DM_LINKID_INVALID == uiLinkID)
   {
@@ -148,7 +149,7 @@ int dm_link_register_handler(in uint uiLinkID, in dm_link_before_cb pfBefore,
   return dm_link_register_handler_ex(uiLinkID, DM_LANE_DEFAULT, pfBefore, pfWork, pfAfter);
 }
 
-bool_t dm_link_has_handler(in uint uiLinkID)
+bool_t dm_link_has_handler(dm_in uint uiLinkID)
 {
   if (DM_LINKID_INVALID == uiLinkID)
   {
@@ -159,8 +160,9 @@ bool_t dm_link_has_handler(in uint uiLinkID)
 
 /* ============================ 总队列入队 ============================ */
 
-int dm__link_enqueue_ex(in uint uiLinkID, in const dm_link_msg_st *pstMsg, in bool_t bExternal,
-                        in uint32 u32ConnID, in uint32 u32ReqID, in uint8 u8ReplySrc)
+int dm__link_enqueue_ex(dm_in uint uiLinkID, dm_in const dm_link_msg_st *pstMsg,
+                        dm_in bool_t bExternal, dm_in uint32 u32ConnID, dm_in uint32 u32ReqID,
+                        dm_in uint8 u8ReplySrc)
 {
   dm_link_handler_st *pstHandler = dm__link_lookup(uiLinkID);
   dm__qitem_st *pstItem = NULL;
@@ -211,13 +213,13 @@ int dm__link_enqueue_ex(in uint uiLinkID, in const dm_link_msg_st *pstMsg, in bo
   return dm__queue_push(pstItem);
 }
 
-int dm__link_enqueue(in uint uiLinkID, in const dm_link_msg_st *pstMsg, in bool_t bExternal,
-                     in uint32 u32ConnID, in uint32 u32ReqID)
+int dm__link_enqueue(dm_in uint uiLinkID, dm_in const dm_link_msg_st *pstMsg,
+                     dm_in bool_t bExternal, dm_in uint32 u32ConnID, dm_in uint32 u32ReqID)
 {
   return dm__link_enqueue_ex(uiLinkID, pstMsg, bExternal, u32ConnID, u32ReqID, pstMsg->u8Src);
 }
 
-int dm_link_dispatch(in uint uiLinkID, in const dm_link_msg_st *pstMsg)
+int dm_link_dispatch(dm_in uint uiLinkID, dm_in const dm_link_msg_st *pstMsg)
 {
   dm_link_msg_st stLocal = {0};
 
@@ -247,7 +249,7 @@ typedef struct dm__stateless_wrap
   uint32 u32ExtBytes; /* AUD-08：保留计入总队列 64MB 背压水位，直至 after 完成后释放 */
 } dm__stateless_wrap_st;
 
-static void dm__stateless_work_wrap(io void *pvArg)
+static void dm__stateless_work_wrap(dm_io void *pvArg)
 {
   dm__stateless_wrap_st *pstWrap = (dm__stateless_wrap_st *)pvArg;
   if ((NULL != pstWrap) && (NULL != pstWrap->pfWork))
@@ -257,7 +259,7 @@ static void dm__stateless_work_wrap(io void *pvArg)
   return;
 }
 
-static void dm__stateless_after_wrap(io void *pvArg, in int iStatus)
+static void dm__stateless_after_wrap(dm_io void *pvArg, dm_in int iStatus)
 {
   dm__stateless_wrap_st *pstWrap = (dm__stateless_wrap_st *)pvArg;
   if (NULL == pstWrap)
@@ -294,10 +296,11 @@ static void dm__stateless_after_wrap(io void *pvArg, in int iStatus)
   return;
 }
 
-static void dm__stateless_job_fill(out dm_stateless_job_st *pstJob, in uint uiLinkID,
-                                   in uint8 u8Src, in uint8 u8Flags, in uint32 u32Role,
-                                   in uint64 u64Tag, in uint16 u16Depth, in uint64 u64TraceID,
-                                   in dm__qbuf_st *pstBuf, in const dm_link_msg_st *pstReplyMsg)
+static void dm__stateless_job_fill(dm_out dm_stateless_job_st *pstJob, dm_in uint uiLinkID,
+                                   dm_in uint8 u8Src, dm_in uint8 u8Flags, dm_in uint32 u32Role,
+                                   dm_in uint64 u64Tag, dm_in uint16 u16Depth,
+                                   dm_in uint64 u64TraceID, dm_in dm__qbuf_st *pstBuf,
+                                   dm_in const dm_link_msg_st *pstReplyMsg)
 {
   memset(pstJob, 0, sizeof(*pstJob));
   pstJob->uiLinkID = uiLinkID;
@@ -317,8 +320,8 @@ static void dm__stateless_job_fill(out dm_stateless_job_st *pstJob, in uint uiLi
   return;
 }
 
-int dm_stateless_reply_send(io dm_stateless_job_st *pstJob, in int iStatus, in const void *pvBody,
-                            in uint32 u32Len)
+int dm_stateless_reply_send(dm_io dm_stateless_job_st *pstJob, dm_in int iStatus,
+                            dm_in const void *pvBody, dm_in uint32 u32Len)
 {
   int iErr = DM_SUCCESS;
 
@@ -339,11 +342,12 @@ int dm_stateless_reply_send(io dm_stateless_job_st *pstJob, in int iStatus, in c
   return iErr;
 }
 
-int dm__stateless_submit(in uint uiLinkID, in dm_pool_lane_et eLane, in dm_link_work_cb pfWork,
-                         in dm_link_after_cb pfAfter, in uint8 u8Src, in uint8 u8Flags,
-                         in uint32 u32Role, in uint64 u64Tag, in uint16 u16Depth,
-                         in uint64 u64TraceID, in dm__qbuf_st *pstBuf,
-                         in const dm_link_msg_st *pstReplyMsg, in bool_t bExtOwned)
+int dm__stateless_submit(dm_in uint uiLinkID, dm_in dm_pool_lane_et eLane,
+                         dm_in dm_link_work_cb pfWork, dm_in dm_link_after_cb pfAfter,
+                         dm_in uint8 u8Src, dm_in uint8 u8Flags, dm_in uint32 u32Role,
+                         dm_in uint64 u64Tag, dm_in uint16 u16Depth, dm_in uint64 u64TraceID,
+                         dm_in dm__qbuf_st *pstBuf, dm_in const dm_link_msg_st *pstReplyMsg,
+                         dm_in bool_t bExtOwned)
 {
   dm__stateless_wrap_st *pstWrap = NULL;
   uint32 u32BufLen = (NULL != pstBuf) ? pstBuf->u32Len : 0u;
@@ -436,7 +440,8 @@ int dm__stateless_submit(in uint uiLinkID, in dm_pool_lane_et eLane, in dm_link_
 
 /* ============================ 线程池提交（转发至 dm_pool） ============================ */
 
-int dm_link_work_submit_lane(in dm_pool_lane_et eLane, in dm_link_msg_st *pstMsg, in void *pvArg)
+int dm_link_work_submit_lane(dm_in dm_pool_lane_et eLane, dm_in dm_link_msg_st *pstMsg,
+                             dm_in void *pvArg)
 {
   uint16 u16Depth = 0;
   uint64 u64TraceID = 0;
@@ -456,7 +461,7 @@ int dm_link_work_submit_lane(in dm_pool_lane_et eLane, in dm_link_msg_st *pstMsg
                                   u16Depth, u64TraceID);
 }
 
-int dm_link_work_submit(in dm_link_msg_st *pstMsg, in void *pvArg)
+int dm_link_work_submit(dm_in dm_link_msg_st *pstMsg, dm_in void *pvArg)
 {
   if (NULL == pstMsg)
   {

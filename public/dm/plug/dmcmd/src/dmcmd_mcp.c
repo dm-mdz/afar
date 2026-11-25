@@ -19,74 +19,74 @@ extern "C"
 #include <string.h>
 
 #ifdef _WIN32
-static void dmcmd__mtx_init(out dmcmd_mcp_mutex_t *p)
+static void dmcmd__mtx_init(dm_out dmcmd_mcp_mutex_t *p)
 {
   InitializeCriticalSection(p);
 }
-static void dmcmd__mtx_fini(io dmcmd_mcp_mutex_t *p)
+static void dmcmd__mtx_fini(dm_io dmcmd_mcp_mutex_t *p)
 {
   DeleteCriticalSection(p);
 }
-static void dmcmd__mtx_lock(io dmcmd_mcp_mutex_t *p)
+static void dmcmd__mtx_lock(dm_io dmcmd_mcp_mutex_t *p)
 {
   EnterCriticalSection(p);
 }
-static void dmcmd__mtx_unlock(io dmcmd_mcp_mutex_t *p)
+static void dmcmd__mtx_unlock(dm_io dmcmd_mcp_mutex_t *p)
 {
   LeaveCriticalSection(p);
 }
-static void dmcmd__cond_init(out dmcmd_mcp_cond_t *p)
+static void dmcmd__cond_init(dm_out dmcmd_mcp_cond_t *p)
 {
   InitializeConditionVariable(p);
 }
-static void dmcmd__cond_fini(io dmcmd_mcp_cond_t *p)
+static void dmcmd__cond_fini(dm_io dmcmd_mcp_cond_t *p)
 {
   (void)p;
 }
-static void dmcmd__cond_wait(io dmcmd_mcp_cond_t *c, io dmcmd_mcp_mutex_t *m)
+static void dmcmd__cond_wait(dm_io dmcmd_mcp_cond_t *c, dm_io dmcmd_mcp_mutex_t *m)
 {
   (void)SleepConditionVariableCS(c, m, INFINITE);
 }
-static void dmcmd__cond_signal(io dmcmd_mcp_cond_t *c)
+static void dmcmd__cond_signal(dm_io dmcmd_mcp_cond_t *c)
 {
   WakeConditionVariable(c);
 }
 #else
-static void dmcmd__mtx_init(out dmcmd_mcp_mutex_t *p)
+static void dmcmd__mtx_init(dm_out dmcmd_mcp_mutex_t *p)
 {
   (void)pthread_mutex_init(p, NULL);
 }
-static void dmcmd__mtx_fini(io dmcmd_mcp_mutex_t *p)
+static void dmcmd__mtx_fini(dm_io dmcmd_mcp_mutex_t *p)
 {
   (void)pthread_mutex_destroy(p);
 }
-static void dmcmd__mtx_lock(io dmcmd_mcp_mutex_t *p)
+static void dmcmd__mtx_lock(dm_io dmcmd_mcp_mutex_t *p)
 {
   (void)pthread_mutex_lock(p);
 }
-static void dmcmd__mtx_unlock(io dmcmd_mcp_mutex_t *p)
+static void dmcmd__mtx_unlock(dm_io dmcmd_mcp_mutex_t *p)
 {
   (void)pthread_mutex_unlock(p);
 }
-static void dmcmd__cond_init(out dmcmd_mcp_cond_t *p)
+static void dmcmd__cond_init(dm_out dmcmd_mcp_cond_t *p)
 {
   (void)pthread_cond_init(p, NULL);
 }
-static void dmcmd__cond_fini(io dmcmd_mcp_cond_t *p)
+static void dmcmd__cond_fini(dm_io dmcmd_mcp_cond_t *p)
 {
   (void)pthread_cond_destroy(p);
 }
-static void dmcmd__cond_wait(io dmcmd_mcp_cond_t *c, io dmcmd_mcp_mutex_t *m)
+static void dmcmd__cond_wait(dm_io dmcmd_mcp_cond_t *c, dm_io dmcmd_mcp_mutex_t *m)
 {
   (void)pthread_cond_wait(c, m);
 }
-static void dmcmd__cond_signal(io dmcmd_mcp_cond_t *c)
+static void dmcmd__cond_signal(dm_io dmcmd_mcp_cond_t *c)
 {
   (void)pthread_cond_signal(c);
 }
 #endif
 
-static void dmcmd__zero_secret(out void *pvBuf, in size_t uLen)
+static void dmcmd__zero_secret(dm_out void *pvBuf, dm_in size_t uLen)
 {
   volatile uint8 *pu8 = (volatile uint8 *)pvBuf;
   size_t uIdx = 0u;
@@ -97,7 +97,7 @@ static void dmcmd__zero_secret(out void *pvBuf, in size_t uLen)
   return;
 }
 
-static bool_t dmcmd__has_ctl_or_space(in const char *pcStr)
+static bool_t dmcmd__has_ctl_or_space(dm_in const char *pcStr)
 {
   const unsigned char *pu8 = (const unsigned char *)pcStr;
   if (NULL == pu8)
@@ -115,7 +115,7 @@ static bool_t dmcmd__has_ctl_or_space(in const char *pcStr)
   return DM_FALSE;
 }
 
-static bool_t dmcmd__has_ctl_char(in const char *pcStr)
+static bool_t dmcmd__has_ctl_char(dm_in const char *pcStr)
 {
   const unsigned char *pu8 = (const unsigned char *)pcStr;
   if (NULL == pu8)
@@ -133,7 +133,7 @@ static bool_t dmcmd__has_ctl_char(in const char *pcStr)
   return DM_FALSE;
 }
 
-static bool_t dmcmd__is_blank_line(in const char *pcLine, in size_t uLen)
+static bool_t dmcmd__is_blank_line(dm_in const char *pcLine, dm_in size_t uLen)
 {
   size_t uIdx = 0u;
   for (uIdx = 0u; uIdx < uLen; uIdx++)
@@ -146,7 +146,8 @@ static bool_t dmcmd__is_blank_line(in const char *pcLine, in size_t uLen)
   return DM_TRUE;
 }
 
-void dmcmd_mcp_write_json_line(io dmcmd_mcp_ctx_st *pstCtx, in const char *pcData, in size_t uLen)
+void dmcmd_mcp_write_json_line(dm_io dmcmd_mcp_ctx_st *pstCtx, dm_in const char *pcData,
+                               dm_in size_t uLen)
 {
   yyjson_doc *pstDoc = NULL;
   char *pcCompact = NULL;
@@ -182,8 +183,8 @@ void dmcmd_mcp_write_json_line(io dmcmd_mcp_ctx_st *pstCtx, in const char *pcDat
   return;
 }
 
-void dmcmd_mcp_reply_rpc_err(io dmcmd_mcp_ctx_st *pstCtx, in const char *pcReqLine,
-                             in size_t uReqLen, in int iCode, in const char *pcMsg)
+void dmcmd_mcp_reply_rpc_err(dm_io dmcmd_mcp_ctx_st *pstCtx, dm_in const char *pcReqLine,
+                             dm_in size_t uReqLen, dm_in int iCode, dm_in const char *pcMsg)
 {
   yyjson_doc *pstReq =
       (NULL != pcReqLine) ? yyjson_read(pcReqLine, uReqLen, YYJSON_READ_NOFLAG) : NULL;
@@ -257,7 +258,7 @@ static void *dmcmd__mcp_worker(void *pvArg)
 #endif
 }
 
-static void dmcmd__mcp_reap_done(io dmcmd_mcp_ctx_st *pstCtx)
+static void dmcmd__mcp_reap_done(dm_io dmcmd_mcp_ctx_st *pstCtx)
 {
   uint32 u32Idx = 0u;
   for (u32Idx = 0u; u32Idx < DMCMD_MCP_INFLIGHT; u32Idx++)
@@ -281,7 +282,7 @@ static void dmcmd__mcp_reap_done(io dmcmd_mcp_ctx_st *pstCtx)
   return;
 }
 
-static int dmcmd__mcp_spawn(io dmcmd_mcp_ctx_st *pstCtx, io char *pcLine, in size_t uLen)
+static int dmcmd__mcp_spawn(dm_io dmcmd_mcp_ctx_st *pstCtx, dm_io char *pcLine, dm_in size_t uLen)
 {
   uint32 u32Idx = 0u;
   dmcmd_mcp_slot_st *pstSlot = NULL;
@@ -334,7 +335,8 @@ static int dmcmd__mcp_spawn(io dmcmd_mcp_ctx_st *pstCtx, io char *pcLine, in siz
   return 0;
 }
 
-static bool_t dmcmd__mcp_read_line(out char **ppcLine, out size_t *puLen, out bool_t *pbTooBig)
+static bool_t dmcmd__mcp_read_line(dm_out char **ppcLine, dm_out size_t *puLen,
+                                   dm_out bool_t *pbTooBig)
 {
   size_t uCap = 4096u;
   size_t uLen = 0u;
@@ -403,8 +405,9 @@ static bool_t dmcmd__mcp_read_line(out char **ppcLine, out size_t *puLen, out bo
   return DM_TRUE;
 }
 
-static bool_t dmcmd__mcp_parse_url(in const char *pcUrl, out char *pcHost, in size_t uHostCap,
-                                   out int *piPort, out char *pcPath, in size_t uPathCap)
+static bool_t dmcmd__mcp_parse_url(dm_in const char *pcUrl, dm_out char *pcHost,
+                                   dm_in size_t uHostCap, dm_out int *piPort, dm_out char *pcPath,
+                                   dm_in size_t uPathCap)
 {
   const char *pc = pcUrl;
   const char *pcSlash = NULL;
@@ -485,7 +488,7 @@ static bool_t dmcmd__mcp_parse_url(in const char *pcUrl, out char *pcHost, in si
   return DM_TRUE;
 }
 
-int dmcmd_run_mcp(in const dmcmd_opt_st *pstOpt)
+int dmcmd_run_mcp(dm_in const dmcmd_opt_st *pstOpt)
 {
   dmcmd_mcp_ctx_st stCtx;
   const char *pcUrl = getenv("DMCMD_MCP_URL");

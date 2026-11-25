@@ -50,20 +50,23 @@ typedef struct af_bundle_ops
 
 typedef struct af_bundle_launch_cb
 {
-  int (*pfEnsureInstalled)(in const char *pcExePath);
+  int (*pfEnsureInstalled)(dm_in const char *pcExePath);
   int (*pfWakeRunning)(void);
 } af_bundle_launch_cb_st;
 
-bool_t af_shell_ver_newer(in const char *pcNewVer, in const char *pcCurVer);
-bool_t af_shell_in_applications(in const char *pcAppPath);
-bool_t af_shell_find_app_bundle(in const char *pcExePath, out char *pcAppOut, in size_t uCap);
-af_bundle_action_et af_shell_launch_bundle_ex(in const char *pcAppPath, in const char *pcExePath,
-                                              in const char *pcNewVer,
-                                              in const af_bundle_ops_st *pstOps, io void *pvCtx);
-af_bundle_action_et af_shell_launch_bundle(in const char *pcAppPath, in const char *pcExePath,
-                                           in const char *pcNewVer,
-                                           in const af_bundle_launch_cb_st *pstCb);
-int af_shell_run_app(in const af_shell_run_cfg_st *pstCfg);
+bool_t af_shell_ver_newer(dm_in const char *pcNewVer, dm_in const char *pcCurVer);
+bool_t af_shell_in_applications(dm_in const char *pcAppPath);
+bool_t af_shell_find_app_bundle(dm_in const char *pcExePath, dm_out char *pcAppOut,
+                                dm_in size_t uCap);
+af_bundle_action_et af_shell_launch_bundle_ex(dm_in const char *pcAppPath,
+                                              dm_in const char *pcExePath,
+                                              dm_in const char *pcNewVer,
+                                              dm_in const af_bundle_ops_st *pstOps,
+                                              dm_io void *pvCtx);
+af_bundle_action_et af_shell_launch_bundle(dm_in const char *pcAppPath, dm_in const char *pcExePath,
+                                           dm_in const char *pcNewVer,
+                                           dm_in const af_bundle_launch_cb_st *pstCb);
+int af_shell_run_app(dm_in const af_shell_run_cfg_st *pstCfg);
 
 #ifdef __cplusplus
 }

@@ -16,12 +16,12 @@ extern "C"
 {
 #endif
 
-void dm__mkdirs(in const char *pcPath);
-int dm__lock_take(in const char *pcDir, in const char *pcLockName);
+void dm__mkdirs(dm_in const char *pcPath);
+int dm__lock_take(dm_in const char *pcDir, dm_in const char *pcLockName);
 void dm__lock_release(void);
-int dm__fs_replace(in const char *pcFrom, in const char *pcTo);
-char *dm__file_read_all(in const char *pcPath, in size_t uMax, out size_t *puLen);
-int dm__file_write_atomic(in const char *pcPath, in const char *pcText, in size_t uLen);
+int dm__fs_replace(dm_in const char *pcFrom, dm_in const char *pcTo);
+char *dm__file_read_all(dm_in const char *pcPath, dm_in size_t uMax, dm_out size_t *puLen);
+int dm__file_write_atomic(dm_in const char *pcPath, dm_in const char *pcText, dm_in size_t uLen);
 
 #ifdef __cplusplus
 }

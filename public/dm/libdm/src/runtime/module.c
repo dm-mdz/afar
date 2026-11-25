@@ -23,10 +23,11 @@ extern "C"
 #include <dm/event.h>
 #include "../dm_internal.h"
 
-#include <signal.h> /* SIGINT / SIGTERM / SIGPIPE */
-#include <stdlib.h> /* _exit（Windows） */
-#include <stdio.h>  /* snprintf / fflush */
-#include <string.h> /* memset / memcpy / strlen */
+#include <signal.h>    /* SIGINT / SIGTERM / SIGPIPE */
+#include <stdatomic.h> /* atomic_load_explicit / atomic_store_explicit */
+#include <stdlib.h>    /* _exit（Windows） */
+#include <stdio.h>     /* snprintf / fflush */
+#include <string.h>    /* memset / memcpy / strlen */
 #ifdef _WIN32
 #include <windows.h>
 #include <io.h> /* _write */
@@ -59,7 +60,7 @@ typedef struct dm__hold
 } dm__hold_st;
 
 /* ---- 阶段与模块 ---- */
-static dm__phase_et g_ePhase = DM__PHASE_NONE;
+static _Atomic int g_iPhase = (int)DM__PHASE_NONE;
 static const dm_module_st *g_pastMod = NULL;
 static uint g_uiModCount = 0;
 static uint g_uiModInited = 0; /* pfInit 成功了几个（按清单顺序） */
@@ -75,24 +76,24 @@ static dm__hold_st g_astHold[DM__DRAIN_HOLD_MAX];
 static uint g_uiHoldCount = 0;
 
 /* ---- 句柄 ---- */
-static dm_timer_st g_stDrainTimer;    /* 收尾最多等多久 */
-static dm_timer_st g_stWorkWaitTimer; /* 拆除时最多等在跑的 work 多久 */
+static dm_uv_timer_st g_stDrainTimer;    /* 收尾最多等多久 */
+static dm_uv_timer_st g_stWorkWaitTimer; /* 拆除时最多等在跑的 work 多久 */
 static bool_t g_bDrainTimerUp = DM_FALSE;
 static bool_t g_bWorkWaitTimerUp = DM_FALSE;
-static dm_signal_st g_stSigInt;
-static dm_signal_st g_stSigTerm;
+static dm_uv_signal_st g_stSigInt;
+static dm_uv_signal_st g_stSigTerm;
 static bool_t g_bSigIntUp = DM_FALSE;
 static bool_t g_bSigTermUp = DM_FALSE;
 #ifdef _WIN32
-static dm_signal_st g_stSigHup; /* 控制台关闭事件，libuv 报成 SIGHUP */
+static dm_uv_signal_st g_stSigHup; /* 控制台关闭事件，libuv 报成 SIGHUP */
 static bool_t g_bSigHupUp = DM_FALSE;
 #endif
 static uint g_uiSignalCount = 0;
 
 typedef union dm__stdin
 {
-  dm_pipe_st stPipe;
-  dm_tty_st stTty;
+  dm_uv_pipe_st stPipe;
+  dm_uv_tty_st stTty;
 } dm__stdin_ut;
 
 static dm__stdin_ut g_uStdin;
@@ -101,9 +102,15 @@ static char g_acStdinBuf[1024];
 
 /* ============================ 阶段与扩展钩子 ============================ */
 
+static void dm__phase_set(dm_in dm__phase_et ePhase)
+{
+  atomic_store_explicit(&g_iPhase, (int)ePhase, memory_order_release);
+  return;
+}
+
 dm__phase_et dm__phase(void)
 {
-  return g_ePhase;
+  return (dm__phase_et)atomic_load_explicit(&g_iPhase, memory_order_acquire);
 }
 
 #define DM__EXT_HOOKS_MAX 8u
@@ -114,7 +121,7 @@ static const dm_ext_hooks_st *g_pstCfgExt = NULL;
 static uint g_uiExtInited = 0;
 static bool_t g_bCfgExtInited = DM_FALSE;
 
-int dm_ext_register(in const dm_ext_hooks_st *pstHooks)
+int dm_ext_register(dm_in const dm_ext_hooks_st *pstHooks)
 {
   uint uiIdx = 0;
 
@@ -164,7 +171,7 @@ static bool_t dm__ext_has_cfg_extra(void)
   return DM_TRUE;
 }
 
-static int dm__ext_before_init(in const dm_cfg_st *pstCfg)
+static int dm__ext_before_init(dm_in const dm_cfg_st *pstCfg)
 {
   uint uiIdx = 0;
   int iErr = DM_SUCCESS;
@@ -272,7 +279,7 @@ static void dm__ext_on_end(void)
   return;
 }
 
-void dm__ext_after_work(in uint32 u32StatKey)
+void dm__ext_after_work(dm_in uint32 u32StatKey)
 {
   uint uiIdx = 0;
 
@@ -308,7 +315,7 @@ void dm__ext_on_thread_exit(void)
   return;
 }
 
-static void dm__ext_get_ports(out int *piLink, out int *piHttp)
+static void dm__ext_get_ports(dm_out int *piLink, dm_out int *piHttp)
 {
   uint uiIdx = 0;
   int iLink = 0;
@@ -349,7 +356,7 @@ uint32 dm__ext_child_count(void)
   return u32Count;
 }
 
-int dm__ext_reply_take(in const void *pvMsg, out void *pvReply)
+int dm__ext_reply_take(dm_in const void *pvMsg, dm_out void *pvReply)
 {
   uint uiIdx = 0;
 
@@ -367,8 +374,8 @@ int dm__ext_reply_take(in const void *pvMsg, out void *pvReply)
   return DM_NOT_FOUND;
 }
 
-int dm__ext_reply_send(in const void *pvReply, in int iStatus, in const void *pvBody,
-                       in uint32 u32Len)
+int dm__ext_reply_send(dm_in const void *pvReply, dm_in int iStatus, dm_in const void *pvBody,
+                       dm_in uint32 u32Len)
 {
   uint uiIdx = 0;
 
@@ -388,11 +395,11 @@ int dm__ext_reply_send(in const void *pvReply, in int iStatus, in const void *pv
 
 /* ============================ 拆除 ============================ */
 
-static void dm__close_if(in dm_handle_st *pstHandle)
+static void dm__close_if(dm_in dm_uv_handle_st *pstHandle)
 {
-  if (!dm_is_closing(pstHandle))
+  if (!dm_uv_is_closing(pstHandle))
   {
-    dm_close(pstHandle, NULL);
+    dm_uv_close(pstHandle, NULL);
   }
   return;
 }
@@ -401,18 +408,18 @@ static void dm__signals_close(void)
 {
   if (g_bSigIntUp)
   {
-    dm__close_if((dm_handle_st *)&g_stSigInt);
+    dm__close_if((dm_uv_handle_st *)&g_stSigInt);
     g_bSigIntUp = DM_FALSE;
   }
   if (g_bSigTermUp)
   {
-    dm__close_if((dm_handle_st *)&g_stSigTerm);
+    dm__close_if((dm_uv_handle_st *)&g_stSigTerm);
     g_bSigTermUp = DM_FALSE;
   }
 #ifdef _WIN32
   if (g_bSigHupUp)
   {
-    dm__close_if((dm_handle_st *)&g_stSigHup);
+    dm__close_if((dm_uv_handle_st *)&g_stSigHup);
     g_bSigHupUp = DM_FALSE;
   }
 #endif
@@ -423,14 +430,14 @@ static void dm__stdin_close(void)
 {
   if (g_bStdinUp)
   {
-    dm__close_if((dm_handle_st *)&g_uStdin);
+    dm__close_if((dm_uv_handle_st *)&g_uStdin);
     g_bStdinUp = DM_FALSE;
   }
   return;
 }
 
 /* 拆除时还有 work 在跑、等满了也没回来：记 ERROR、刷日志，_exit(2)。不调 fini、不返回 */
-static void dm__on_work_wait(in dm_timer_st *pstTimer)
+static void dm__on_work_wait(dm_in dm_uv_timer_st *pstTimer)
 {
   (void)pstTimer;
   if (0u == dm__work_inflight())
@@ -448,13 +455,13 @@ static void dm__on_work_wait(in dm_timer_st *pstTimer)
 
 static void dm__teardown(void)
 {
-  if (g_ePhase >= DM__PHASE_TEARDOWN)
+  if (dm__phase() >= DM__PHASE_TEARDOWN)
   {
     return;
   }
-  g_ePhase = DM__PHASE_TEARDOWN;
+  dm__phase_set(DM__PHASE_TEARDOWN);
   DM_LOG_INFO("teardown");
-  (void)dm_timer_stop(&g_stDrainTimer);
+  (void)dm_uv_timer_stop(&g_stDrainTimer);
   dm__timer_cancel_all();
   dm__ext_on_teardown(); /* 强杀残留子进程、关监听与连接 */
   dm__run_file_remove();
@@ -464,12 +471,12 @@ static void dm__teardown(void)
   dm__stdin_close();
   if (dm__work_inflight() > 0u)
   {
-    (void)dm_timer_start(&g_stWorkWaitTimer, dm__on_work_wait, DM_WORK_WAIT_MS, 0);
+    (void)dm_uv_timer_start(&g_stWorkWaitTimer, dm__on_work_wait, DM_WORK_WAIT_MS, 0);
   }
   return;
 }
 
-static void dm__run_teardown(io dm__qitem_st *pstItem)
+static void dm__run_teardown(dm_io dm__qitem_st *pstItem)
 {
   (void)pstItem;
   dm__teardown();
@@ -478,7 +485,7 @@ static void dm__run_teardown(io dm__qitem_st *pstItem)
 
 /* ============================ 收尾 ============================ */
 
-static void dm__on_drain_timeout(in dm_timer_st *pstTimer)
+static void dm__on_drain_timeout(dm_in dm_uv_timer_st *pstTimer)
 {
   uint uiIdx = 0;
   (void)pstTimer;
@@ -495,17 +502,17 @@ static void dm__on_drain_timeout(in dm_timer_st *pstTimer)
   return;
 }
 
-static void dm__run_drain(io dm__qitem_st *pstItem)
+static void dm__run_drain(dm_io dm__qitem_st *pstItem)
 {
   dm_drain_st stDrain = {0};
   uint uiIdx = 0;
   (void)pstItem;
 
-  if (DM__PHASE_RUN != g_ePhase)
+  if (DM__PHASE_RUN != dm__phase())
   {
     return;
   }
-  g_ePhase = DM__PHASE_DRAIN;
+  dm__phase_set(DM__PHASE_DRAIN);
   DM_LOG_INFO("drain start");
   dm__ext_on_drain();
   for (uiIdx = g_uiModInited; uiIdx > 0u; uiIdx--)
@@ -516,7 +523,7 @@ static void dm__run_drain(io dm__qitem_st *pstItem)
       g_pastMod[uiIdx - 1u].pfDrain(&stDrain);
     }
   }
-  if (DM__PHASE_DRAIN != g_ePhase)
+  if (DM__PHASE_DRAIN != dm__phase())
   {
     return; /* 某个 pfDrain 里第二个信号来了之类，已经进了拆除 */
   }
@@ -525,16 +532,16 @@ static void dm__run_drain(io dm__qitem_st *pstItem)
     dm__teardown();
     return;
   }
-  (void)dm_timer_start(&g_stDrainTimer, dm__on_drain_timeout, g_u32DrainMs, 0);
+  (void)dm_uv_timer_start(&g_stDrainTimer, dm__on_drain_timeout, g_u32DrainMs, 0);
   return;
 }
 
-int dm_drain_hold(io dm_drain_st *pstDrain)
+int dm_drain_hold(dm_io dm_drain_st *pstDrain)
 {
   uint uiIdx = 0;
 
   DM__CHECK_LOOP();
-  if ((NULL == pstDrain) || (DM__PHASE_DRAIN != g_ePhase))
+  if ((NULL == pstDrain) || (DM__PHASE_DRAIN != dm__phase()))
   {
     return DM_LINK_ERR_STATE;
   }
@@ -551,7 +558,7 @@ int dm_drain_hold(io dm_drain_st *pstDrain)
   return DM_RANGE;
 }
 
-void dm_drain_release(in int iHold)
+void dm_drain_release(dm_in int iHold)
 {
   if ((!dm_in_loop()) || (iHold <= 0) || ((uint)iHold > DM__DRAIN_HOLD_MAX) ||
       (!g_astHold[iHold - 1].bUsed))
@@ -560,7 +567,7 @@ void dm_drain_release(in int iHold)
   }
   g_astHold[iHold - 1].bUsed = DM_FALSE;
   g_uiHoldCount--;
-  if ((0u == g_uiHoldCount) && (DM__PHASE_DRAIN == g_ePhase))
+  if ((0u == g_uiHoldCount) && (DM__PHASE_DRAIN == dm__phase()))
   {
     /* 不在调用方的调用栈里直接拆，排一条：调用方可能正在用着别的东西 */
     (void)dm__queue_run(dm__run_teardown, NULL);
@@ -568,14 +575,14 @@ void dm_drain_release(in int iHold)
   return;
 }
 
-void dm_quit(in int iCode)
+void dm_quit(dm_in int iCode)
 {
   if (!dm_in_loop())
   {
     dm__wrong_thread(__func__);
     return;
   }
-  if (g_bQuitting || (DM__PHASE_NONE == g_ePhase))
+  if (g_bQuitting || (DM__PHASE_NONE == dm__phase()))
   {
     return;
   }
@@ -589,7 +596,7 @@ void dm_quit(in int iCode)
 /* ============================ 信号、标准输入 ============================ */
 
 /* 第一次：走收尾；第二次：不等了，直接拆除 */
-static void dm__on_signal(in dm_signal_st *pstSignal, in int iSignum)
+static void dm__on_signal(dm_in dm_uv_signal_st *pstSignal, dm_in int iSignum)
 {
   (void)pstSignal;
   g_uiSignalCount++;
@@ -605,16 +612,16 @@ static void dm__on_signal(in dm_signal_st *pstSignal, in int iSignum)
 
 static int dm__signals_open(void)
 {
-  dm_loop_st *pstLoop = dm_default_loop();
+  dm_uv_loop_st *pstLoop = dm_uv_default_loop();
   int iErrCode = DM_SUCCESS;
 
-  iErrCode = dm_signal_init(pstLoop, &g_stSigInt);
+  iErrCode = dm_uv_signal_init(pstLoop, &g_stSigInt);
   if (DM_SUCCESS != iErrCode)
   {
     return iErrCode;
   }
   g_bSigIntUp = DM_TRUE;
-  iErrCode = dm_signal_init(pstLoop, &g_stSigTerm);
+  iErrCode = dm_uv_signal_init(pstLoop, &g_stSigTerm);
   if (DM_SUCCESS != iErrCode)
   {
     dm__signals_close();
@@ -622,7 +629,7 @@ static int dm__signals_open(void)
   }
   g_bSigTermUp = DM_TRUE;
 #ifdef _WIN32
-  iErrCode = dm_signal_init(pstLoop, &g_stSigHup);
+  iErrCode = dm_uv_signal_init(pstLoop, &g_stSigHup);
   if (DM_SUCCESS != iErrCode)
   {
     dm__signals_close();
@@ -630,16 +637,16 @@ static int dm__signals_open(void)
   }
   g_bSigHupUp = DM_TRUE;
 #endif
-  (void)dm_signal_start(&g_stSigInt, dm__on_signal, SIGINT);
-  (void)dm_signal_start(&g_stSigTerm, dm__on_signal, SIGTERM);
+  (void)dm_uv_signal_start(&g_stSigInt, dm__on_signal, SIGINT);
+  (void)dm_uv_signal_start(&g_stSigTerm, dm__on_signal, SIGTERM);
 #ifdef _WIN32
-  (void)dm_signal_start(&g_stSigHup, dm__on_signal, SIGHUP);
+  (void)dm_uv_signal_start(&g_stSigHup, dm__on_signal, SIGHUP);
 #endif
   return DM_SUCCESS;
 }
 
-static void dm__on_stdin_alloc(in dm_handle_st *pstHandle, in size_t uSuggested,
-                               out dm_buf_st *pstBuf)
+static void dm__on_stdin_alloc(dm_in dm_uv_handle_st *pstHandle, dm_in size_t uSuggested,
+                               dm_out dm_uv_buf_st *pstBuf)
 {
   (void)pstHandle;
   (void)uSuggested;
@@ -649,8 +656,8 @@ static void dm__on_stdin_alloc(in dm_handle_st *pstHandle, in size_t uSuggested,
 }
 
 /* 标准输入读到的内容不用（这条路只为了知道它断没断）；断了就收尾 */
-static void dm__on_stdin_read(in dm_stream_st *pstStream, in ssize_t iNRead,
-                              in const dm_buf_st *pstBuf)
+static void dm__on_stdin_read(dm_in dm_uv_stream_st *pstStream, dm_in ssize_t iNRead,
+                              dm_in const dm_uv_buf_st *pstBuf)
 {
   (void)pstStream;
   (void)pstBuf;
@@ -665,21 +672,21 @@ static void dm__on_stdin_read(in dm_stream_st *pstStream, in ssize_t iNRead,
 
 static int dm__stdin_open(void)
 {
-  dm_handle_type_et eType = dm_guess_handle(0);
+  dm_uv_handle_type_et eType = dm_uv_guess_handle(0);
   int iErrCode = DM_SUCCESS;
 
-  if (DM_NAMED_PIPE == eType)
+  if (DM_UV_NAMED_PIPE == eType)
   {
-    iErrCode = dm_pipe_init(dm_default_loop(), &g_uStdin.stPipe, 0);
+    iErrCode = dm_uv_pipe_init(dm_uv_default_loop(), &g_uStdin.stPipe, 0);
     if (DM_SUCCESS == iErrCode)
     {
       g_bStdinUp = DM_TRUE;
-      iErrCode = dm_pipe_open(&g_uStdin.stPipe, 0);
+      iErrCode = dm_uv_pipe_open(&g_uStdin.stPipe, 0);
     }
   }
-  else if (DM_TTY == eType)
+  else if (DM_UV_TTY == eType)
   {
-    iErrCode = dm_tty_init(dm_default_loop(), &g_uStdin.stTty, 0, 1);
+    iErrCode = dm_uv_tty_init(dm_uv_default_loop(), &g_uStdin.stTty, 0, 1);
     g_bStdinUp = (DM_SUCCESS == iErrCode) ? DM_TRUE : DM_FALSE;
   }
   else
@@ -689,7 +696,8 @@ static int dm__stdin_open(void)
   }
   if (DM_SUCCESS == iErrCode)
   {
-    iErrCode = dm_read_start((dm_stream_st *)&g_uStdin, dm__on_stdin_alloc, dm__on_stdin_read);
+    iErrCode =
+        dm_uv_read_start((dm_uv_stream_st *)&g_uStdin, dm__on_stdin_alloc, dm__on_stdin_read);
   }
   if (DM_SUCCESS != iErrCode)
   {
@@ -707,7 +715,7 @@ static void dm__boot_make(void)
   uint8 au8Rand[8] = {0};
   uint uiIdx = 0;
 
-  if (DM_SUCCESS != dm_random(NULL, NULL, au8Rand, sizeof(au8Rand), 0, NULL))
+  if (DM_SUCCESS != dm_uv_random(NULL, NULL, au8Rand, sizeof(au8Rand), 0, NULL))
   {
     uint64 u64Now = dm_hrtime(); /* 系统随机数拿不到（极少见）：拿时间凑，只是用来分辨两次启动 */
     memcpy(au8Rand, &u64Now, sizeof(au8Rand));
@@ -741,7 +749,7 @@ typedef struct dm__jbuf
   bool_t bOom;
 } dm__jbuf_st;
 
-static void dm__jbuf_put(io dm__jbuf_st *pstJ, in const char *pcData, in size_t uN)
+static void dm__jbuf_put(dm_io dm__jbuf_st *pstJ, dm_in const char *pcData, dm_in size_t uN)
 {
   if (pstJ->bOom || (0u == uN))
   {
@@ -782,7 +790,7 @@ static void dm__jbuf_put(io dm__jbuf_st *pstJ, in const char *pcData, in size_t 
   return;
 }
 
-static void dm__jbuf_str(io dm__jbuf_st *pstJ, in const char *pcStr)
+static void dm__jbuf_str(dm_io dm__jbuf_st *pstJ, dm_in const char *pcStr)
 {
   const unsigned char *pu8P = (const unsigned char *)pcStr;
   char acEsc[8] = {0};
@@ -837,7 +845,7 @@ static void dm__jbuf_str(io dm__jbuf_st *pstJ, in const char *pcStr)
   return;
 }
 
-static void dm__run_json_tokens(io dm__jbuf_st *pstJ, in const dm_cfg_st *pstC)
+static void dm__run_json_tokens(dm_io dm__jbuf_st *pstJ, dm_in const dm_cfg_st *pstC)
 {
   bool_t bFirst = DM_TRUE;
   uint uiIdx = 0;
@@ -863,7 +871,7 @@ static void dm__run_json_tokens(io dm__jbuf_st *pstJ, in const dm_cfg_st *pstC)
   return;
 }
 
-static char *dm__run_json(in const dm_cfg_st *pstC, in bool_t bTokens, out size_t *puLen)
+static char *dm__run_json(dm_in const dm_cfg_st *pstC, dm_in bool_t bTokens, dm_out size_t *puLen)
 {
   dm__jbuf_st stJ = {0};
   char acHead[192] = {0};
@@ -894,7 +902,7 @@ static char *dm__run_json(in const dm_cfg_st *pstC, in bool_t bTokens, out size_
   return stJ.pcBuf;
 }
 
-static void dm__run_file_write(in const dm_cfg_st *pstC)
+static void dm__run_file_write(dm_in const dm_cfg_st *pstC)
 {
   char *pcText = NULL;
   size_t uLen = 0;
@@ -925,17 +933,17 @@ void dm__run_file_remove(void)
 {
   if ('\0' != g_acRunPath[0])
   {
-    dm_fs_st stReq = {0};
+    dm_uv_fs_st stReq = {0};
     memset(&stReq, 0, sizeof(stReq));
-    (void)dm_fs_unlink(NULL, &stReq, g_acRunPath, NULL);
-    dm_fs_req_cleanup(&stReq);
+    (void)dm_uv_fs_unlink(NULL, &stReq, g_acRunPath, NULL);
+    dm_uv_fs_req_cleanup(&stReq);
     g_acRunPath[0] = '\0';
   }
   return;
 }
 
 /* 就绪行：一次原始的 write，不经 stdio 缓冲 */
-static void dm__ready_line(in const dm_cfg_st *pstC)
+static void dm__ready_line(dm_in const dm_cfg_st *pstC)
 {
   char acLine[256] = {0};
   char *pcText = NULL;
@@ -964,7 +972,7 @@ static void dm__ready_line(in const dm_cfg_st *pstC)
 
 static void dm__reset_state(void)
 {
-  g_ePhase = DM__PHASE_NONE;
+  dm__phase_set(DM__PHASE_NONE);
   g_pastMod = NULL;
   g_uiModCount = 0;
   g_uiModInited = 0;
@@ -1011,15 +1019,15 @@ static void dm__close_all(void)
   dm__queue_close();
   if (g_bDrainTimerUp)
   {
-    dm__close_if((dm_handle_st *)&g_stDrainTimer);
+    dm__close_if((dm_uv_handle_st *)&g_stDrainTimer);
     g_bDrainTimerUp = DM_FALSE;
   }
   if (g_bWorkWaitTimerUp)
   {
-    dm__close_if((dm_handle_st *)&g_stWorkWaitTimer);
+    dm__close_if((dm_uv_handle_st *)&g_stWorkWaitTimer);
     g_bWorkWaitTimerUp = DM_FALSE;
   }
-  (void)dm_run(dm_default_loop(), DM_RUN_DEFAULT);
+  (void)dm_uv_run(dm_uv_default_loop(), DM_UV_RUN_DEFAULT);
   dm__pool_destroy_sync();
   return;
 }
@@ -1034,41 +1042,41 @@ static void dm__works_reap(void)
   dm__work_cancel_queued();
   if (g_bWorkWaitTimerUp)
   {
-    (void)dm_timer_start(&g_stWorkWaitTimer, dm__on_work_wait, DM_WORK_WAIT_MS, 0);
+    (void)dm_uv_timer_start(&g_stWorkWaitTimer, dm__on_work_wait, DM_WORK_WAIT_MS, 0);
   }
   while (dm__work_inflight() > 0u)
   {
-    (void)dm_run(dm_default_loop(), DM_RUN_ONCE);
+    (void)dm_uv_run(dm_uv_default_loop(), DM_UV_RUN_ONCE);
   }
   if (g_bWorkWaitTimerUp)
   {
-    (void)dm_timer_stop(&g_stWorkWaitTimer);
+    (void)dm_uv_timer_stop(&g_stWorkWaitTimer);
   }
   return;
 }
 
-static int dm__startup_fail(in int iErr, in const char *pcWhat)
+static int dm__startup_fail(dm_in int iErr, dm_in const char *pcWhat)
 {
   g_iLastErr = iErr;
   DM_LOG_ERROR("startup failed at %s: %s", pcWhat, dm_errno_str(iErr));
   dm__check_set_in_init(DM_FALSE);
-  g_ePhase = DM__PHASE_END;
+  dm__phase_set(DM__PHASE_END);
   dm__works_reap(); /* 模块 init 里提交的 work：先收完 after，再调 fini */
   dm__fini_modules();
   dm__close_all();
-  (void)dm_loop_close(dm_default_loop());
+  (void)dm_uv_loop_close(dm_uv_default_loop());
   dm_log_close();
   dm__lock_release();
   dm__errno_mod_clear();
   g_pstCfgExt = NULL;
   dm__check_unbind_main();
-  g_ePhase = DM__PHASE_NONE;
+  dm__phase_set(DM__PHASE_NONE);
   return 1;
 }
 
 /* 校验模块表（DD-00 §2.1 / AUD-10 / T-DM-12 / T-BND-03）：
  * u16ModID 必须在 [16, 93] 且全局唯一，pcName 非空，pastErrMap 合法并自动注册 */
-static int dm__validate_modules(in const dm_module_st *pastMod, in uint uiCount)
+static int dm__validate_modules(dm_in const dm_module_st *pastMod, dm_in uint uiCount)
 {
   uint uiIdx = 0;
   uint uiPrev = 0;
@@ -1121,7 +1129,7 @@ static int dm__validate_modules(in const dm_module_st *pastMod, in uint uiCount)
   return DM_SUCCESS;
 }
 
-static int dm__startup_prepare(in const dm_cfg_st *pstC)
+static int dm__startup_prepare(dm_in const dm_cfg_st *pstC)
 {
   int iErrCode = DM_SUCCESS;
 
@@ -1171,7 +1179,7 @@ static int dm__startup_prepare(in const dm_cfg_st *pstC)
   return DM_SUCCESS;
 }
 
-static int dm__startup_core(in const dm_cfg_st *pstC, out const char **ppcFailStep)
+static int dm__startup_core(dm_in const dm_cfg_st *pstC, dm_out const char **ppcFailStep)
 {
   int iErrCode = DM_SUCCESS;
 
@@ -1195,22 +1203,22 @@ static int dm__startup_core(in const dm_cfg_st *pstC, out const char **ppcFailSt
     *ppcFailStep = "stat";
     return iErrCode;
   }
-  iErrCode = dm_timer_init(dm_default_loop(), &g_stDrainTimer);
+  iErrCode = dm_uv_timer_init(dm_uv_default_loop(), &g_stDrainTimer);
   if (DM_SUCCESS != iErrCode)
   {
     *ppcFailStep = "timers";
     return iErrCode;
   }
   g_bDrainTimerUp = DM_TRUE;
-  dm_unref((dm_handle_st *)&g_stDrainTimer); /* 这两个不该让循环活着 */
-  iErrCode = dm_timer_init(dm_default_loop(), &g_stWorkWaitTimer);
+  dm_uv_unref((dm_uv_handle_st *)&g_stDrainTimer); /* 这两个不该让循环活着 */
+  iErrCode = dm_uv_timer_init(dm_uv_default_loop(), &g_stWorkWaitTimer);
   if (DM_SUCCESS != iErrCode)
   {
     *ppcFailStep = "timers";
     return iErrCode;
   }
   g_bWorkWaitTimerUp = DM_TRUE;
-  dm_unref((dm_handle_st *)&g_stWorkWaitTimer);
+  dm_uv_unref((dm_uv_handle_st *)&g_stWorkWaitTimer);
   iErrCode = dm__link_table_init();
   if (DM_SUCCESS != iErrCode)
   {
@@ -1228,13 +1236,13 @@ static int dm__startup_core(in const dm_cfg_st *pstC, out const char **ppcFailSt
   return DM_SUCCESS;
 }
 
-static int dm__startup_modules(in const dm_module_st *pastMod)
+static int dm__startup_modules(dm_in const dm_module_st *pastMod)
 {
   uint uiIdx = 0;
   int iErrCode = DM_SUCCESS;
 
   /* ⑥ 按清单顺序调各模块的 pfInit */
-  g_ePhase = DM__PHASE_INIT;
+  dm__phase_set(DM__PHASE_INIT);
   dm__check_set_in_init(DM_TRUE);
   for (uiIdx = 0; uiIdx < g_uiModCount; uiIdx++)
   {
@@ -1262,10 +1270,10 @@ static void dm__shutdown_core(void)
 
   /* 结束：倒序 pfFini，关掉剩下的，关日志 */
   dm__check_set_in_init(DM_FALSE);
-  g_ePhase = DM__PHASE_END;
+  dm__phase_set(DM__PHASE_END);
   dm__fini_modules();
   dm__close_all();
-  iLoopErr = dm_loop_close(dm_default_loop());
+  iLoopErr = dm_uv_loop_close(dm_uv_default_loop());
   if (DM_SUCCESS != iLoopErr)
   {
     DM_LOG_ERROR("dm_loop_close failed: %s", dm_errno_str(iLoopErr));
@@ -1277,12 +1285,12 @@ static void dm__shutdown_core(void)
   dm__errno_mod_clear();
   g_pstCfgExt = NULL;
   dm__check_unbind_main();
-  g_ePhase = DM__PHASE_NONE;
+  dm__phase_set(DM__PHASE_NONE);
   return;
 }
 
-int dm_main_ex(in int argc, in char **argv, in const dm_cfg_st *pstCfg,
-               in const dm_module_st *pastMod, in uint uiCount)
+int dm_main_ex(dm_in int argc, dm_in char **argv, dm_in const dm_cfg_st *pstCfg,
+               dm_in const dm_module_st *pastMod, dm_in uint uiCount)
 {
   static const dm_cfg_st s_stZero = {0};
   const dm_cfg_st *pstC = (NULL != pstCfg) ? pstCfg : &s_stZero;
@@ -1332,7 +1340,7 @@ int dm_main_ex(in int argc, in char **argv, in const dm_cfg_st *pstCfg,
   }
 
   /* ⑧ 就绪事件：向订阅者投递 DM_EV_READY；写运行文件、就绪行；进入主循环 */
-  g_ePhase = DM__PHASE_RUN;
+  dm__phase_set(DM__PHASE_RUN);
   (void)dm_event_publish(DM_EV_READY, NULL, 0u);
   dm__run_file_write(pstC);
   if (pstC->bReadyLine)
@@ -1340,7 +1348,7 @@ int dm_main_ex(in int argc, in char **argv, in const dm_cfg_st *pstCfg,
     dm__ready_line(pstC);
   }
   DM_LOG_INFO("running, %u module(s)", g_uiModInited);
-  iLoopErr = dm_run(dm_default_loop(), DM_RUN_DEFAULT);
+  iLoopErr = dm_uv_run(dm_uv_default_loop(), DM_UV_RUN_DEFAULT);
   if (DM_SUCCESS != iLoopErr)
   {
     DM_LOG_ERROR("dm_run failed: %s", dm_errno_str(iLoopErr));

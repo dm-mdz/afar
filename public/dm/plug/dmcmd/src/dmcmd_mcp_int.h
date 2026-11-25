@@ -63,16 +63,19 @@ struct dmcmd_mcp_ctx
   dmcmd_mcp_slot_st astSlots[DMCMD_MCP_INFLIGHT];
 };
 
-dmcmd_mcp_sock_t dmcmd_mcp_connect(in const char *pcHost, in int iPort, in uint32 u32Ms);
-void dmcmd_mcp_sock_close(in dmcmd_mcp_sock_t iSock);
-int dmcmd_mcp_send_all(in dmcmd_mcp_sock_t iSock, in const void *pvBuf, in size_t uLen,
-                       in int iTimeoutMs);
-int dmcmd_mcp_recv_idle(in dmcmd_mcp_sock_t iSock, out void *pvBuf, in size_t uCap, in int iIdleMs);
+dmcmd_mcp_sock_t dmcmd_mcp_connect(dm_in const char *pcHost, dm_in int iPort, dm_in uint32 u32Ms);
+void dmcmd_mcp_sock_close(dm_in dmcmd_mcp_sock_t iSock);
+int dmcmd_mcp_send_all(dm_in dmcmd_mcp_sock_t iSock, dm_in const void *pvBuf, dm_in size_t uLen,
+                       dm_in int iTimeoutMs);
+int dmcmd_mcp_recv_idle(dm_in dmcmd_mcp_sock_t iSock, dm_out void *pvBuf, dm_in size_t uCap,
+                        dm_in int iIdleMs);
 
-void dmcmd_mcp_write_json_line(io dmcmd_mcp_ctx_st *pstCtx, in const char *pcData, in size_t uLen);
-void dmcmd_mcp_reply_rpc_err(io dmcmd_mcp_ctx_st *pstCtx, in const char *pcReqLine,
-                             in size_t uReqLen, in int iCode, in const char *pcMsg);
-void dmcmd_mcp_handle_one(io dmcmd_mcp_ctx_st *pstCtx, in const char *pcReq, in size_t uReqLen);
+void dmcmd_mcp_write_json_line(dm_io dmcmd_mcp_ctx_st *pstCtx, dm_in const char *pcData,
+                               dm_in size_t uLen);
+void dmcmd_mcp_reply_rpc_err(dm_io dmcmd_mcp_ctx_st *pstCtx, dm_in const char *pcReqLine,
+                             dm_in size_t uReqLen, dm_in int iCode, dm_in const char *pcMsg);
+void dmcmd_mcp_handle_one(dm_io dmcmd_mcp_ctx_st *pstCtx, dm_in const char *pcReq,
+                          dm_in size_t uReqLen);
 
 #ifdef __cplusplus
 }

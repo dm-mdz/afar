@@ -41,19 +41,19 @@ extern "C"
 void dm_mem_tag_init(void);
 
 /* 带标签分配/释放(标签用 dm.h 的 DM_MEM_TAG_* 固定 ID;free 从块头读回 ID 自动扣减) */
-void *dm_mem_tag_alloc(in size_t uSize, in int iTag);
-void *dm_mem_tag_calloc(in size_t uCount, in size_t uSize, in int iTag);
-void *dm_mem_tag_realloc(io void *pvPtr, in size_t uSize);
-void dm_mem_tag_free(io void *pvPtr);
+void *dm_mem_tag_alloc(dm_in size_t uSize, dm_in int iTag);
+void *dm_mem_tag_calloc(dm_in size_t uCount, dm_in size_t uSize, dm_in int iTag);
+void *dm_mem_tag_realloc(dm_io void *pvPtr, dm_in size_t uSize);
+void dm_mem_tag_free(dm_io void *pvPtr);
 
 /* 打印按标签分组的存活统计(泄漏报表:哪个模块还占着多少) */
-void dm_mem_tag_dump(void);
+DM_API void dm_mem_tag_dump(void);
 
 /* 当前存活块数 */
-size_t dm_mem_tag_count(void);
+DM_API size_t dm_mem_tag_count(void);
 
 /* 查询单个标签当前存活块数与字节数（debug 与 DM_MEM_DEBUG 均有效，供 T-MEM-01 快照比对） */
-DM_API void dm_mem_tag_stat(in int iTag, out uint64 *pu64Blocks, out uint64 *pu64Bytes);
+DM_API void dm_mem_tag_stat(dm_in int iTag, dm_out uint64 *pu64Blocks, dm_out uint64 *pu64Bytes);
 
 /* ==========================================================================
  * 第 2 档:全量内存定位(仅 DM_MEM_DEBUG 编译;无 mem 参数时不参与编译)
@@ -61,20 +61,23 @@ DM_API void dm_mem_tag_stat(in int iTag, out uint64 *pu64Blocks, out uint64 *pu6
  * ========================================================================== */
 #ifdef DM_MEM_DEBUG
 
-typedef void (*dm_mem_free_hook_fn)(in const void *pvPtr, in size_t uSize);
+typedef void (*dm_mem_free_hook_fn)(dm_in const void *pvPtr, dm_in size_t uSize);
 
 void dm_mem_debug_init(void);
-void *dm_mem_debug_alloc(in size_t uSize, in const char *pcFile, in int iLine);
-void *dm_mem_debug_calloc(in size_t uCount, in size_t uSize, in const char *pcFile, in int iLine);
-void *dm_mem_debug_calloc_tag(in size_t uCount, in size_t uSize, in int iTag, in const char *pcFile,
-                              in int iLine);
-void *dm_mem_debug_realloc(io void *pvPtr, in size_t uSize, in const char *pcFile, in int iLine);
-void dm_mem_debug_free(io void *pvPtr);
-void *dm_mem_debug_alloc_tag(in size_t uSize, in int iTag, in const char *pcFile, in int iLine);
+void *dm_mem_debug_alloc(dm_in size_t uSize, dm_in const char *pcFile, dm_in int iLine);
+void *dm_mem_debug_calloc(dm_in size_t uCount, dm_in size_t uSize, dm_in const char *pcFile,
+                          dm_in int iLine);
+void *dm_mem_debug_calloc_tag(dm_in size_t uCount, dm_in size_t uSize, dm_in int iTag,
+                              dm_in const char *pcFile, dm_in int iLine);
+void *dm_mem_debug_realloc(dm_io void *pvPtr, dm_in size_t uSize, dm_in const char *pcFile,
+                           dm_in int iLine);
+void dm_mem_debug_free(dm_io void *pvPtr);
+void *dm_mem_debug_alloc_tag(dm_in size_t uSize, dm_in int iTag, dm_in const char *pcFile,
+                             dm_in int iLine);
 void dm_mem_debug_dump(void);
 size_t dm_mem_debug_count(void);
 /* 释放前钩子（T-DM-11 等验证敏感缓冲释放前已擦零）与护栏越界命中计数（T-DM-06） */
-DM_API void dm_mem_debug_set_free_hook(in dm_mem_free_hook_fn pfHook);
+DM_API void dm_mem_debug_set_free_hook(dm_in dm_mem_free_hook_fn pfHook);
 DM_API uint64 dm_mem_debug_guard_hits(void);
 DM_API void dm_mem_debug_reset_guard_hits(void);
 

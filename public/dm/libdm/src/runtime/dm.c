@@ -69,6 +69,151 @@ const char *dm_version_string(void)
   return s_acBuf;
 }
 
+/* ---- 保留的 11 个既有公共 dm.h 基础函数（其中 dm_os_environ/dm_os_free_environ 在下方） ---- */
+
+unsigned int dm_uv_version(void)
+{
+  return uv_version();
+}
+
+const char *dm_uv_version_string(void)
+{
+  return uv_version_string();
+}
+
+const char *dm_strerror(dm_in int iErr)
+{
+  static _Thread_local char s_acBuf[96] = {0};
+  return uv_strerror_r(iErr, s_acBuf, sizeof(s_acBuf));
+}
+
+uint64 dm_hrtime(void)
+{
+  return uv_hrtime();
+}
+
+void dm_sleep(dm_in unsigned int uiMsec)
+{
+  uv_sleep(uiMsec);
+  return;
+}
+
+dm_pid_t dm_os_getpid(void)
+{
+  return uv_os_getpid();
+}
+
+dm_pid_t dm_os_getppid(void)
+{
+#ifdef _WIN32
+  /* 确保 libuv 初始化 pNtQueryInformationProcess（W1 Win 修复，不可遗漏） */
+  (void)uv_hrtime();
+#endif
+  return uv_os_getppid();
+}
+
+int dm_os_getenv(dm_in const char *pcName, dm_out char *pcBuffer, dm_io size_t *puSize)
+{
+  return uv_os_getenv(pcName, pcBuffer, puSize);
+}
+
+int dm_os_homedir(dm_out char *pcBuffer, dm_io size_t *puSize)
+{
+  return uv_os_homedir(pcBuffer, puSize);
+}
+
+/* ---- 统一 libuv 错误码 -> dm_errno_et 映射（DD-DM-2.1 §1.4，含 P1-01/02） ---- */
+int dm__uv_err_map(dm_in int iUvErr)
+{
+  if (0 == iUvErr)
+  {
+    return DM_SUCCESS;
+  }
+  switch (iUvErr)
+  {
+  case UV_EINVAL:
+  case UV_EBADF:
+  case UV_EAFNOSUPPORT:
+  case UV_EPROTOTYPE:
+  case UV_EDESTADDRREQ:
+    return DM_INVALID;
+  case UV_ENOMEM:
+  case UV_EAI_MEMORY:
+    return DM_ALLOC;
+  case UV_ENOENT:
+  case UV_ESRCH:
+  case UV_ENXIO:
+    return DM_NOT_FOUND;
+  case UV_EEXIST:
+    return DM_EXISTS;
+  case UV_EBUSY:
+  case UV_ETXTBSY:
+    return DM_BUSY;
+  case UV_EAGAIN:
+#if defined(UV_EWOULDBLOCK) && (UV_EWOULDBLOCK != UV_EAGAIN)
+  case UV_EWOULDBLOCK:
+#endif
+    return DM_AGAIN;
+  case UV_ETIMEDOUT:
+    return DM_TIMEOUT;
+  case UV_EACCES:
+  case UV_EPERM:
+  case UV_EROFS:
+    return DM_PERM;
+  case UV_ERANGE:
+    return DM_RANGE;
+  case UV_ENOBUFS:
+  case UV_ENOSPC:
+  case UV_E2BIG:
+  case UV_EMSGSIZE:
+  case UV_ENAMETOOLONG:
+  case UV_EOVERFLOW:
+    return DM_TOO_BIG;
+  case UV_ENOSYS:
+  case UV_ENOTSUP:
+  case UV_EPROTONOSUPPORT:
+  case UV_ESOCKTNOSUPPORT:
+  case UV_EMLINK:
+    return DM_UNSUPPORTED;
+  case UV_EXDEV:
+    return DM_EXDEV;
+  case UV_EOF:
+    return DM_EOF;
+  case UV_ECANCELED:
+  case UV_EAI_CANCELED:
+    return DM_CANCELED;
+  case UV_EADDRINUSE:
+    return DM_ADDR_IN_USE;
+  case UV_ECONNREFUSED:
+    return DM_CONN_REFUSED;
+  case UV_ECONNRESET:
+  case UV_ECONNABORTED:
+  case UV_EPIPE:
+  case UV_ESHUTDOWN:
+  case UV_ENOTCONN:
+    return DM_CONN_GONE;
+  case UV_EAI_ADDRFAMILY:
+  case UV_EAI_AGAIN:
+  case UV_EAI_BADFLAGS:
+  case UV_EAI_BADHINTS:
+  case UV_EAI_FAIL:
+  case UV_EAI_FAMILY:
+  case UV_EAI_NODATA:
+  case UV_EAI_NONAME:
+  case UV_EAI_OVERFLOW:
+  case UV_EAI_PROTOCOL:
+  case UV_EAI_SERVICE:
+  case UV_EAI_SOCKTYPE:
+    return DM_DNS_FAIL;
+  case UV_ENOTDIR:
+    return DM_NOT_DIR;
+  case UV_EISDIR:
+    return DM_IS_DIR;
+  default:
+    return DM_IO;
+  }
+}
+
 /*
  * dm_loop_configure —— 手工适配 libuv 唯一的变参函数 uv_loop_configure。
  * C 无法前向 `...`,故读取可变参数后按选项分发:
@@ -76,19 +221,19 @@ const char *dm_version_string(void)
  *   DM_METRICS_IDLE_TIME        —— 无变参
  *   DM_LOOP_USE_IO_URING_SQPOLL —— 无变参(Linux)
  */
-int dm_loop_configure(dm_loop_st *loop, dm_loop_option_et option, ...)
+int dm_uv_loop_configure(dm_uv_loop_st *loop, dm_uv_loop_option_et option, ...)
 {
   va_list ap;
   int signal = 0;
 
   va_start(ap, option);
-  if (DM_LOOP_BLOCK_SIGNAL == option)
+  if (DM_UV_LOOP_BLOCK_SIGNAL == option)
   {
     signal = va_arg(ap, int);
   }
   va_end(ap);
 
-  if (DM_LOOP_BLOCK_SIGNAL == option)
+  if (DM_UV_LOOP_BLOCK_SIGNAL == option)
   {
     return uv_loop_configure(loop, option, signal);
   }
@@ -162,7 +307,7 @@ int dm_replace_allocator(dm_malloc_func malloc_func, dm_realloc_func realloc_fun
 }
 
 /* ---- 一次性初始化（零 <uv.h> 泄露，标准 C11 _Atomic int，无严格别名 UB） ---- */
-void dm_call_once(io dm_once_flag_st *pstFlag, in void (*pfFn)(void))
+void dm_call_once(dm_io dm_once_flag_st *pstFlag, dm_in void (*pfFn)(void))
 {
   int iExpected = 0;
 
@@ -190,7 +335,7 @@ void dm_call_once(io dm_once_flag_st *pstFlag, in void (*pfFn)(void))
 }
 
 /* ---- 环境变量枚举（零严格别名 UB：经本地 uv_env_item_t 拷贝进单块 dm_malloc_tag 内存） ---- */
-int dm_os_environ(out dm_env_item_st **ppstEnvItems, out int *piCount)
+int dm_os_environ(dm_out dm_env_item_st **ppstEnvItems, dm_out int *piCount)
 {
   uv_env_item_t *pstUv = NULL;
   int iCount = 0;
@@ -262,7 +407,7 @@ int dm_os_environ(out dm_env_item_st **ppstEnvItems, out int *piCount)
   return DM_SUCCESS;
 }
 
-void dm_os_free_environ(io dm_env_item_st *pstEnvItems, in int iCount)
+void dm_os_free_environ(dm_io dm_env_item_st *pstEnvItems, dm_in int iCount)
 {
   (void)iCount;
   dm_free_tag(pstEnvItems);
@@ -288,7 +433,7 @@ typedef struct dm__mod_err_reg
 } dm__mod_err_reg_st;
 
 static dm_once_flag_st g_stErrnoLockOnce = DM_ONCE_FLAG_INIT;
-static dm_mutex_t g_stErrnoLock;
+static dm_uv_mutex_t g_stErrnoLock;
 static dm__errno_reg_st g_astErrnoReg[DM__ERRNO_REG_MAX];
 static uint g_uiErrnoRegCount = 0;
 static dm__mod_err_reg_st g_astModErrReg[DM__MOD_ERR_REG_MAX];
@@ -296,32 +441,33 @@ static uint g_uiModErrRegCount = 0;
 
 static void dm__errno_lock_init(void)
 {
-  (void)dm_mutex_init(&g_stErrnoLock);
+  (void)dm_uv_mutex_init(&g_stErrnoLock);
   return;
 }
 
 static void dm__errno_lock(void)
 {
   dm_call_once(&g_stErrnoLockOnce, dm__errno_lock_init);
-  dm_mutex_lock(&g_stErrnoLock);
+  dm_uv_mutex_lock(&g_stErrnoLock);
   return;
 }
 
 static void dm__errno_unlock(void)
 {
-  dm_mutex_unlock(&g_stErrnoLock);
+  dm_uv_mutex_unlock(&g_stErrnoLock);
   return;
 }
 
 /* [iBaseA - uiCountA + 1, iBaseA] 和 [iBaseB - uiCountB + 1, iBaseB] 有没有交集 */
-static int dm__errno_overlap(in int iBaseA, in uint uiCountA, in int iBaseB, in uint uiCountB)
+static int dm__errno_overlap(dm_in int iBaseA, dm_in uint uiCountA, dm_in int iBaseB,
+                             dm_in uint uiCountB)
 {
   long long llLowA = (long long)iBaseA - (long long)uiCountA + 1;
   long long llLowB = (long long)iBaseB - (long long)uiCountB + 1;
   return (llLowA <= (long long)iBaseB) && (llLowB <= (long long)iBaseA);
 }
 
-int dm_errno_register(in int iBase, in uint uiCount, in const char *(*pfStr)(int iErr))
+int dm_errno_register(dm_in int iBase, dm_in uint uiCount, dm_in const char *(*pfStr)(int iErr))
 {
   uint uiIdx = 0;
 
@@ -364,7 +510,7 @@ int dm_errno_register(in int iBase, in uint uiCount, in const char *(*pfStr)(int
   return DM_SUCCESS;
 }
 
-int dm__errno_mod_register(in uint16 u16ModID, in const dm_err_entry_st *pastErrMap)
+int dm__errno_mod_register(dm_in uint16 u16ModID, dm_in const dm_err_entry_st *pastErrMap)
 {
   int iHi = 0;
   int iLo = 0;
@@ -490,17 +636,18 @@ const char *dm_errno_str(int err)
 
 /* ---- 带业务标签的分配（默认走轻量标签统计；DM_MEM_DEBUG 桥接到全量调试分配器） ---- */
 #ifdef DM_MEM_DEBUG
-void *dm_malloc_tag_dbg(size_t size, int tag, in const char *pcFile, in int iLine)
+void *dm_malloc_tag_dbg(size_t size, int tag, dm_in const char *pcFile, dm_in int iLine)
 {
   return dm_mem_debug_alloc_tag(size, tag, pcFile, iLine);
 }
 
-void *dm_calloc_tag_dbg(size_t count, size_t size, int tag, in const char *pcFile, in int iLine)
+void *dm_calloc_tag_dbg(size_t count, size_t size, int tag, dm_in const char *pcFile,
+                        dm_in int iLine)
 {
   return dm_mem_debug_calloc_tag(count, size, tag, pcFile, iLine);
 }
 
-void *dm_realloc_tag_dbg(void *ptr, size_t size, in const char *pcFile, in int iLine)
+void *dm_realloc_tag_dbg(void *ptr, size_t size, dm_in const char *pcFile, dm_in int iLine)
 {
   return dm_mem_debug_realloc(ptr, size, pcFile, iLine);
 }

@@ -30,8 +30,8 @@ typedef struct dm__stat_rpc_ctx
 
 /* ============================ dm.stat 辅助与实现 ============================ */
 
-static void dm__stat_rpc_mem_one(in int iTag, in const char *pcName, in uint64 u64Blocks,
-                                 in uint64 u64Bytes, in void *pvArg)
+static void dm__stat_rpc_mem_one(dm_in int iTag, dm_in const char *pcName, dm_in uint64 u64Blocks,
+                                 dm_in uint64 u64Bytes, dm_in void *pvArg)
 {
   dm__stat_rpc_ctx_st *pstCtx = (dm__stat_rpc_ctx_st *)pvArg;
   yyjson_mut_val *pstObj = NULL;
@@ -61,7 +61,7 @@ static void dm__stat_rpc_mem_one(in int iTag, in const char *pcName, in uint64 u
   return;
 }
 
-static void dm__stat_rpc_row_one(in const dm__stat_row_st *pstRow, in void *pvArg)
+static void dm__stat_rpc_row_one(dm_in const dm__stat_row_st *pstRow, dm_in void *pvArg)
 {
   dm__stat_rpc_ctx_st *pstCtx = (dm__stat_rpc_ctx_st *)pvArg;
   yyjson_mut_val *pstObj = NULL;
@@ -103,9 +103,9 @@ static void dm__stat_rpc_row_one(in const dm__stat_row_st *pstRow, in void *pvAr
   return;
 }
 
-static void dm__diag_reply_err(in dm_link_msg_st *pstMsg, in int iStatus);
+static void dm__diag_reply_err(dm_in dm_link_msg_st *pstMsg, dm_in int iStatus);
 
-int dm__stat_builtin(in void *pvArg)
+int dm__stat_builtin(dm_in void *pvArg)
 {
   dm_link_msg_st *pstMsg = (dm_link_msg_st *)pvArg;
   yyjson_mut_doc *pstDoc = yyjson_mut_doc_new(dm_json_alc());
@@ -211,7 +211,7 @@ int dm__stat_builtin(in void *pvArg)
 
 /* ============================ dm.diag.snapshot 辅助与实现 ============================ */
 
-static void dm__diag_conn_one(in const dm__conn_info_st *pstInfo, in void *pvArg)
+static void dm__diag_conn_one(dm_in const dm__conn_info_st *pstInfo, dm_in void *pvArg)
 {
   dm__stat_rpc_ctx_st *pstCtx = (dm__stat_rpc_ctx_st *)pvArg;
   yyjson_mut_val *pstObj = NULL;
@@ -245,7 +245,7 @@ static void dm__diag_conn_one(in const dm__conn_info_st *pstInfo, in void *pvArg
   return;
 }
 
-static void dm__diag_reply_err(in dm_link_msg_st *pstMsg, in int iStatus)
+static void dm__diag_reply_err(dm_in dm_link_msg_st *pstMsg, dm_in int iStatus)
 {
   dm_reply_st stReply = {0};
   if (DM_SUCCESS == dm_reply_take(pstMsg, &stReply))
@@ -255,7 +255,7 @@ static void dm__diag_reply_err(in dm_link_msg_st *pstMsg, in int iStatus)
   return;
 }
 
-int dm__diag_snapshot_builtin(in void *pvArg)
+int dm__diag_snapshot_builtin(dm_in void *pvArg)
 {
   static const char *const apcLaneName[DM_LANE_MAX] = {"default", "db", "heavy"};
   dm_link_msg_st *pstMsg = (dm_link_msg_st *)pvArg;

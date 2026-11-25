@@ -21,7 +21,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define AF_SC_MEMTAG    DM_MOD_MEMTAG(AF_MOD_SIDECAR, 0u)
+#define AF_SC_MEMTAG DM_MOD_MEMTAG(AF_MOD_SIDECAR, 0u)
 #define AF_SC_TIMER_TAG 0x51DEC401ULL
 
 typedef enum af__sc_main_op
@@ -43,9 +43,9 @@ typedef struct af__sc_main_done
 typedef struct af__sc_job
 {
   af__sc_main_op_et eOp;
-  uint32 (*pfScList)(out af_sc_device_st *, in uint32);
-  int (*pfScConnect)(in const char *, out char *, in size_t);
-  int (*pfScDisconnect)(in const char *, out char *, in size_t);
+  uint32 (*pfScList)(dm_out af_sc_device_st *, dm_in uint32);
+  int (*pfScConnect)(dm_in const char *, dm_out char *, dm_in size_t);
+  int (*pfScDisconnect)(dm_in const char *, dm_out char *, dm_in size_t);
   char acName[65];
 } af__sc_job_st;
 
@@ -80,7 +80,7 @@ static uint64 af__sc_default_now_ms(void)
   return dm_hrtime() / 1000000ULL;
 }
 
-static void af__sc_init_default_ops(out af_sidecar_ops_st *pstOps)
+static void af__sc_init_default_ops(dm_out af_sidecar_ops_st *pstOps)
 {
   memset(pstOps, 0, sizeof(*pstOps));
   pstOps->pfRunOnMain = af_plat_run_on_main;
@@ -100,7 +100,7 @@ static const af_sidecar_ops_st *af__sc_ops(void)
   return &g_stScOps;
 }
 
-void af_sidecar_set_ops(in const af_sidecar_ops_st *pstOps)
+void af_sidecar_set_ops(dm_in const af_sidecar_ops_st *pstOps)
 {
   af__sc_init_default_ops(&g_stScOps);
   g_bScOpsInited = DM_TRUE;
@@ -108,21 +108,36 @@ void af_sidecar_set_ops(in const af_sidecar_ops_st *pstOps)
   {
     return;
   }
-  if (NULL != pstOps->pfRunOnMain) { g_stScOps.pfRunOnMain = pstOps->pfRunOnMain; }
-  if (NULL != pstOps->pfScList) { g_stScOps.pfScList = pstOps->pfScList; }
-  if (NULL != pstOps->pfScConnect) { g_stScOps.pfScConnect = pstOps->pfScConnect; }
-  if (NULL != pstOps->pfScDisconnect) { g_stScOps.pfScDisconnect = pstOps->pfScDisconnect; }
-  if (NULL != pstOps->pfNowMs) { g_stScOps.pfNowMs = pstOps->pfNowMs; }
+  if (NULL != pstOps->pfRunOnMain)
+  {
+    g_stScOps.pfRunOnMain = pstOps->pfRunOnMain;
+  }
+  if (NULL != pstOps->pfScList)
+  {
+    g_stScOps.pfScList = pstOps->pfScList;
+  }
+  if (NULL != pstOps->pfScConnect)
+  {
+    g_stScOps.pfScConnect = pstOps->pfScConnect;
+  }
+  if (NULL != pstOps->pfScDisconnect)
+  {
+    g_stScOps.pfScDisconnect = pstOps->pfScDisconnect;
+  }
+  if (NULL != pstOps->pfNowMs)
+  {
+    g_stScOps.pfNowMs = pstOps->pfNowMs;
+  }
 }
 
-void af_sidecar_set_poll_ms(in uint32 u32PollMs)
+void af_sidecar_set_poll_ms(dm_in uint32 u32PollMs)
 {
   g_u32ScPollMs = (u32PollMs > 0u) ? u32PollMs : 1000u;
 }
 
 /* ============================ 1. 纯 C Keep 与错误节流 ============================ */
 
-void af_sc_keep_want(out af_sc_keep_st *pstK, in const char *pcName, in uint64 u64NowMs)
+void af_sc_keep_want(dm_out af_sc_keep_st *pstK, dm_in const char *pcName, dm_in uint64 u64NowMs)
 {
   if (NULL == pstK)
   {
@@ -139,7 +154,7 @@ void af_sc_keep_want(out af_sc_keep_st *pstK, in const char *pcName, in uint64 u
   pstK->u32RetriesLeft = AF_SC_RETRY_MAX;
 }
 
-void af_sc_keep_once(out af_sc_keep_st *pstK, in const char *pcName)
+void af_sc_keep_once(dm_out af_sc_keep_st *pstK, dm_in const char *pcName)
 {
   (void)pcName;
   if (NULL != pstK)
@@ -148,7 +163,7 @@ void af_sc_keep_once(out af_sc_keep_st *pstK, in const char *pcName)
   }
 }
 
-void af_sc_keep_on_connected(io af_sc_keep_st *pstK)
+void af_sc_keep_on_connected(dm_io af_sc_keep_st *pstK)
 {
   if (NULL != pstK)
   {
@@ -156,7 +171,7 @@ void af_sc_keep_on_connected(io af_sc_keep_st *pstK)
   }
 }
 
-void af_sc_keep_clear(io af_sc_keep_st *pstK)
+void af_sc_keep_clear(dm_io af_sc_keep_st *pstK)
 {
   if (NULL != pstK)
   {
@@ -164,11 +179,11 @@ void af_sc_keep_clear(io af_sc_keep_st *pstK)
   }
 }
 
-bool_t af_sc_keep_due(io af_sc_keep_st *pstK, in uint64 u64NowMs, out char *pcTargetOut,
-                      in size_t uCap)
+bool_t af_sc_keep_due(dm_io af_sc_keep_st *pstK, dm_in uint64 u64NowMs, dm_out char *pcTargetOut,
+                      dm_in size_t uCap)
 {
-  if ((NULL == pstK) || (!pstK->bPending) || (0u == pstK->u32RetriesLeft)
-      || (u64NowMs < pstK->u64NextRetryMs))
+  if ((NULL == pstK) || (!pstK->bPending) || (0u == pstK->u32RetriesLeft) ||
+      (u64NowMs < pstK->u64NextRetryMs))
   {
     return DM_FALSE;
   }
@@ -189,7 +204,7 @@ bool_t af_sc_keep_due(io af_sc_keep_st *pstK, in uint64 u64NowMs, out char *pcTa
   return DM_TRUE;
 }
 
-void af_sc_err_throttle_init(out af_sc_err_throttle_st *pstT)
+void af_sc_err_throttle_init(dm_out af_sc_err_throttle_st *pstT)
 {
   if (NULL != pstT)
   {
@@ -197,8 +212,8 @@ void af_sc_err_throttle_init(out af_sc_err_throttle_st *pstT)
   }
 }
 
-bool_t af_sc_err_throttle_check(io af_sc_err_throttle_st *pstT, in const char *pcErr,
-                                in uint64 u64NowMs, out uint32 *pu32SummarySuppressed)
+bool_t af_sc_err_throttle_check(dm_io af_sc_err_throttle_st *pstT, dm_in const char *pcErr,
+                                dm_in uint64 u64NowMs, dm_out uint32 *pu32SummarySuppressed)
 {
   const char *pcMsg = (NULL != pcErr) ? pcErr : "";
 
@@ -210,8 +225,8 @@ bool_t af_sc_err_throttle_check(io af_sc_err_throttle_st *pstT, in const char *p
   {
     return DM_FALSE;
   }
-  if (pstT->bActive && (0 == strcmp(pstT->acLastErr, pcMsg)) && (u64NowMs >= pstT->u64WinStartMs)
-      && ((u64NowMs - pstT->u64WinStartMs) < AF_SC_ERR_THROTTLE_MS))
+  if (pstT->bActive && (0 == strcmp(pstT->acLastErr, pcMsg)) && (u64NowMs >= pstT->u64WinStartMs) &&
+      ((u64NowMs - pstT->u64WinStartMs) < AF_SC_ERR_THROTTLE_MS))
   {
     pstT->u32Suppressed++;
     pstT->u32TotalSuppressed++;
@@ -231,7 +246,7 @@ bool_t af_sc_err_throttle_check(io af_sc_err_throttle_st *pstT, in const char *p
 
 /* ============================ 2. 主线程异步作业与事件发布 ============================ */
 
-static void af__sc_main_job_run(io void *pvCtx)
+static void af__sc_main_job_run(dm_io void *pvCtx)
 {
   af__sc_job_st *pstJob = (af__sc_job_st *)pvCtx;
   af__sc_main_done_st stDone;
@@ -256,7 +271,7 @@ static void af__sc_main_job_run(io void *pvCtx)
   (void)dm_queue_post_async(AF_LINK_SC_MAIN_DONE, &stDone, (uint32)sizeof(stDone));
 }
 
-static int af__sc_dispatch_job(in af__sc_main_op_et eOp, in const char *pcName)
+static int af__sc_dispatch_job(dm_in af__sc_main_op_et eOp, dm_in const char *pcName)
 {
   const af_sidecar_ops_st *pstOps = af__sc_ops();
   af__sc_job_st *pstJob = (af__sc_job_st *)dm_calloc_tag(1u, sizeof(*pstJob), AF_SC_MEMTAG);
@@ -277,8 +292,8 @@ static int af__sc_dispatch_job(in af__sc_main_op_et eOp, in const char *pcName)
   return DM_SUCCESS;
 }
 
-static void af__sc_publish(in af_sc_state_et ePrev, in bool_t bUserDisconnect, in bool_t bNewAppear,
-                           in const char *pcAppeared)
+static void af__sc_publish(dm_in af_sc_state_et ePrev, dm_in bool_t bUserDisconnect,
+                           dm_in bool_t bNewAppear, dm_in const char *pcAppeared)
 {
   af_ev_sidecar_st stEv;
   if (g_stSc.bDraining)
@@ -298,7 +313,7 @@ static void af__sc_publish(in af_sc_state_et ePrev, in bool_t bUserDisconnect, i
   (void)dm_event_publish(AF_EV_SIDECAR_CHANGED, &stEv, (uint32)sizeof(stEv));
 }
 
-static void af__sc_log_err(in const char *pcErr, in uint64 u64Now)
+static void af__sc_log_err(dm_in const char *pcErr, dm_in uint64 u64Now)
 {
   uint32 u32Sup = 0u;
   if (af_sc_err_throttle_check(&g_stSc.stErrThrottle, pcErr, u64Now, &u32Sup))
@@ -316,8 +331,8 @@ static void af__sc_log_err(in const char *pcErr, in uint64 u64Now)
   g_stSc.stDiag.u32ErrSuppressed = g_stSc.stErrThrottle.u32TotalSuppressed;
 }
 
-static bool_t af__sc_in_list(in char aacList[AF_SC_DEV_MAX][65], in uint32 u32Cnt,
-                             in const char *pcName)
+static bool_t af__sc_in_list(dm_in char aacList[AF_SC_DEV_MAX][65], dm_in uint32 u32Cnt,
+                             dm_in const char *pcName)
 {
   uint32 i = 0u;
   for (i = 0u; i < u32Cnt; i++)
@@ -330,7 +345,7 @@ static bool_t af__sc_in_list(in char aacList[AF_SC_DEV_MAX][65], in uint32 u32Cn
   return DM_FALSE;
 }
 
-static void af__sc_apply_poll(in const af__sc_main_done_st *pstDone)
+static void af__sc_apply_poll(dm_in const af__sc_main_done_st *pstDone)
 {
   uint64 u64Now = af__sc_ops()->pfNowMs();
   char aacPrev[AF_SC_DEV_MAX][65];
@@ -347,11 +362,14 @@ static void af__sc_apply_poll(in const af__sc_main_done_st *pstDone)
   g_stSc.u32NearbyCnt = 0u;
   for (i = 0u; (i < pstDone->u32Cnt) && (i < AF_SC_DEV_MAX); i++)
   {
-    if ('\0' == pstDone->astDevs[i].acName[0]) { continue; }
+    if ('\0' == pstDone->astDevs[i].acName[0])
+    {
+      continue;
+    }
     snprintf(g_stSc.aacNearby[g_stSc.u32NearbyCnt], sizeof(g_stSc.aacNearby[0]), "%s",
              pstDone->astDevs[i].acName);
-    if (g_stSc.bPolledOnce && ('\0' == acNewAppeared[0])
-        && (!af__sc_in_list(aacPrev, u32PrevCnt, pstDone->astDevs[i].acName)))
+    if (g_stSc.bPolledOnce && ('\0' == acNewAppeared[0]) &&
+        (!af__sc_in_list(aacPrev, u32PrevCnt, pstDone->astDevs[i].acName)))
     {
       snprintf(acNewAppeared, sizeof(acNewAppeared), "%s", pstDone->astDevs[i].acName);
     }
@@ -380,8 +398,8 @@ static void af__sc_apply_poll(in const af__sc_main_done_st *pstDone)
       g_stSc.u64CooldownUntilMs = u64Now + AF_SC_COOLDOWN_MS;
     }
   }
-  if ((ePrevState != g_stSc.eState) || (0 != strcmp(acPrevShowing, g_stSc.acShowing))
-      || ('\0' != acNewAppeared[0]))
+  if ((ePrevState != g_stSc.eState) || (0 != strcmp(acPrevShowing, g_stSc.acShowing)) ||
+      ('\0' != acNewAppeared[0]))
   {
     af__sc_publish(ePrevState, DM_FALSE, ('\0' != acNewAppeared[0]) ? DM_TRUE : DM_FALSE,
                    acNewAppeared);
@@ -405,8 +423,8 @@ static void af__sc_on_timer_tick(void)
     g_stSc.u64ConnectUntilMs = u64Now + AF_SC_CONNECT_TIMEOUT_MS;
     (void)af__sc_dispatch_job(AF_SC_OP_CONNECT, acRetryTarget);
   }
-  else if ((AF_SC_CONNECTING == g_stSc.eState) && g_stSc.bHasConnectDeadline
-           && (u64Now >= g_stSc.u64ConnectUntilMs) && (!g_stSc.stKeep.bPending))
+  else if ((AF_SC_CONNECTING == g_stSc.eState) && g_stSc.bHasConnectDeadline &&
+           (u64Now >= g_stSc.u64ConnectUntilMs) && (!g_stSc.stKeep.bPending))
   {
     af_sc_state_et ePrev = g_stSc.eState;
     g_stSc.eState = AF_SC_IDLE;
@@ -455,6 +473,14 @@ static int af__sc_on_link(void *pvArg)
   {
     af__sc_log_err(stDone.acErr, af__sc_ops()->pfNowMs());
   }
+  if ((AF_SC_OP_CONNECT == stDone.eOp) && (DM_SUCCESS != stDone.iStatus) &&
+      (AF_SC_CONNECTING == g_stSc.eState) && (!g_stSc.stKeep.bPending))
+  {
+    af_sc_state_et ePrev = g_stSc.eState;
+    g_stSc.eState = AF_SC_IDLE;
+    g_stSc.bHasConnectDeadline = DM_FALSE;
+    af__sc_publish(ePrev, DM_FALSE, DM_FALSE, NULL);
+  }
   return DM_SUCCESS;
 }
 
@@ -476,11 +502,14 @@ static int af__sc_init(void)
   dm_mem_tag_name(AF_SC_MEMTAG, "af_sidecar");
 
   iRc = dm_link_register_handler(AF_LINK_SC_MAIN_DONE, af__sc_on_link, NULL, NULL);
-  if (DM_SUCCESS != iRc) { return iRc; }
+  if (DM_SUCCESS != iRc)
+  {
+    return iRc;
+  }
   return dm_event_subscribe(DM_EV_READY, af__sc_on_ready, NULL, NULL);
 }
 
-static void af__sc_drain(io dm_drain_st *pstDrain)
+static void af__sc_drain(dm_io dm_drain_st *pstDrain)
 {
   (void)pstDrain;
   g_stSc.bDraining = DM_TRUE;
@@ -506,7 +535,7 @@ bool_t af_sidecar_in_cooldown(void)
   return (g_stSc.bHasCooldown && (u64Now < g_stSc.u64CooldownUntilMs)) ? DM_TRUE : DM_FALSE;
 }
 
-void af_sidecar_get_snap(out af_sc_snap_st *pstOut)
+void af_sidecar_get_snap(dm_out af_sc_snap_st *pstOut)
 {
   uint32 i = 0u;
   if (NULL == pstOut)
@@ -524,7 +553,7 @@ void af_sidecar_get_snap(out af_sc_snap_st *pstOut)
   pstOut->bInCooldown = af_sidecar_in_cooldown();
 }
 
-int af_sidecar_connect(in const char *pcName, in bool_t bWithRetry)
+int af_sidecar_connect(dm_in const char *pcName, dm_in bool_t bWithRetry)
 {
   uint64 u64Now = af__sc_ops()->pfNowMs();
   af_sc_state_et ePrev = g_stSc.eState;
@@ -553,7 +582,7 @@ int af_sidecar_connect(in const char *pcName, in bool_t bWithRetry)
   return af__sc_dispatch_job(AF_SC_OP_CONNECT, pcName);
 }
 
-int af_sidecar_disconnect(in const char *pcName)
+int af_sidecar_disconnect(dm_in const char *pcName)
 {
   uint64 u64Now = af__sc_ops()->pfNowMs();
   af_sc_state_et ePrev = g_stSc.eState;
@@ -571,7 +600,7 @@ int af_sidecar_disconnect(in const char *pcName)
   return af__sc_dispatch_job(AF_SC_OP_DISCONNECT, pcName);
 }
 
-void af_sidecar_get_diag(out af_sc_diag_st *pstOut)
+void af_sidecar_get_diag(dm_out af_sc_diag_st *pstOut)
 {
   if (NULL != pstOut)
   {
@@ -579,14 +608,12 @@ void af_sidecar_get_diag(out af_sc_diag_st *pstOut)
   }
 }
 
-const dm_module_st g_stAfSidecarMod = {
-    .u16ModID = AF_MOD_SIDECAR,
-    .pcName = "af_sidecar",
-    .pfInit = af__sc_init,
-    .pfDrain = af__sc_drain,
-    .pfFini = af__sc_fini,
-    .pastErrMap = NULL
-};
+const dm_module_st g_stAfSidecarMod = {.u16ModID = AF_MOD_SIDECAR,
+                                       .pcName = "af_sidecar",
+                                       .pfInit = af__sc_init,
+                                       .pfDrain = af__sc_drain,
+                                       .pfFini = af__sc_fini,
+                                       .pastErrMap = NULL};
 
 const dm_module_st *af_sidecar_module(void)
 {

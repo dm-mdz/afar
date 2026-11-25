@@ -16,9 +16,9 @@ extern "C"
 {
 #endif
 
-void af_shell_win_set_html_path(in const char *pcPath);
-void af_shell_win_show(in bool_t bShow);
-void af_shell_win_push(in const char *pcViewJson);
+void af_shell_win_set_html_path(dm_in const char *pcPath);
+void af_shell_win_show(dm_in bool_t bShow);
+void af_shell_win_push(dm_in const char *pcViewJson);
 void af_shell_win_destroy(void);
 bool_t af_shell_win_is_visible(void);
 void af_shell_win_refresh_lang(void);

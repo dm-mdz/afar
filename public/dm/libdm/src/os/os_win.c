@@ -47,7 +47,7 @@ typedef struct dm__win_reparse_mount
 
 /* ============================ 编码转换与进程查询 ============================ */
 
-static bool_t dm__os_utf8_to_wide(in const char *pcUtf8, out WCHAR *pwcOut, in int iCap)
+static bool_t dm__os_utf8_to_wide(dm_in const char *pcUtf8, dm_out WCHAR *pwcOut, dm_in int iCap)
 {
   if ((NULL == pcUtf8) || ('\0' == pcUtf8[0]) || (NULL == pwcOut) || (iCap <= 1))
   {
@@ -58,7 +58,7 @@ static bool_t dm__os_utf8_to_wide(in const char *pcUtf8, out WCHAR *pwcOut, in i
              : DM_FALSE;
 }
 
-static void dm__os_wide_to_utf8(in const WCHAR *pwcIn, out char *pcOut, in int iCap)
+static void dm__os_wide_to_utf8(dm_in const WCHAR *pwcIn, dm_out char *pcOut, dm_in int iCap)
 {
   if ((NULL == pcOut) || (iCap <= 0))
   {
@@ -76,7 +76,7 @@ static void dm__os_wide_to_utf8(in const WCHAR *pwcIn, out char *pcOut, in int i
   return;
 }
 
-static uint64 dm__os_filetime_to_ms(in const FILETIME *pstFt)
+static uint64 dm__os_filetime_to_ms(dm_in const FILETIME *pstFt)
 {
   uint64 u64Val = ((uint64)pstFt->dwHighDateTime << 32) | (uint64)pstFt->dwLowDateTime;
   if (u64Val < DM__WIN_EPOCH_DIFF_100NS)
@@ -86,8 +86,8 @@ static uint64 dm__os_filetime_to_ms(in const FILETIME *pstFt)
   return (u64Val - DM__WIN_EPOCH_DIFF_100NS) / 10000ULL;
 }
 
-static int dm__os_win_proc_info(in int iPid, out uint64 *pu64StartMs, out char *pcCmd,
-                                in int iCmdCap)
+static int dm__os_win_proc_info(dm_in int iPid, dm_out uint64 *pu64StartMs, dm_out char *pcCmd,
+                                dm_in int iCmdCap)
 {
   HANDLE hProc = NULL;
   DWORD dwCode = 0;
@@ -160,13 +160,13 @@ static int dm__os_win_proc_info(in int iPid, out uint64 *pu64StartMs, out char *
   return DM_SUCCESS;
 }
 
-static int dm__os_win_resolve_start(in int iPid, out uint64 *pu64StartMs, io void *pvUser)
+static int dm__os_win_resolve_start(dm_in int iPid, dm_out uint64 *pu64StartMs, dm_io void *pvUser)
 {
   (void)pvUser;
   return dm__os_win_proc_info(iPid, pu64StartMs, NULL, 0);
 }
 
-int dm_os_proc_start_ms(in int iPid, out uint64 *pu64StartMs)
+int dm_os_proc_start_ms(dm_in int iPid, dm_out uint64 *pu64StartMs)
 {
   DM_ASSERT_SLOW();
   if ((iPid <= 0) || (NULL == pu64StartMs))
@@ -176,8 +176,8 @@ int dm_os_proc_start_ms(in int iPid, out uint64 *pu64StartMs)
   return dm__os_win_proc_info(iPid, pu64StartMs, NULL, 0);
 }
 
-int dm_os_proc_descendants(in int iRootPid, out dm_os_proc_st *pastOut, in uint32 u32Cap,
-                           out uint32 *pu32Count)
+int dm_os_proc_descendants(dm_in int iRootPid, dm_out dm_os_proc_st *pastOut, dm_in uint32 u32Cap,
+                           dm_out uint32 *pu32Count)
 {
   HANDLE hSnap = INVALID_HANDLE_VALUE;
   PROCESSENTRY32W stPe = {0};
@@ -285,7 +285,7 @@ int dm_os_proc_descendants(in int iRootPid, out dm_os_proc_st *pastOut, in uint3
   return DM_SUCCESS;
 }
 
-static int dm__os_win_kill_one(in int iPid)
+static int dm__os_win_kill_one(dm_in int iPid)
 {
   HANDLE hProc = OpenProcess(PROCESS_TERMINATE, FALSE, (DWORD)iPid);
   BOOL bOk = FALSE;
@@ -310,7 +310,7 @@ static int dm__os_win_kill_one(in int iPid)
   return DM_SUCCESS;
 }
 
-int dm_os_proc_kill_tree(in int iPid)
+int dm_os_proc_kill_tree(dm_in int iPid)
 {
   dm_os_proc_st *pastDesc = NULL;
   uint32 u32Count = 0u;
@@ -357,7 +357,7 @@ int dm_os_proc_kill_tree(in int iPid)
 
 /* ============================ 文件可执行性与目录联接 ============================ */
 
-bool_t dm_os_is_exec(in const char *pcPathUtf8)
+bool_t dm_os_is_exec(dm_in const char *pcPathUtf8)
 {
   WCHAR awcPath[1024] = {0};
   DWORD dwAttr = 0;
@@ -372,7 +372,7 @@ bool_t dm_os_is_exec(in const char *pcPathUtf8)
              : DM_FALSE;
 }
 
-static bool_t dm__os_win_is_subpath(in const WCHAR *pwcChild, in const WCHAR *pwcParent)
+static bool_t dm__os_win_is_subpath(dm_in const WCHAR *pwcChild, dm_in const WCHAR *pwcParent)
 {
   size_t uParLen = wcslen(pwcParent);
   while ((uParLen > 0u) &&
@@ -395,7 +395,8 @@ static bool_t dm__os_win_is_subpath(in const WCHAR *pwcChild, in const WCHAR *pw
 }
 
 /* 递归目录拷贝（非 NTFS 卷创建 Junction 失败时的安全兜底） */
-static int dm__os_win_copy_dir(in const WCHAR *pwcSrc, in const WCHAR *pwcDst, in uint32 u32Depth)
+static int dm__os_win_copy_dir(dm_in const WCHAR *pwcSrc, dm_in const WCHAR *pwcDst,
+                               dm_in uint32 u32Depth)
 {
   WIN32_FIND_DATAW stFd = {0};
   HANDLE hFind = INVALID_HANDLE_VALUE;
@@ -461,7 +462,7 @@ static int dm__os_win_copy_dir(in const WCHAR *pwcSrc, in const WCHAR *pwcDst, i
   return DM_SUCCESS;
 }
 
-static int dm__os_win_rm_dir_recursive(in const WCHAR *pwcDir, in uint32 u32Depth)
+static int dm__os_win_rm_dir_recursive(dm_in const WCHAR *pwcDir, dm_in uint32 u32Depth)
 {
   DWORD dwAttr = GetFileAttributesW(pwcDir);
   WIN32_FIND_DATAW stFd = {0};
@@ -519,8 +520,8 @@ static int dm__os_win_rm_dir_recursive(in const WCHAR *pwcDir, in uint32 u32Dept
   return RemoveDirectoryW(pwcDir) ? DM_SUCCESS : DM_IO;
 }
 
-int dm_os_dir_link(in const char *pcLinkPathUtf8, in const char *pcTargetPathUtf8,
-                   out bool_t *pbUsedCopy)
+int dm_os_dir_link(dm_in const char *pcLinkPathUtf8, dm_in const char *pcTargetPathUtf8,
+                   dm_out bool_t *pbUsedCopy)
 {
   WCHAR awcLink[1024] = {0};
   WCHAR awcLinkFull[1024] = {0};
@@ -624,7 +625,7 @@ int dm_os_dir_link(in const char *pcLinkPathUtf8, in const char *pcTargetPathUtf
   return iCopyRc;
 }
 
-int dm_os_dir_unlink(in const char *pcLinkPathUtf8)
+int dm_os_dir_unlink(dm_in const char *pcLinkPathUtf8)
 {
   WCHAR awcLink[1024] = {0};
 

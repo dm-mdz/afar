@@ -34,7 +34,7 @@ typedef struct dmc__wait
   uint32 u32Len;
 } dmc__wait_st;
 
-void dmc__zero_mem(out void *pvBuf, in size_t uLen)
+void dmc__zero_mem(dm_out void *pvBuf, dm_in size_t uLen)
 {
   volatile uint8 *pu8 = (volatile uint8 *)pvBuf;
   size_t uIdx = 0u;
@@ -45,7 +45,7 @@ void dmc__zero_mem(out void *pvBuf, in size_t uLen)
   return;
 }
 
-void dmc__copy_str(out char *pcDst, in size_t uCap, in const char *pcSrc)
+void dmc__copy_str(dm_out char *pcDst, dm_in size_t uCap, dm_in const char *pcSrc)
 {
   size_t uLen = 0u;
   if ((NULL == pcDst) || (0u == uCap))
@@ -67,12 +67,12 @@ void dmc__copy_str(out char *pcDst, in size_t uCap, in const char *pcSrc)
   return;
 }
 
-static unsigned char dmc__ascii_lo(in unsigned char u8Ch)
+static unsigned char dmc__ascii_lo(dm_in unsigned char u8Ch)
 {
   return ((u8Ch >= 'A') && (u8Ch <= 'Z')) ? (unsigned char)(u8Ch - 'A' + 'a') : u8Ch;
 }
 
-static bool_t dmc__str_eq_ci(in const char *pcA, in const char *pcB)
+static bool_t dmc__str_eq_ci(dm_in const char *pcA, dm_in const char *pcB)
 {
   size_t uIdx = 0u;
   if ((NULL == pcA) || (NULL == pcB))
@@ -90,7 +90,8 @@ static bool_t dmc__str_eq_ci(in const char *pcA, in const char *pcB)
   return (pcA[uIdx] == pcB[uIdx]) ? DM_TRUE : DM_FALSE;
 }
 
-static bool_t dmc__extract_scheme(in const char *pcTarget, out char *pcScheme, in size_t uCap)
+static bool_t dmc__extract_scheme(dm_in const char *pcTarget, dm_out char *pcScheme,
+                                  dm_in size_t uCap)
 {
   const char *pcSep = NULL;
   size_t uLen = 0u;
@@ -117,8 +118,8 @@ static bool_t dmc__extract_scheme(in const char *pcTarget, out char *pcScheme, i
 
 /* ============================ dmc_proto 宿主回调 ============================ */
 
-static int dmc__cli_send(in void *pvUser, in const uint8 *pu8Head, in const void *pvBody,
-                         in uint32 u32Len)
+static int dmc__cli_send(dm_in void *pvUser, dm_in const uint8 *pu8Head, dm_in const void *pvBody,
+                         dm_in uint32 u32Len)
 {
   dmc_client_st *pstCli = (dmc_client_st *)pvUser;
   if ((NULL == pstCli) || !pstCli->bHasVtbl || (NULL == pstCli->pvHandle))
@@ -132,7 +133,7 @@ static int dmc__cli_send(in void *pvUser, in const uint8 *pu8Head, in const void
   return (0u == u32Len) ? 0 : pstCli->stVtbl.pfWrite(pstCli->pvHandle, pvBody, u32Len);
 }
 
-static void dmc__cli_on_push(in void *pvUser, in const dmc_push_st *pstPush)
+static void dmc__cli_on_push(dm_in void *pvUser, dm_in const dmc_push_st *pstPush)
 {
   dmc_client_st *pstCli = (dmc_client_st *)pvUser;
   if ((NULL == pstCli) || (NULL == pstPush))
@@ -151,8 +152,8 @@ static void dmc__cli_on_push(in void *pvUser, in const dmc_push_st *pstPush)
   return;
 }
 
-static void dmc__cli_on_call(in void *pvUser, in uint16 u16Func, in uint32 u32ReqID,
-                             in const uint8 *pu8Body, in uint32 u32Len)
+static void dmc__cli_on_call(dm_in void *pvUser, dm_in uint16 u16Func, dm_in uint32 u32ReqID,
+                             dm_in const uint8 *pu8Body, dm_in uint32 u32Len)
 {
   dmc_client_st *pstCli = (dmc_client_st *)pvUser;
   if ((NULL != pstCli) && (NULL != pstCli->pfOnCall))
@@ -162,12 +163,13 @@ static void dmc__cli_on_call(in void *pvUser, in uint16 u16Func, in uint32 u32Re
   }
   if ((NULL != pstCli) && (0u != u32ReqID))
   {
-    (void)dmc_answer(pstCli->pstDmc, u16Func, u32ReqID, (int32)DM__NOT_FOUND, 0u, NULL, 0u);
+    dmc_ans_opt_st stAns = {u16Func, u32ReqID, (int32)DM__NOT_FOUND, 0u, NULL, 0u};
+    (void)dmc_answer(pstCli->pstDmc, &stAns);
   }
   return;
 }
 
-static void dmc__cli_on_wire_err(in void *pvUser, in int iErr)
+static void dmc__cli_on_wire_err(dm_in void *pvUser, dm_in int iErr)
 {
   dmc_client_st *pstCli = (dmc_client_st *)pvUser;
   (void)iErr;
@@ -178,8 +180,8 @@ static void dmc__cli_on_wire_err(in void *pvUser, in int iErr)
   return;
 }
 
-static void dmc__cli_on_reply(in void *pvArg, in int iStatus, in uint8 u8Flag,
-                              in const uint8 *pu8Body, in uint32 u32Len)
+static void dmc__cli_on_reply(dm_in void *pvArg, dm_in int iStatus, dm_in uint8 u8Flag,
+                              dm_in const uint8 *pu8Body, dm_in uint32 u32Len)
 {
   dmc__wait_st *pstWait = (dmc__wait_st *)pvArg;
 
@@ -206,7 +208,7 @@ static void dmc__cli_on_reply(in void *pvArg, in int iStatus, in uint8 u8Flag,
 
 /* ============================ 底层泵与连接管理 ============================ */
 
-void dmc__cli_drop_link(io dmc_client_st *pstCli)
+void dmc__cli_drop_link(dm_io dmc_client_st *pstCli)
 {
   if (NULL != pstCli->pstDmc)
   {
@@ -220,7 +222,7 @@ void dmc__cli_drop_link(io dmc_client_st *pstCli)
   return;
 }
 
-void dmc__cli_clear_ifaces(io dmc_client_st *pstCli)
+void dmc__cli_clear_ifaces(dm_io dmc_client_st *pstCli)
 {
   yyjson_doc_free(pstCli->pstIfacesDoc);
   pstCli->pstIfacesDoc = NULL;
@@ -229,7 +231,7 @@ void dmc__cli_clear_ifaces(io dmc_client_st *pstCli)
   return;
 }
 
-int dmc__cli_pump_once(io dmc_client_st *pstCli, in int iWaitMs)
+int dmc__cli_pump_once(dm_io dmc_client_st *pstCli, dm_in int iWaitMs)
 {
   uint8 au8Buf[16384];
   int iN = 0;
@@ -257,20 +259,26 @@ int dmc__cli_pump_once(io dmc_client_st *pstCli, in int iWaitMs)
   return DMC_OK;
 }
 
-int dmc__cli_call_raw(io dmc_client_st *pstCli, in uint16 u16LinkID, in uint8 u8Flag,
-                      in const void *pvBody, in uint32 u32Len, in uint32 u32TimeoutMs,
-                      out dmc_resp_st *pstResp)
+int dmc__cli_call_raw(dm_io dmc_client_st *pstCli, dm_in const dmc_call_id_req_st *pstReq,
+                      dm_out dmc_resp_st *pstResp)
 {
   dmc__wait_st stWait;
+  dmc_req_opt_st stOpt;
   uint32 u32ReqID = 0u;
-  uint32 u32Ms = (0u != u32TimeoutMs) ? u32TimeoutMs : pstCli->u32DefaultTimeoutMs;
+  uint32 u32Ms = (0u != pstReq->u32TimeoutMs) ? pstReq->u32TimeoutMs : pstCli->u32DefaultTimeoutMs;
   uint64 u64End = dmc_now_ms() + (uint64)u32Ms;
   int iErr = DMC_OK;
 
   memset(&stWait, 0, sizeof(stWait));
+  memset(&stOpt, 0, sizeof(stOpt));
   memset(pstResp, 0, sizeof(*pstResp));
-  iErr = dmc_request(pstCli->pstDmc, u16LinkID, u8Flag, pvBody, u32Len, dmc__cli_on_reply, &stWait,
-                     &u32ReqID);
+  stOpt.u16LinkID = pstReq->u16LinkID;
+  stOpt.u8Flag = pstReq->u8Flag;
+  stOpt.pvBody = pstReq->pvBody;
+  stOpt.u32Len = pstReq->u32Len;
+  stOpt.pfReply = dmc__cli_on_reply;
+  stOpt.pvArg = &stWait;
+  iErr = dmc_request(pstCli->pstDmc, &stOpt, &u32ReqID);
   if (DMC_OK != iErr)
   {
     pstResp->iStatus = iErr;
@@ -298,8 +306,8 @@ int dmc__cli_call_raw(io dmc_client_st *pstCli, in uint16 u16LinkID, in uint8 u8
   return pstResp->iStatus;
 }
 
-static int dmc__cli_handshake(io dmc_client_st *pstCli, in const char *pcRole,
-                              in const char *pcToken)
+static int dmc__cli_handshake(dm_io dmc_client_st *pstCli, dm_in const char *pcRole,
+                              dm_in const char *pcToken)
 {
   yyjson_mut_doc *pstDoc = yyjson_mut_doc_new(NULL);
   yyjson_mut_val *pstRoot = NULL;
@@ -357,8 +365,11 @@ static int dmc__cli_handshake(io dmc_client_st *pstCli, in const char *pcRole,
   {
     return DMC_ERR_QUEUE;
   }
-  iErr = dmc__cli_call_raw(pstCli, DM_LINKID_HELLO, (uint8)(DM_FRAME_F_JSON | DM_FRAME_F_SENSITIVE),
-                           pcHello, (uint32)uHello, pstCli->u32ConnectTimeoutMs, &stResp);
+  {
+    dmc_call_id_req_st stReq = {DM_LINKID_HELLO, (uint8)(DM_FRAME_F_JSON | DM_FRAME_F_SENSITIVE),
+                                pcHello, (uint32)uHello, pstCli->u32ConnectTimeoutMs};
+    iErr = dmc__cli_call_raw(pstCli, &stReq, &stResp);
+  }
   dmc__zero_mem(pcHello, uHello);
   free(pcHello);
   if (DMC_OK == iErr)
@@ -389,7 +400,7 @@ static int dmc__cli_handshake(io dmc_client_st *pstCli, in const char *pcRole,
   return (DM__PERM == iErr) ? DMC_ERR_AUTH : iErr;
 }
 
-int dmc__cli_connect_once(io dmc_client_st *pstCli)
+int dmc__cli_connect_once(dm_io dmc_client_st *pstCli)
 {
   char acOpenUri[600];
   char acRole[64];
@@ -406,14 +417,20 @@ int dmc__cli_connect_once(io dmc_client_st *pstCli)
 
   if (dmc__str_eq_ci(pstCli->acScheme, "local"))
   {
-    iErr = dmc__read_run_file(pstCli->acDataDir, pstCli->bHasRole ? pstCli->acRole : NULL, &iLink,
-                              &iHttp, acRunBoot, sizeof(acRunBoot), acRole, sizeof(acRole), acToken,
-                              sizeof(acToken));
+    dmc__run_info_st stRun;
+    memset(&stRun, 0, sizeof(stRun));
+    iErr = dmc__read_run_file(pstCli->acDataDir, pstCli->bHasRole ? pstCli->acRole : NULL, &stRun);
     if (DMC_OK != iErr)
     {
-      dmc__zero_mem(acToken, sizeof(acToken));
+      dmc__zero_mem(stRun.acToken, sizeof(stRun.acToken));
       return iErr;
     }
+    iLink = stRun.iLinkPort;
+    iHttp = stRun.iHttpPort;
+    dmc__copy_str(acRunBoot, sizeof(acRunBoot), stRun.acBoot);
+    dmc__copy_str(acRole, sizeof(acRole), stRun.acRole);
+    dmc__copy_str(acToken, sizeof(acToken), stRun.acToken);
+    dmc__zero_mem(stRun.acToken, sizeof(stRun.acToken));
     pstCli->iHttpPort = iHttp;
     if (('\0' == pstCli->acBoot[0]) && ('\0' != acRunBoot[0]))
     {
@@ -463,7 +480,7 @@ int dmc__cli_connect_once(io dmc_client_st *pstCli)
   return DMC_OK;
 }
 
-dmc_client_st *dmc_client_open(in const dmc_client_opt_st *pstOpt, out int *piErr)
+dmc_client_st *dmc_client_open(dm_in const dmc_client_opt_st *pstOpt, dm_out int *piErr)
 {
   dmc_client_st *pstCli = NULL;
   dmc_host_st stHost;
@@ -583,7 +600,7 @@ fail:
   return NULL;
 }
 
-void dmc_client_close(io dmc_client_st *pstCli)
+void dmc_client_close(dm_io dmc_client_st *pstCli)
 {
   if (NULL == pstCli)
   {

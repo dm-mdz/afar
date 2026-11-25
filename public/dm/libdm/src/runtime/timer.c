@@ -30,7 +30,7 @@ extern "C"
 
 typedef struct dm__timer
 {
-  dm_timer_st stUv; /* 首成员：libuv 回调给的指针就是它 */
+  dm_uv_timer_st stUv; /* 首成员：libuv 回调给的指针就是它 */
   uint32 u32Id;
   uint uiLinkID;
   uint64 u64Tag;
@@ -41,7 +41,7 @@ typedef struct dm__timer
 static dm_hash_table_st g_stTimerTable;
 static uint32 g_u32TimerNext = 0;
 
-static dm__timer_st *dm__timer_find(in uint32 u32Id)
+static dm__timer_st *dm__timer_find(dm_in uint32 u32Id)
 {
   if (NULL == g_stTimerTable.pstBuckets)
   {
@@ -50,23 +50,23 @@ static dm__timer_st *dm__timer_find(in uint32 u32Id)
   return (dm__timer_st *)dm_hash_find(&g_stTimerTable, u32Id);
 }
 
-static void dm__timer_on_closed(in dm_handle_st *pstHandle)
+static void dm__timer_on_closed(dm_in dm_uv_handle_st *pstHandle)
 {
   dm_free_tag(pstHandle);
   return;
 }
 
 /* 从表里摘掉、停掉、关掉（关完释放） */
-static void dm__timer_drop(io dm__timer_st *pstTimer)
+static void dm__timer_drop(dm_io dm__timer_st *pstTimer)
 {
   (void)dm_hash_del(&g_stTimerTable, pstTimer->u32Id, NULL);
-  (void)dm_timer_stop(&pstTimer->stUv);
-  dm_close((dm_handle_st *)&pstTimer->stUv, dm__timer_on_closed);
+  (void)dm_uv_timer_stop(&pstTimer->stUv);
+  dm_uv_close((dm_uv_handle_st *)&pstTimer->stUv, dm__timer_on_closed);
   return;
 }
 
 /* 交出之前再查一次：返回真就丢掉 */
-static bool_t dm__timer_stale(io dm__qitem_st *pstItem)
+static bool_t dm__timer_stale(dm_io dm__qitem_st *pstItem)
 {
   dm__timer_st *pstTimer = dm__timer_find((uint32)(uintptr_t)pstItem->pvCtx);
 
@@ -81,7 +81,7 @@ static bool_t dm__timer_stale(io dm__qitem_st *pstItem)
   return DM_FALSE;
 }
 
-static void dm__timer_on_fire(in dm_timer_st *pstUv)
+static void dm__timer_on_fire(dm_in dm_uv_timer_st *pstUv)
 {
   dm__timer_st *pstTimer = (dm__timer_st *)pstUv;
   dm_link_handler_st *pstHandler = dm__link_lookup(pstTimer->uiLinkID);
@@ -111,8 +111,8 @@ static void dm__timer_on_fire(in dm_timer_st *pstUv)
   return;
 }
 
-int dm_timer_add(in uint32 u32DelayMs, in uint32 u32RepeatMs, in uint uiLinkID, in uint64 u64Tag,
-                 out uint32 *pu32Timer)
+int dm_timer_add(dm_in uint32 u32DelayMs, dm_in uint32 u32RepeatMs, dm_in uint uiLinkID,
+                 dm_in uint64 u64Tag, dm_out uint32 *pu32Timer)
 {
   dm__timer_st *pstTimer = NULL;
   int iErrCode = DM_SUCCESS;
@@ -145,7 +145,7 @@ int dm_timer_add(in uint32 u32DelayMs, in uint32 u32RepeatMs, in uint uiLinkID, 
   pstTimer->uiLinkID = uiLinkID;
   pstTimer->u64Tag = u64Tag;
   pstTimer->u32Repeat = u32RepeatMs;
-  iErrCode = dm_timer_init(dm_default_loop(), &pstTimer->stUv);
+  iErrCode = dm_uv_timer_init(dm_uv_default_loop(), &pstTimer->stUv);
   if (DM_SUCCESS != iErrCode)
   {
     dm_free_tag(pstTimer);
@@ -153,10 +153,10 @@ int dm_timer_add(in uint32 u32DelayMs, in uint32 u32RepeatMs, in uint uiLinkID, 
   }
   if (DM_SUCCESS != dm_hash_add(&g_stTimerTable, pstTimer->u32Id, pstTimer))
   {
-    dm_close((dm_handle_st *)&pstTimer->stUv, dm__timer_on_closed);
+    dm_uv_close((dm_uv_handle_st *)&pstTimer->stUv, dm__timer_on_closed);
     return DM_ALLOC;
   }
-  (void)dm_timer_start(&pstTimer->stUv, dm__timer_on_fire, u32DelayMs, u32RepeatMs);
+  (void)dm_uv_timer_start(&pstTimer->stUv, dm__timer_on_fire, u32DelayMs, u32RepeatMs);
   if (NULL != pu32Timer)
   {
     *pu32Timer = pstTimer->u32Id;
@@ -164,7 +164,7 @@ int dm_timer_add(in uint32 u32DelayMs, in uint32 u32RepeatMs, in uint uiLinkID, 
   return DM_SUCCESS;
 }
 
-int dm_timer_reset(in uint32 u32Timer, in uint32 u32DelayMs)
+int dm_timer_reset(dm_in uint32 u32Timer, dm_in uint32 u32DelayMs)
 {
   dm__timer_st *pstTimer = NULL;
 
@@ -175,10 +175,10 @@ int dm_timer_reset(in uint32 u32Timer, in uint32 u32DelayMs)
     return DM_NOT_FOUND;
   }
   pstTimer->u32Gen++;
-  return dm_timer_start(&pstTimer->stUv, dm__timer_on_fire, u32DelayMs, pstTimer->u32Repeat);
+  return dm_uv_timer_start(&pstTimer->stUv, dm__timer_on_fire, u32DelayMs, pstTimer->u32Repeat);
 }
 
-int dm_timer_cancel(in uint32 u32Timer)
+int dm_timer_cancel(dm_in uint32 u32Timer)
 {
   dm__timer_st *pstTimer = NULL;
 
@@ -193,11 +193,11 @@ int dm_timer_cancel(in uint32 u32Timer)
 }
 
 /* 拆除：取消所有定时器 */
-static void dm__timer_drop_one(in void *pvValue)
+static void dm__timer_drop_one(dm_in void *pvValue)
 {
   dm__timer_st *pstTimer = (dm__timer_st *)pvValue;
-  (void)dm_timer_stop(&pstTimer->stUv);
-  dm_close((dm_handle_st *)&pstTimer->stUv, dm__timer_on_closed);
+  (void)dm_uv_timer_stop(&pstTimer->stUv);
+  dm_uv_close((dm_uv_handle_st *)&pstTimer->stUv, dm__timer_on_closed);
   return;
 }
 

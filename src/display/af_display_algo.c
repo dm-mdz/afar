@@ -17,7 +17,7 @@
 #define AF_DEFAULT_PX_W 2360u
 #define AF_DEFAULT_PX_H 1640u
 
-static uint32 af__round_even(in double dVal)
+static uint32 af__round_even(dm_in double dVal)
 {
   double dHalf = round(dVal / 2.0);
   if (dHalf < 1.0)
@@ -27,8 +27,8 @@ static uint32 af__round_even(in double dVal)
   return (uint32)(dHalf * 2.0);
 }
 
-bool_t af_scale_normalize_screen(in uint32 u32InW, in uint32 u32InH, out uint32 *pu32Long,
-                                 out uint32 *pu32Short)
+bool_t af_scale_normalize_screen(dm_in uint32 u32InW, dm_in uint32 u32InH, dm_out uint32 *pu32Long,
+                                 dm_out uint32 *pu32Short)
 {
   uint32 u32A = (u32InW >= u32InH) ? u32InW : u32InH;
   uint32 u32B = (u32InW >= u32InH) ? u32InH : u32InW;
@@ -52,7 +52,7 @@ bool_t af_scale_normalize_screen(in uint32 u32InW, in uint32 u32InH, out uint32 
   return DM_TRUE;
 }
 
-int af_scale_key_index(in const char *pcKey)
+int af_scale_key_index(dm_in const char *pcKey)
 {
   if (NULL == pcKey)
   {
@@ -73,8 +73,8 @@ int af_scale_key_index(in const char *pcKey)
   return -1;
 }
 
-void af_scale_presets(in uint32 u32PxW, in uint32 u32PxH,
-                      out af_scale_preset_st astOut[AF_SCALE_COUNT])
+void af_scale_presets(dm_in uint32 u32PxW, dm_in uint32 u32PxH,
+                      dm_out af_scale_preset_st astOut[AF_SCALE_COUNT])
 {
   uint32 u32A = AF_DEFAULT_PX_W;
   uint32 u32B = AF_DEFAULT_PX_H;
@@ -117,8 +117,8 @@ void af_scale_presets(in uint32 u32PxW, in uint32 u32PxH,
   astOut[2].u32H = af__round_even((double)u32Mw * dRatio);
 }
 
-static void af__vd_push_unique(io af_vd_mode_req_st *pastOut, in uint32 u32Cap,
-                               io uint32 *pu32Cnt, in uint32 u32W, in uint32 u32H)
+static void af__vd_push_unique(dm_io af_vd_mode_req_st *pastOut, dm_in uint32 u32Cap,
+                               dm_io uint32 *pu32Cnt, dm_in uint32 u32W, dm_in uint32 u32H)
 {
   uint32 i = 0u;
 
@@ -138,9 +138,9 @@ static void af__vd_push_unique(io af_vd_mode_req_st *pastOut, in uint32 u32Cap,
   (*pu32Cnt)++;
 }
 
-static void af__vd_add_pair(io af_vd_mode_req_st *pastOut, in uint32 u32Cap, io uint32 *pu32Cnt,
-                            in uint32 u32W, in uint32 u32H, in uint32 u32Style,
-                            io uint32 *pu32MaxPw, io uint32 *pu32MaxPh)
+static void af__vd_add_pair(dm_io af_vd_mode_req_st *pastOut, dm_in uint32 u32Cap,
+                            dm_io uint32 *pu32Cnt, dm_in uint32 u32W, dm_in uint32 u32H,
+                            dm_in uint32 u32Style, dm_io uint32 *pu32MaxPw, dm_io uint32 *pu32MaxPh)
 {
   if ((0u == u32W) || (0u == u32H))
   {
@@ -165,11 +165,11 @@ static void af__vd_add_pair(io af_vd_mode_req_st *pastOut, in uint32 u32Cap, io 
   }
 }
 
-uint32 af_vd_build_modes(in const af_scale_preset_st astPresets[AF_SCALE_COUNT],
-                         in const char *pcWantKey, in const uint32 aau32Extra[][2],
-                         in uint32 u32ExtraCnt, in uint32 u32Style,
-                         out af_vd_mode_req_st *pastOut, in uint32 u32Cap, out uint32 *pu32MaxPw,
-                         out uint32 *pu32MaxPh)
+uint32 af_vd_build_modes(dm_in const af_scale_preset_st astPresets[AF_SCALE_COUNT],
+                         dm_in const char *pcWantKey, dm_in const uint32 aau32Extra[][2],
+                         dm_in uint32 u32ExtraCnt, dm_in uint32 u32Style,
+                         dm_out af_vd_mode_req_st *pastOut, dm_in uint32 u32Cap,
+                         dm_out uint32 *pu32MaxPw, dm_out uint32 *pu32MaxPh)
 {
   int iWant = af_scale_key_index(pcWantKey);
   uint32 u32WantIdx = (iWant >= 0) ? (uint32)iWant : 1u;
@@ -213,7 +213,8 @@ uint32 af_vd_build_modes(in const af_scale_preset_st astPresets[AF_SCALE_COUNT],
   return u32Cnt;
 }
 
-af_disp_kind_et af_disp_classify(in bool_t bIsOurs, in uint32 u32Vendor, in uint32 u32Model)
+af_disp_kind_et af_disp_classify(dm_in bool_t bIsOurs, dm_in uint32 u32Vendor,
+                                 dm_in uint32 u32Model)
 {
   if (bIsOurs)
   {
@@ -223,35 +224,50 @@ af_disp_kind_et af_disp_classify(in bool_t bIsOurs, in uint32 u32Vendor, in uint
   {
     return AF_DISP_SIDECAR;
   }
-  if (((0x756E6B6Eu == u32Vendor) && (0x76697274u == u32Model))
-      || ((0x4D50u == u32Vendor) && (0x0001u == u32Model))
-      || ((0x6161706Cu == u32Vendor) && (0x69506164u != u32Model)) || (0u == u32Vendor))
+  if (((0x756E6B6Eu == u32Vendor) && (0x76697274u == u32Model)) ||
+      ((0x4D50u == u32Vendor) && (0x0001u == u32Model)) ||
+      ((0x6161706Cu == u32Vendor) && (0x69506164u != u32Model)) || (0u == u32Vendor))
   {
     return AF_DISP_OTHER;
   }
   return AF_DISP_PHYSICAL;
 }
 
-const char *af_disp_store_target_scale(in const char *pcName)
+static const char *af__scale_key_literal(dm_in int iIdx)
+{
+  static const char *const k_apcKeys[AF_SCALE_COUNT] = {"larger", "default", "more"};
+  if ((iIdx >= 0) && (iIdx < (int)AF_SCALE_COUNT))
+  {
+    return k_apcKeys[iIdx];
+  }
+  return "default";
+}
+
+const char *af_disp_store_target_scale(dm_in const char *pcName)
 {
   const af_state_st *pstS = af_store_state();
+  int iIdx = -1;
   uint32 i = 0u;
 
   if ((NULL != pcName) && ('\0' != pcName[0]))
   {
     for (i = 0u; i < pstS->u32ScaleCnt; i++)
     {
-      if ((0 == strcmp(pstS->astScales[i].acName, pcName))
-          && (af_scale_key_index(pstS->astScales[i].acScale) >= 0))
+      if (0 == strcmp(pstS->astScales[i].acName, pcName))
       {
-        return pstS->astScales[i].acScale;
+        iIdx = af_scale_key_index(pstS->astScales[i].acScale);
+        if (iIdx >= 0)
+        {
+          return af__scale_key_literal(iIdx);
+        }
       }
     }
   }
-  return (af_scale_key_index(pstS->acScale) >= 0) ? pstS->acScale : "default";
+  iIdx = af_scale_key_index(pstS->acScale);
+  return af__scale_key_literal(iIdx);
 }
 
-void af_disp_store_ipad_pixels(in const char *pcName, out uint32 *pu32W, out uint32 *pu32H)
+void af_disp_store_ipad_pixels(dm_in const char *pcName, dm_out uint32 *pu32W, dm_out uint32 *pu32H)
 {
   const af_config_st *pstCfg = af_store_cfg();
   const af_state_st *pstSt = af_store_state();
@@ -274,8 +290,8 @@ void af_disp_store_ipad_pixels(in const char *pcName, out uint32 *pu32W, out uin
   }
 }
 
-void af_disp_store_resolve_presets(in const char *pcName,
-                                   out af_scale_preset_st astOut[AF_SCALE_COUNT])
+void af_disp_store_resolve_presets(dm_in const char *pcName,
+                                   dm_out af_scale_preset_st astOut[AF_SCALE_COUNT])
 {
   const af_state_st *pstS = af_store_state();
   uint32 u32PxW = 0u;
@@ -287,9 +303,9 @@ void af_disp_store_resolve_presets(in const char *pcName,
   {
     for (i = 0u; i < pstS->u32SizesCnt; i++)
     {
-      if ((0 == strcmp(pstS->astSizes[i].acName, pcName))
-          && (pstS->astSizes[i].aau32Sz[0][0] > 0u) && (pstS->astSizes[i].aau32Sz[1][0] > 0u)
-          && (pstS->astSizes[i].aau32Sz[2][0] > 0u))
+      if ((0 == strcmp(pstS->astSizes[i].acName, pcName)) &&
+          (pstS->astSizes[i].aau32Sz[0][0] > 0u) && (pstS->astSizes[i].aau32Sz[1][0] > 0u) &&
+          (pstS->astSizes[i].aau32Sz[2][0] > 0u))
       {
         af_scale_presets(u32PxW, u32PxH, astOut);
         astOut[0].u32W = pstS->astSizes[i].aau32Sz[0][0];
@@ -305,8 +321,8 @@ void af_disp_store_resolve_presets(in const char *pcName,
   af_scale_presets(u32PxW, u32PxH, astOut);
 }
 
-void af_disp_store_save_sizes(in const char *pcName,
-                              in const af_scale_preset_st astP[AF_SCALE_COUNT])
+void af_disp_store_save_sizes(dm_in const char *pcName,
+                              dm_in const af_scale_preset_st astP[AF_SCALE_COUNT])
 {
   af_state_st *pstS = af_store_state_mut();
   af_ipad_sizes_entry_st *pstE = NULL;
@@ -340,12 +356,23 @@ void af_disp_store_save_sizes(in const char *pcName,
   }
 }
 
-void af_disp_store_save_scale(in const char *pcName, in const char *pcKey)
+void af_disp_store_save_scale(dm_in const char *pcName, dm_in const char *pcKey)
 {
   af_state_st *pstS = af_store_state_mut();
+  char acCopy[16];
+  bool_t bDirty = DM_FALSE;
   uint32 i = 0u;
 
-  snprintf(pstS->acScale, sizeof(pstS->acScale), "%s", pcKey);
+  if ((NULL == pcKey) || ('\0' == pcKey[0]))
+  {
+    return;
+  }
+  snprintf(acCopy, sizeof(acCopy), "%s", pcKey);
+  if (0 != strcmp(pstS->acScale, acCopy))
+  {
+    snprintf(pstS->acScale, sizeof(pstS->acScale), "%s", acCopy);
+    bDirty = DM_TRUE;
+  }
   if ((NULL != pcName) && ('\0' != pcName[0]))
   {
     af_ipad_scale_entry_st *pstE = NULL;
@@ -361,11 +388,17 @@ void af_disp_store_save_scale(in const char *pcName, in const char *pcKey)
     {
       pstE = &pstS->astScales[pstS->u32ScaleCnt++];
       snprintf(pstE->acName, sizeof(pstE->acName), "%s", pcName);
+      pstE->acScale[0] = '\0';
+      bDirty = DM_TRUE;
     }
-    if (NULL != pstE)
+    if ((NULL != pstE) && (0 != strcmp(pstE->acScale, acCopy)))
     {
-      snprintf(pstE->acScale, sizeof(pstE->acScale), "%s", pcKey);
+      snprintf(pstE->acScale, sizeof(pstE->acScale), "%s", acCopy);
+      bDirty = DM_TRUE;
     }
   }
-  (void)af_store_save_async(NULL, NULL);
+  if (bDirty)
+  {
+    (void)af_store_save_async(NULL, NULL);
+  }
 }

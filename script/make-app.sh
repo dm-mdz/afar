@@ -21,7 +21,7 @@ Package Afar.app (and optionally Afar-<version>.dmg) for macOS.
 Options:
   --out-dir <dir>              Output directory (default: <repo>/build/dist)
   --bin <path>                 Prebuilt afar-agent binary (default: builds release via build.py)
-  --version <ver>              Bundle version (default: extracted from src/af_modules.h AF_VERSION)
+  --version <ver>              Bundle version (default: read from shell/Info.mac.plist, verified against src/af_modules.h)
   --sign <identity>            Developer ID / signing identity for codesign (default: ad-hoc '-')
   --notarize <keychain-profile>
                                Submit DMG to notarytool and staple (requires --sign, without --no-dmg)
@@ -95,12 +95,29 @@ if [[ -n "${NOTARIZE_PROFILE}" ]]; then
   fi
 fi
 
-# 1. Resolve version from src/af_modules.h if not explicitly provided
+PLIST_BUDDY="/usr/libexec/PlistBuddy"
+[[ -x "${PLIST_BUDDY}" ]] || die "PlistBuddy not found at ${PLIST_BUDDY}"
+
+PLIST_TMPL="${ROOT_DIR}/shell/Info.mac.plist"
+SETUP_HTML_SRC="${ROOT_DIR}/shell/ui/setup.html"
+APP_ICON_SRC="${ROOT_DIR}/shell/AppIcon.icns"
+ENTITLEMENTS_SRC="${ROOT_DIR}/shell/Afar.entitlements"
+[[ -f "${PLIST_TMPL}" ]] || die "missing Info.plist template: ${PLIST_TMPL}"
+[[ -f "${SETUP_HTML_SRC}" ]] || die "missing setup.html: ${SETUP_HTML_SRC}"
+[[ -f "${APP_ICON_SRC}" ]] || die "missing AppIcon.icns: ${APP_ICON_SRC}"
+[[ -f "${ENTITLEMENTS_SRC}" ]] || die "missing Afar.entitlements: ${ENTITLEMENTS_SRC}"
+
+# 1. Resolve version from shell/Info.mac.plist (and cross-check src/af_modules.h) if not explicitly provided
 if [[ -z "${VERSION}" ]]; then
+  VERSION="$("${PLIST_BUDDY}" -c "Print :CFBundleShortVersionString" "${PLIST_TMPL}" 2>/dev/null || true)"
+  [[ -n "${VERSION}" ]] || die "failed to extract CFBundleShortVersionString from ${PLIST_TMPL}"
   MOD_HDR="${ROOT_DIR}/src/af_modules.h"
   [[ -f "${MOD_HDR}" ]] || die "missing ${MOD_HDR}"
-  VERSION="$(sed -nE 's/^[[:space:]]*#[[:space:]]*define[[:space:]]+AF_VERSION[[:space:]]+"([^"]+)".*/\1/p' "${MOD_HDR}" | head -n 1)"
-  [[ -n "${VERSION}" ]] || die "failed to extract AF_VERSION from ${MOD_HDR}"
+  HDR_VERSION="$(sed -nE 's/^[[:space:]]*#[[:space:]]*define[[:space:]]+AF_VERSION[[:space:]]+"([^"]+)".*/\1/p' "${MOD_HDR}" | head -n 1)"
+  [[ -n "${HDR_VERSION}" ]] || die "failed to extract AF_VERSION from ${MOD_HDR}"
+  if [[ "${VERSION}" != "${HDR_VERSION}" ]]; then
+    die "version mismatch: ${PLIST_TMPL} has '${VERSION}' but ${MOD_HDR} has '${HDR_VERSION}'"
+  fi
 fi
 if [[ ! "${VERSION}" =~ ^[0-9A-Za-z._+-]+$ || "${VERSION}" == *".."* ]]; then
   die "invalid --version '${VERSION}' (allowed: [0-9A-Za-z._+-], no '..')"
@@ -119,21 +136,19 @@ else
   [[ -f "${BIN_PATH}" ]] || die "expected release binary not found: ${BIN_PATH}"
 fi
 
-PLIST_TMPL="${ROOT_DIR}/shell/Info.mac.plist"
-SETUP_HTML_SRC="${ROOT_DIR}/shell/ui/setup.html"
-APP_ICON_SRC="${ROOT_DIR}/shell/AppIcon.icns"
-ENTITLEMENTS_SRC="${ROOT_DIR}/shell/Afar.entitlements"
-[[ -f "${PLIST_TMPL}" ]] || die "missing Info.plist template: ${PLIST_TMPL}"
-[[ -f "${SETUP_HTML_SRC}" ]] || die "missing setup.html: ${SETUP_HTML_SRC}"
-[[ -f "${APP_ICON_SRC}" ]] || die "missing AppIcon.icns: ${APP_ICON_SRC}"
-[[ -f "${ENTITLEMENTS_SRC}" ]] || die "missing Afar.entitlements: ${ENTITLEMENTS_SRC}"
-
 # 2b. Verify no local machine paths leaked into the shipped binary
 for p in "${HOME}" "${ROOT_DIR}"; do
   if [[ -n "${p}" ]] && strings -a "${BIN_PATH}" | grep -qF "${p}"; then
     die "local path '${p}' found embedded in ${BIN_PATH}; rebuild cleanly with -ffile-prefix-map"
   fi
 done
+
+# 2c. Verify binary only dynamically links Apple system frameworks/libs (all C deps statically linked)
+BAD_DYLIBS="$(otool -L "${BIN_PATH}" | tail -n +2 | awk '{print $1}' | grep -vE '^(/System/Library/|/usr/lib/)' || true)"
+if [[ -n "${BAD_DYLIBS}" ]]; then
+  printf '%s\n' "${BAD_DYLIBS}" >&2
+  die "unexpected non-system dynamic library dependency in ${BIN_PATH}"
+fi
 
 mkdir -p "${OUT_DIR}"
 OUT_DIR="$(cd "${OUT_DIR}" && pwd)"
@@ -165,9 +180,6 @@ cp "${PLIST_TMPL}" "${INFO_PLIST}"
 chmod 0644 "${INFO_PLIST}"
 
 # 4. Sync versions via PlistBuddy and enforce LSMinimumSystemVersion == 27.0
-PLIST_BUDDY="/usr/libexec/PlistBuddy"
-[[ -x "${PLIST_BUDDY}" ]] || die "PlistBuddy not found at ${PLIST_BUDDY}"
-
 "${PLIST_BUDDY}" -c "Set :CFBundleShortVersionString ${VERSION}" "${INFO_PLIST}"
 "${PLIST_BUDDY}" -c "Set :CFBundleVersion ${VERSION}" "${INFO_PLIST}"
 

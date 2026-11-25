@@ -61,7 +61,7 @@ typedef struct dm_hash_table
  * @param u32Key 输入键值
  * @return 哈希值
  */
-static inline uint32 dm__hash_default_func(in uint32 u32Key)
+static inline uint32 dm__hash_default_func(dm_in uint32 u32Key)
 {
   /* Jenkins One-At-A-Time Hash */
   u32Key = (u32Key + 0x7ed55d16) + (u32Key << 12);
@@ -80,8 +80,8 @@ static inline uint32 dm__hash_default_func(in uint32 u32Key)
  * @param pfHashFunc 自定义哈希函数(可为NULL，使用默认函数)
  * @return DM_SUCCESS成功，其他失败
  */
-static inline int dm_hash_init(in dm_hash_table_st *pstTable, in uint32 u32Size,
-                               in uint32 (*pfHashFunc)(uint32 u32Key))
+static inline int dm_hash_init(dm_in dm_hash_table_st *pstTable, dm_in uint32 u32Size,
+                               dm_in uint32 (*pfHashFunc)(uint32 u32Key))
 {
   if (NULL == pstTable || 0 == u32Size)
   {
@@ -115,7 +115,7 @@ static inline int dm_hash_init(in dm_hash_table_st *pstTable, in uint32 u32Size,
  * @param u32Key 键值
  * @return 哈希值
  */
-static inline uint32 dm__hash_value(in const dm_hash_table_st *pstTable, in uint32 u32Key)
+static inline uint32 dm__hash_value(dm_in const dm_hash_table_st *pstTable, dm_in uint32 u32Key)
 {
   if (NULL == pstTable || NULL == pstTable->pfHashFunc)
   {
@@ -130,7 +130,7 @@ static inline uint32 dm__hash_value(in const dm_hash_table_st *pstTable, in uint
  * @param u32Key 键值
  * @return 桶索引
  */
-static inline uint32 dm__hash_index(in const dm_hash_table_st *pstTable, in uint32 u32Key)
+static inline uint32 dm__hash_index(dm_in const dm_hash_table_st *pstTable, dm_in uint32 u32Key)
 {
   if (NULL == pstTable || 0 == pstTable->size)
   {
@@ -145,7 +145,7 @@ static inline uint32 dm__hash_index(in const dm_hash_table_st *pstTable, in uint
  * @param pvValue 值指针
  * @return 哈希节点指针，失败返回NULL
  */
-static inline dm_hash_node_st *dm__hash_create_node(in uint32 u32Key, in void *pvValue)
+static inline dm_hash_node_st *dm__hash_create_node(dm_in uint32 u32Key, dm_in void *pvValue)
 {
   dm_hash_node_st *pstNode =
       (dm_hash_node_st *)dm_malloc_tag(sizeof(dm_hash_node_st), DM_MEM_TAG_HASH);
@@ -167,7 +167,8 @@ static inline dm_hash_node_st *dm__hash_create_node(in uint32 u32Key, in void *p
  * @param pstNode 哈希节点指针
  * @return DM_SUCCESS成功，其他失败
  */
-static inline int dm__hash_add_node(in dm_hash_table_st *pstTable, in dm_hash_node_st *pstNode)
+static inline int dm__hash_add_node(dm_in dm_hash_table_st *pstTable,
+                                    dm_in dm_hash_node_st *pstNode)
 {
   if (NULL == pstTable || NULL == pstNode || NULL == pstTable->pstBuckets)
   {
@@ -191,7 +192,8 @@ static inline int dm__hash_add_node(in dm_hash_table_st *pstTable, in dm_hash_no
  * @param pvValue 值指针
  * @return DM_SUCCESS成功，其他失败
  */
-static inline int dm_hash_add(in dm_hash_table_st *pstTable, in uint32 u32Key, in void *pvValue)
+static inline int dm_hash_add(dm_in dm_hash_table_st *pstTable, dm_in uint32 u32Key,
+                              dm_in void *pvValue)
 {
   dm_hash_node_st *pstNode = dm__hash_create_node(u32Key, pvValue);
   if (NULL == pstNode)
@@ -214,8 +216,8 @@ static inline int dm_hash_add(in dm_hash_table_st *pstTable, in uint32 u32Key, i
  * @param u32Key 键值
  * @return 哈希节点指针，未找到返回NULL
  */
-static inline dm_hash_node_st *dm__hash_find_node(in const dm_hash_table_st *pstTable,
-                                                  in uint32 u32Key)
+static inline dm_hash_node_st *dm__hash_find_node(dm_in const dm_hash_table_st *pstTable,
+                                                  dm_in uint32 u32Key)
 {
   if (NULL == pstTable || NULL == pstTable->pstBuckets)
   {
@@ -245,7 +247,7 @@ static inline dm_hash_node_st *dm__hash_find_node(in const dm_hash_table_st *pst
  * @param u32Key 键值
  * @return 值指针，未找到返回NULL
  */
-static inline void *dm_hash_find(in const dm_hash_table_st *pstTable, in uint32 u32Key)
+static inline void *dm_hash_find(dm_in const dm_hash_table_st *pstTable, dm_in uint32 u32Key)
 {
   dm_hash_node_st *pstNode = dm__hash_find_node(pstTable, u32Key);
   if (NULL == pstNode)
@@ -261,7 +263,8 @@ static inline void *dm_hash_find(in const dm_hash_table_st *pstTable, in uint32 
  * @param pstNode 哈希节点指针
  * @return DM_SUCCESS成功，其他失败
  */
-static inline int dm__hash_del_node(in dm_hash_table_st *pstTable, in dm_hash_node_st *pstNode)
+static inline int dm__hash_del_node(dm_in dm_hash_table_st *pstTable,
+                                    dm_in dm_hash_node_st *pstNode)
 {
   if (NULL == pstTable || NULL == pstNode || NULL == pstTable->pstBuckets)
   {
@@ -282,8 +285,8 @@ static inline int dm__hash_del_node(in dm_hash_table_st *pstTable, in dm_hash_no
  * @param pfFree 自定义释放函数(可为NULL)
  * @return DM_SUCCESS成功，其他失败
  */
-static inline int dm_hash_del(in dm_hash_table_st *pstTable, in uint32 u32Key,
-                              in void (*pfFree)(void *))
+static inline int dm_hash_del(dm_in dm_hash_table_st *pstTable, dm_in uint32 u32Key,
+                              dm_in void (*pfFree)(void *))
 {
   dm_hash_node_st *pstNode = dm__hash_find_node(pstTable, u32Key);
   if (NULL == pstNode)
@@ -315,7 +318,7 @@ static inline int dm_hash_del(in dm_hash_table_st *pstTable, in uint32 u32Key,
  * @param pstTable 哈希表指针
  * @param pfFree 自定义释放函数(可为NULL)
  */
-static inline void dm_hash_destroy(in dm_hash_table_st *pstTable, in void (*pfFree)(void *))
+static inline void dm_hash_destroy(dm_in dm_hash_table_st *pstTable, dm_in void (*pfFree)(void *))
 {
   if (NULL == pstTable || NULL == pstTable->pstBuckets)
   {
@@ -364,7 +367,7 @@ static inline void dm_hash_destroy(in dm_hash_table_st *pstTable, in void (*pfFr
  * @param pstTable 哈希表指针
  * @return 节点数量
  */
-static inline uint32 dm_hash_count(in const dm_hash_table_st *pstTable)
+static inline uint32 dm_hash_count(dm_in const dm_hash_table_st *pstTable)
 {
   if (NULL == pstTable)
   {
@@ -378,7 +381,7 @@ static inline uint32 dm_hash_count(in const dm_hash_table_st *pstTable)
  * @param pstTable 哈希表指针
  * @return true为空，false不为空
  */
-static inline bool_t dm_hash_is_empty(in const dm_hash_table_st *pstTable)
+static inline bool_t dm_hash_is_empty(dm_in const dm_hash_table_st *pstTable)
 {
   return (dm_hash_count(pstTable) == 0);
 }

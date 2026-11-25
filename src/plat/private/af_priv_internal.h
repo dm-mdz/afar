@@ -16,7 +16,7 @@ extern "C"
 {
 #endif
 
-int af_priv_cgs_set_mode(in uint32 u32DispId, in const af_disp_mode_st *pstWant);
+int af_priv_cgs_set_mode(dm_in uint32 u32DispId, dm_in const af_disp_mode_st *pstWant);
 
 #ifdef __cplusplus
 }

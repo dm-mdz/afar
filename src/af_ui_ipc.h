@@ -2,7 +2,7 @@
  ******************************************************************************
  * @file    af_ui_ipc.h
  * @author  Afar_C
- * @version 1.0.0
+ * @version 2.0.0
  * @brief   基础层共享 UI 通信纯数据契约（供业务层与 shell 壳共同包含，零越层依赖）。
  ******************************************************************************
  */
@@ -26,7 +26,9 @@ typedef enum af_menu_act
   AF_MENU_OPEN_SETUP,
   AF_MENU_RESET_SETUP,
   AF_MENU_REOPEN,
-  AF_MENU_NOTIFY_DEVICES
+  AF_MENU_NOTIFY_DEVICES,
+  AF_MENU_OPEN_PERM_SC,
+  AF_MENU_OPEN_PERM_AX
 } af_menu_act_et;
 
 typedef struct af_ui_action_msg
@@ -44,11 +46,14 @@ typedef struct af_menu_snap
   bool_t bAntiUnplug;
   uint32 u32TodoCount;
   char acVersion[32];
+  bool_t bDirectActive;
+  bool_t bPermSc;
+  bool_t bPermAx;
 } af_menu_snap_st;
 
-typedef void (*af_menu_update_cb)(in const af_menu_snap_st *pstSnap);
-typedef void (*af_setup_push_cb)(in const char *pcViewJson);
-typedef void (*af_setup_win_cb)(in bool_t bShow);
+typedef void (*af_menu_update_cb)(dm_in const af_menu_snap_st *pstSnap);
+typedef void (*af_setup_push_cb)(dm_in const char *pcViewJson);
+typedef void (*af_setup_win_cb)(dm_in bool_t bShow);
 
 #ifdef __cplusplus
 }

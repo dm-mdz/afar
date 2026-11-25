@@ -25,7 +25,7 @@ extern "C"
 /* ============================ 端口文件读写 ============================ */
 
 /* dm.port 里记着的上次的端口；读不懂（空的、乱码、不在 1~65535）当作没有，返回 0 */
-int dm__port_file_read(in const char *pcDataDir, out int *piHttp)
+int dm__port_file_read(dm_in const char *pcDataDir, dm_out int *piHttp)
 {
   char acPath[600] = {0};
   char *pcText = NULL;
@@ -60,7 +60,7 @@ int dm__port_file_read(in const char *pcDataDir, out int *piHttp)
 }
 
 /* 写回 dm.port（先写临时文件再改名） */
-void dm__port_file_write(in const char *pcDataDir, in int iPort, in int iHttp)
+void dm__port_file_write(dm_in const char *pcDataDir, dm_in int iPort, dm_in int iHttp)
 {
   char acPath[600] = {0};
   char acText[32] = {0};

@@ -91,6 +91,10 @@ static NSString *af__menu_tr_status(const char *pcLine, BOOL bZh)
   {
     return @"Not Connected";
   }
+  if ([oRaw hasPrefix:@"正在直连显示到 "])
+  {
+    return [@"Direct Streaming to " stringByAppendingString:[oRaw substringFromIndex:8u]];
+  }
   if ([oRaw hasPrefix:@"正在显示到 "])
   {
     return [@"Showing on " stringByAppendingString:[oRaw substringFromIndex:6u]];
@@ -110,35 +114,36 @@ static NSString *af__menu_tr_status(const char *pcLine, BOOL bZh)
   unsigned uCnt = 0u;
   if (1 == sscanf(pcLine, "还有 %u 项待配置", &uCnt))
   {
-    return [NSString stringWithFormat:(1u == uCnt) ? @"%u setup item left" : @"%u setup items left",
-                                      uCnt];
+    return [NSString
+        stringWithFormat:(1u == uCnt) ? @"%u setup item left" : @"%u setup items left", uCnt];
   }
   if (1 == sscanf(pcLine, "已就绪，附近有 %u 台 iPad", &uCnt))
   {
-    return [NSString stringWithFormat:(1u == uCnt) ? @"Ready · %u iPad nearby"
-                                                   : @"Ready · %u iPads nearby",
-                                      uCnt];
+    return [NSString
+        stringWithFormat:(1u == uCnt) ? @"Ready · %u iPad nearby" : @"Ready · %u iPads nearby",
+                         uCnt];
   }
   return oRaw;
 }
 
 @interface AFMenuController : NSObject
-@property (nonatomic, strong) NSStatusItem *statusItem;
-@property (nonatomic, strong) NSMenu *menu;
-@property (nonatomic, strong) NSMenuItem *statusLineItem;
-@property (nonatomic, strong) NSMenuItem *connItem;
-@property (nonatomic, strong) NSMenuItem *bootAutoItem;
-@property (nonatomic, strong) NSMenuItem *antiUnplugItem;
-@property (nonatomic, strong) NSMenuItem *pairItem;
-@property (nonatomic, strong) NSMenuItem *setupItem;
-@property (nonatomic, strong) NSMenuItem *resetItem;
-@property (nonatomic, strong) NSMenuItem *langMenuItem;
-@property (nonatomic, strong) NSMenuItem *langSysItem;
-@property (nonatomic, strong) NSMenuItem *langZhItem;
-@property (nonatomic, strong) NSMenuItem *langEnItem;
-@property (nonatomic, strong) NSMenuItem *versionItem;
-@property (nonatomic, strong) NSMenuItem *quitItem;
-@property (nonatomic, assign) af_menu_snap_st snap;
+@property(nonatomic, strong) NSStatusItem *statusItem;
+@property(nonatomic, strong) NSMenu *menu;
+@property(nonatomic, strong) NSMenuItem *statusLineItem;
+@property(nonatomic, strong) NSMenuItem *permWarnItem;
+@property(nonatomic, strong) NSMenuItem *connItem;
+@property(nonatomic, strong) NSMenuItem *bootAutoItem;
+@property(nonatomic, strong) NSMenuItem *antiUnplugItem;
+@property(nonatomic, strong) NSMenuItem *pairItem;
+@property(nonatomic, strong) NSMenuItem *setupItem;
+@property(nonatomic, strong) NSMenuItem *resetItem;
+@property(nonatomic, strong) NSMenuItem *langMenuItem;
+@property(nonatomic, strong) NSMenuItem *langSysItem;
+@property(nonatomic, strong) NSMenuItem *langZhItem;
+@property(nonatomic, strong) NSMenuItem *langEnItem;
+@property(nonatomic, strong) NSMenuItem *versionItem;
+@property(nonatomic, strong) NSMenuItem *quitItem;
+@property(nonatomic, assign) af_menu_snap_st snap;
 - (void)applySnap:(af_menu_snap_st)stSnap;
 - (void)refreshLang;
 - (void)teardown;
@@ -156,6 +161,8 @@ static AFMenuController *g_oMenuCtrl = nil;
     return nil;
   }
   memset(&_snap, 0, sizeof(_snap));
+  _snap.bPermSc = DM_TRUE;
+  _snap.bPermAx = DM_TRUE;
   snprintf(_snap.acStatusLine, sizeof(_snap.acStatusLine), "未连接");
   snprintf(_snap.acVersion, sizeof(_snap.acVersion), "%s", AF_VERSION);
   [self buildMenu];
@@ -202,6 +209,9 @@ static AFMenuController *g_oMenuCtrl = nil;
   self.statusLineItem = [self makeItem:@"" action:NULL key:@""];
   self.statusLineItem.enabled = NO;
   [self.menu addItem:self.statusLineItem];
+  self.permWarnItem = [self makeItem:@"" action:@selector(onOpenPermWarn:) key:@""];
+  self.permWarnItem.hidden = YES;
+  [self.menu addItem:self.permWarnItem];
   [self.menu addItem:[NSMenuItem separatorItem]];
 
   self.connItem = [self makeItem:@"" action:@selector(onToggleConnect:) key:@""];
@@ -235,6 +245,37 @@ static AFMenuController *g_oMenuCtrl = nil;
   [self applyLabels];
 }
 
+- (void)applyPermWarn:(BOOL)bZh
+{
+  if (nil == self.permWarnItem)
+  {
+    return;
+  }
+  if (self.snap.bPermSc && self.snap.bPermAx)
+  {
+    self.permWarnItem.hidden = YES;
+    return;
+  }
+  NSString *oText = nil;
+  if (!self.snap.bPermSc)
+  {
+    oText = bZh ? @"⚠ 需开启「屏幕录制」权限（授权后重启生效）…"
+                : @"⚠ Enable Screen Recording (restart required)…";
+  }
+  else
+  {
+    oText = bZh ? @"⚠ 需开启「辅助功能」权限…" : @"⚠ Enable Accessibility Permission…";
+  }
+  NSDictionary *oAttrs = @{
+    NSForegroundColorAttributeName : [NSColor systemRedColor],
+    NSFontAttributeName : [NSFont menuFontOfSize:0.0]
+  };
+  self.permWarnItem.title = oText;
+  self.permWarnItem.attributedTitle = [[NSAttributedString alloc] initWithString:oText
+                                                                      attributes:oAttrs];
+  self.permWarnItem.hidden = NO;
+}
+
 - (void)applyLabels
 {
   if (nil == self.statusItem)
@@ -244,11 +285,11 @@ static AFMenuController *g_oMenuCtrl = nil;
   BOOL bZh = (DM_TRUE == af_shell_lang_is_zh());
   NSString *oPref = af__lang_pref();
   self.statusLineItem.title = af__menu_tr_status(self.snap.acStatusLine, bZh);
+  [self applyPermWarn:bZh];
   self.connItem.title = self.snap.bShowing ? (bZh ? @"断开 iPad" : @"Disconnect iPad")
                                            : (bZh ? @"立即连接" : @"Connect Now");
   self.bootAutoItem.title = bZh ? @"开机自动连接" : @"Connect at Startup";
-  self.antiUnplugItem.title =
-      bZh ? @"防拔线（保留虚拟屏）" : @"Keep Virtual Display on Unplug";
+  self.antiUnplugItem.title = bZh ? @"防拔线（保留虚拟屏）" : @"Keep Virtual Display on Unplug";
   self.pairItem.title = bZh ? @"配对新 iPad…" : @"Pair New iPad…";
   self.resetItem.title = bZh ? @"重新设置…" : @"Run Setup Again…";
   self.langMenuItem.title = bZh ? @"语言 / Language" : @"Language / 语言";
@@ -261,11 +302,10 @@ static AFMenuController *g_oMenuCtrl = nil;
   self.quitItem.title = bZh ? @"退出" : @"Quit";
   if (self.snap.u32TodoCount > 0u)
   {
-    self.setupItem.title =
-        bZh ? [NSString stringWithFormat:@"检查并配置… (%u 项待办)",
-                                         (unsigned)self.snap.u32TodoCount]
-            : [NSString stringWithFormat:@"Check & Configure… (%u left)",
-                                         (unsigned)self.snap.u32TodoCount];
+    self.setupItem.title = bZh ? [NSString stringWithFormat:@"检查并配置… (%u 项待办)",
+                                                            (unsigned)self.snap.u32TodoCount]
+                               : [NSString stringWithFormat:@"Check & Configure… (%u left)",
+                                                            (unsigned)self.snap.u32TodoCount];
   }
   else
   {
@@ -325,6 +365,19 @@ static AFMenuController *g_oMenuCtrl = nil;
 {
   (void)oSender;
   [self selectLang:"en"];
+}
+
+- (void)onOpenPermWarn:(id)oSender
+{
+  (void)oSender;
+  if (!self.snap.bPermSc)
+  {
+    af__post_menu_act(AF_MENU_OPEN_PERM_SC, DM_FALSE);
+  }
+  else if (!self.snap.bPermAx)
+  {
+    af__post_menu_act(AF_MENU_OPEN_PERM_AX, DM_FALSE);
+  }
 }
 
 - (void)onToggleConnect:(id)oSender

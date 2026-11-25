@@ -58,24 +58,26 @@ typedef struct dm_list_head
   dm_list_node_st stHead;
 } dm_list_st;
 
-static inline void dm_list_init(in dm_list_st *pstList);
-static inline void dm_list_node_init(in dm_list_node_st *pstNode);
-static inline bool_t dm_list_is_empty(in const dm_list_st *pstList);
-static inline void dm_list_add_after(in dm_list_node_st *pstPrev, in dm_list_node_st *pstInst);
-static inline void dm_list_add_before(in dm_list_node_st *pstNext, in dm_list_node_st *pstInst);
-static inline void dm_list_del_node(in const dm_list_node_st *pstNode);
-static inline void dm_list_add_head(in dm_list_st *pstList, in dm_list_node_st *pstNode);
-static inline dm_list_node_st *dm_list_del_head(in const dm_list_st *pstList);
-static inline void dm_list_add_tail(in dm_list_st *pstList, in dm_list_node_st *pstNode);
-static inline dm_list_node_st *dm_list_del_tail(in const dm_list_st *pstList);
-static inline dm_list_node_st *dm_list_first(in const dm_list_st *pstList);
-static inline dm_list_node_st *dm_list_last(in const dm_list_st *pstList);
-static inline bool_t dm_list_is_end(in const dm_list_st *pstList,
-                                    in const dm_list_node_st *pstNode);
-static inline void dm_list_move(in dm_list_st *pstDstList, in dm_list_st *pstSrcList);
-static inline dm_list_node_st *dm_list_prev(in const dm_list_node_st *pstNode);
-static inline dm_list_node_st *dm_list_next(in const dm_list_node_st *pstNode);
-static inline void dm_list_free_all(in dm_list_st *pstList, in void (*pfFree)(void *));
+static inline void dm_list_init(dm_in dm_list_st *pstList);
+static inline void dm_list_node_init(dm_in dm_list_node_st *pstNode);
+static inline bool_t dm_list_is_empty(dm_in const dm_list_st *pstList);
+static inline void dm_list_add_after(dm_in dm_list_node_st *pstPrev,
+                                     dm_in dm_list_node_st *pstInst);
+static inline void dm_list_add_before(dm_in dm_list_node_st *pstNext,
+                                      dm_in dm_list_node_st *pstInst);
+static inline void dm_list_del_node(dm_in const dm_list_node_st *pstNode);
+static inline void dm_list_add_head(dm_in dm_list_st *pstList, dm_in dm_list_node_st *pstNode);
+static inline dm_list_node_st *dm_list_del_head(dm_in const dm_list_st *pstList);
+static inline void dm_list_add_tail(dm_in dm_list_st *pstList, dm_in dm_list_node_st *pstNode);
+static inline dm_list_node_st *dm_list_del_tail(dm_in const dm_list_st *pstList);
+static inline dm_list_node_st *dm_list_first(dm_in const dm_list_st *pstList);
+static inline dm_list_node_st *dm_list_last(dm_in const dm_list_st *pstList);
+static inline bool_t dm_list_is_end(dm_in const dm_list_st *pstList,
+                                    dm_in const dm_list_node_st *pstNode);
+static inline void dm_list_move(dm_in dm_list_st *pstDstList, dm_in dm_list_st *pstSrcList);
+static inline dm_list_node_st *dm_list_prev(dm_in const dm_list_node_st *pstNode);
+static inline dm_list_node_st *dm_list_next(dm_in const dm_list_node_st *pstNode);
+static inline void dm_list_free_all(dm_in dm_list_st *pstList, dm_in void (*pfFree)(void *));
 
 #define DM_LIST_FOREACH(pstList, pstNode)                                                          \
   for ((pstNode) = (pstList)->stHead.pstNext; ((pstNode) != &((pstList)->stHead));                 \
@@ -108,26 +110,26 @@ static inline void dm_list_free_all(in dm_list_st *pstList, in void (*pfFree)(vo
   for ((pstNode) = (pstList)->stHead.pstNext; ((pstNode) != &((pstList)->stHead));                 \
        (pstNode) = dm_list_next(pstNode))
 
-static inline void dm_list_init(in dm_list_st *pstList)
+static inline void dm_list_init(dm_in dm_list_st *pstList)
 {
   pstList->stHead.pstNext = &pstList->stHead;
   pstList->stHead.pstPrev = &pstList->stHead;
   return;
 }
 
-static inline void dm_list_node_init(in dm_list_node_st *pstNode)
+static inline void dm_list_node_init(dm_in dm_list_node_st *pstNode)
 {
   pstNode->pstNext = (dm_list_node_st *)NULL;
   pstNode->pstPrev = (dm_list_node_st *)NULL;
   return;
 }
 
-static inline bool_t dm_list_is_empty(in const dm_list_st *pstList)
+static inline bool_t dm_list_is_empty(dm_in const dm_list_st *pstList)
 {
   return (pstList->stHead.pstNext == &pstList->stHead);
 }
 
-static inline void dm_list_add_after(in dm_list_node_st *pstPrev, in dm_list_node_st *pstInst)
+static inline void dm_list_add_after(dm_in dm_list_node_st *pstPrev, dm_in dm_list_node_st *pstInst)
 {
   pstInst->pstPrev = pstPrev;
   pstInst->pstNext = pstPrev->pstNext;
@@ -136,7 +138,8 @@ static inline void dm_list_add_after(in dm_list_node_st *pstPrev, in dm_list_nod
   return;
 }
 
-static inline void dm_list_add_before(in dm_list_node_st *pstNext, in dm_list_node_st *pstInst)
+static inline void dm_list_add_before(dm_in dm_list_node_st *pstNext,
+                                      dm_in dm_list_node_st *pstInst)
 {
   pstInst->pstPrev = pstNext->pstPrev;
   pstInst->pstNext = pstNext;
@@ -145,20 +148,20 @@ static inline void dm_list_add_before(in dm_list_node_st *pstNext, in dm_list_no
   return;
 }
 
-static inline void dm_list_del_node(in const dm_list_node_st *pstNode)
+static inline void dm_list_del_node(dm_in const dm_list_node_st *pstNode)
 {
   pstNode->pstPrev->pstNext = pstNode->pstNext;
   pstNode->pstNext->pstPrev = pstNode->pstPrev;
   return;
 }
 
-static inline void dm_list_add_head(in dm_list_st *pstList, in dm_list_node_st *pstNode)
+static inline void dm_list_add_head(dm_in dm_list_st *pstList, dm_in dm_list_node_st *pstNode)
 {
   dm_list_add_after(&pstList->stHead, pstNode);
   return;
 }
 
-static inline dm_list_node_st *dm_list_del_head(in const dm_list_st *pstList)
+static inline dm_list_node_st *dm_list_del_head(dm_in const dm_list_st *pstList)
 {
   dm_list_node_st *pstNode = dm_list_first(pstList);
 
@@ -173,13 +176,13 @@ static inline dm_list_node_st *dm_list_del_head(in const dm_list_st *pstList)
   return pstNode;
 }
 
-static inline void dm_list_add_tail(in dm_list_st *pstList, in dm_list_node_st *pstNode)
+static inline void dm_list_add_tail(dm_in dm_list_st *pstList, dm_in dm_list_node_st *pstNode)
 {
   dm_list_add_before(&pstList->stHead, pstNode);
   return;
 }
 
-static inline dm_list_node_st *dm_list_del_tail(in const dm_list_st *pstList)
+static inline dm_list_node_st *dm_list_del_tail(dm_in const dm_list_st *pstList)
 {
   dm_list_node_st *pstNode = dm_list_last(pstList);
 
@@ -194,7 +197,7 @@ static inline dm_list_node_st *dm_list_del_tail(in const dm_list_st *pstList)
   return pstNode;
 }
 
-static inline dm_list_node_st *dm_list_first(in const dm_list_st *pstList)
+static inline dm_list_node_st *dm_list_first(dm_in const dm_list_st *pstList)
 {
   dm_list_node_st *pstNode = pstList->stHead.pstNext;
   if (pstNode == &(pstList->stHead))
@@ -204,7 +207,7 @@ static inline dm_list_node_st *dm_list_first(in const dm_list_st *pstList)
   return pstNode;
 }
 
-static inline dm_list_node_st *dm_list_last(in const dm_list_st *pstList)
+static inline dm_list_node_st *dm_list_last(dm_in const dm_list_st *pstList)
 {
   dm_list_node_st *pstNode = pstList->stHead.pstPrev;
   if (pstNode == &(pstList->stHead))
@@ -214,7 +217,8 @@ static inline dm_list_node_st *dm_list_last(in const dm_list_st *pstList)
   return pstNode;
 }
 
-static inline bool_t dm_list_is_end(in const dm_list_st *pstList, in const dm_list_node_st *pstNode)
+static inline bool_t dm_list_is_end(dm_in const dm_list_st *pstList,
+                                    dm_in const dm_list_node_st *pstNode)
 {
   if (dm_list_is_empty(pstList))
   {
@@ -228,17 +232,17 @@ static inline bool_t dm_list_is_end(in const dm_list_st *pstList, in const dm_li
   return (pstNode == &(pstList->stHead));
 }
 
-static inline dm_list_node_st *dm_list_prev(in const dm_list_node_st *pstNode)
+static inline dm_list_node_st *dm_list_prev(dm_in const dm_list_node_st *pstNode)
 {
   return (pstNode->pstPrev);
 }
 
-static inline dm_list_node_st *dm_list_next(in const dm_list_node_st *pstNode)
+static inline dm_list_node_st *dm_list_next(dm_in const dm_list_node_st *pstNode)
 {
   return (pstNode->pstNext);
 }
 
-static inline void dm_list_move(in dm_list_st *pstDstList, in dm_list_st *pstSrcList)
+static inline void dm_list_move(dm_in dm_list_st *pstDstList, dm_in dm_list_st *pstSrcList)
 {
   if (!dm_list_is_empty(pstSrcList))
   {
@@ -263,7 +267,7 @@ static inline void dm_list_move(in dm_list_st *pstDstList, in dm_list_st *pstSrc
   return;
 }
 
-static inline void dm_list_free_all(in dm_list_st *pstList, in void (*pfFree)(void *))
+static inline void dm_list_free_all(dm_in dm_list_st *pstList, dm_in void (*pfFree)(void *))
 {
   if (!dm_list_is_empty(pstList))
   {

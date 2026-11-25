@@ -75,13 +75,19 @@ typedef enum
   } while (0)
 #endif
 
+#ifndef ARRAY_SIZE
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
+#endif
+#ifndef ARRAY_END
 #define ARRAY_END(a) ((a) + ARRAY_SIZE(a))
+#endif
 
 /* 和 libuv 测试里的定义逐字一样（空白也一样），两处同时被包含时不算重复定义 */
 /* clang-format off */
+#ifndef container_of
 #define container_of(ptr, type, member) \
   ((type *) ((char *) (ptr) - offsetof(type, member)))
+#endif
 /* clang-format on */
 
 /* ===================================================================== */
@@ -119,7 +125,17 @@ typedef enum
   XX(CONN_GONE, "connection or child process is gone")                                             \
   XX(TOO_BIG, "over the size limit")                                                               \
   XX(WRONG_THREAD, "called on the wrong thread")                                                   \
-  XX(LOOP_DETECTED, "dispatch loop detected")
+  XX(LOOP_DETECTED, "dispatch loop detected")                                                      \
+  XX(UNSUPPORTED, "operation not supported")                                                       \
+  XX(EXDEV, "cross-device link not permitted")                                                     \
+  XX(AGAIN, "resource temporarily unavailable")                                                    \
+  XX(EOF, "end of file or stream")                                                                 \
+  XX(CANCELED, "operation canceled")                                                               \
+  XX(ADDR_IN_USE, "address already in use")                                                        \
+  XX(CONN_REFUSED, "connection refused")                                                           \
+  XX(DNS_FAIL, "name resolution failed")                                                           \
+  XX(NOT_DIR, "not a directory")                                                                   \
+  XX(IS_DIR, "is a directory")
 
 /* 枚举:由 DM_ERRNO_MAP 生成(第二条参数 _ 在枚举中忽略) */
 typedef enum
@@ -133,7 +149,7 @@ typedef enum
  * 错误码 -> 说明字符串（统一入口，英文）。先查 DM 自己的表，再查别的模块登记的段，
  * 都不是就当 libuv 的标准错误码（DM_E2BIG = UV_E2BIG …）。打印错误一律用它。
  */
-DM_API const char *dm_errno_str(in int iErr);
+DM_API const char *dm_errno_str(dm_in int iErr);
 
 /*
  * 登记一个模块的错误码段（详设 1.4）：iBase 是段首（负数，比如 -200000），
@@ -141,7 +157,8 @@ DM_API const char *dm_errno_str(in int iErr);
  * 只在模块 init 里调（主线程）。段和 DM 自己的、已登记的重叠回 DM_EXISTS；参数不对回 DM_INVALID；
  * 登记满了回 DM_RANGE。
  */
-DM_API int dm_errno_register(in int iBase, in uint uiCount, in const char *(*pfStr)(int iErr));
+DM_API int dm_errno_register(dm_in int iBase, dm_in uint uiCount,
+                             dm_in const char *(*pfStr)(int iErr));
 
 /* ==========================================================================
  * dm —— link 声明位置
@@ -210,45 +227,45 @@ typedef struct dm_once_flag
 
 #define DM_ONCE_FLAG_INIT {0}
 
-DM_API void dm_call_once(io dm_once_flag_st *pstFlag, in void (*pfFn)(void));
+DM_API void dm_call_once(dm_io dm_once_flag_st *pstFlag, dm_in void (*pfFn)(void));
 
 /* ---- 基础运行期与 OS 辅助原语（由 libdm_core 实现，零 <uv.h> 泄露） ---- */
 DM_API unsigned int dm_uv_version(void);
 DM_API const char *dm_uv_version_string(void);
-DM_API const char *dm_strerror(in int iErr);
+DM_API const char *dm_strerror(dm_in int iErr);
 DM_API uint64 dm_hrtime(void);
-DM_API void dm_sleep(in unsigned int uiMsec);
+DM_API void dm_sleep(dm_in unsigned int uiMsec);
 DM_API dm_pid_t dm_os_getpid(void);
 DM_API dm_pid_t dm_os_getppid(void);
-DM_API int dm_os_getenv(in const char *pcName, out char *pcBuffer, io size_t *puSize);
-DM_API int dm_os_homedir(out char *pcBuffer, io size_t *puSize);
-DM_API int dm_os_environ(out dm_env_item_st **ppstEnvItems, out int *piCount);
-DM_API void dm_os_free_environ(io dm_env_item_st *pstEnvItems, in int iCount);
+DM_API int dm_os_getenv(dm_in const char *pcName, dm_out char *pcBuffer, dm_io size_t *puSize);
+DM_API int dm_os_homedir(dm_out char *pcBuffer, dm_io size_t *puSize);
+DM_API int dm_os_environ(dm_out dm_env_item_st **ppstEnvItems, dm_out int *piCount);
+DM_API void dm_os_free_environ(dm_io dm_env_item_st *pstEnvItems, dm_in int iCount);
 
 typedef void *(*dm_malloc_func)(size_t size);
 typedef void *(*dm_realloc_func)(void *ptr, size_t size);
 typedef void *(*dm_calloc_func)(size_t count, size_t size);
 typedef void (*dm_free_func)(void *ptr);
 
-DM_API int dm_replace_allocator(in dm_malloc_func pfMalloc, in dm_realloc_func pfRealloc,
-                                in dm_calloc_func pfCalloc, in dm_free_func pfFree);
+DM_API int dm_replace_allocator(dm_in dm_malloc_func pfMalloc, dm_in dm_realloc_func pfRealloc,
+                                dm_in dm_calloc_func pfCalloc, dm_in dm_free_func pfFree);
 
 /* 内存分配/释放统一走 dm_replace_allocator 登记的实现(默认系统分配器)。
  * 非 libuv 代码请一律使用这些接口,以便自定义分配器生效。 */
-DM_API void *dm_malloc(in size_t uSize);
-DM_API void *dm_calloc(in size_t uCount, in size_t uSize);
-DM_API void *dm_realloc(io void *pvPtr, in size_t uSize);
-DM_API void *dm_reallocf(io void *pvPtr, in size_t uSize);
-DM_API void dm_free(io void *pvPtr);
+DM_API void *dm_malloc(dm_in size_t uSize);
+DM_API void *dm_calloc(dm_in size_t uCount, dm_in size_t uSize);
+DM_API void *dm_realloc(dm_io void *pvPtr, dm_in size_t uSize);
+DM_API void *dm_reallocf(dm_io void *pvPtr, dm_in size_t uSize);
+DM_API void dm_free(dm_io void *pvPtr);
 
 /* 防编译器优化消除的安全擦零（AUD-06：敏感帧/密码/令牌释放前必须调用） */
-DM_API void dm_secure_zero(out void *pvBuf, in size_t uLen);
+DM_API void dm_secure_zero(dm_out void *pvBuf, dm_in size_t uLen);
 
 /* 二进制口的端口（只听 127.0.0.1，详设 2.3）。dm_set_listen_port 给测试用：设过就用它（0 =
  * 让系统挑）， 优先于数据目录里的 dm.port；要在 dm_main_ex 之前调。dm_get_listen_port
  * 取实际绑上的端口 */
 DM_API int dm_get_listen_port(void);
-DM_API void dm_set_listen_port(in uint16 u16Port);
+DM_API void dm_set_listen_port(dm_in uint16 u16Port);
 
 /* ==========================================================================
  * 业务内存标签 ID(固定 ID,供 dm_malloc_tag / DM_MEM_ALLOC_TAG 使用)。
@@ -296,6 +313,10 @@ DM_API void dm_set_listen_port(in uint16 u16Port);
 #define DM_MEM_TAG_POOL 213
 #define DM_MEM_TAG_SECRET 214
 #define DM_MEM_TAG_HTTPC 215
+#define DM_MEM_TAG_THREAD 216
+#define DM_MEM_TAG_LOOP 217
+#define DM_MEM_TAG_SOCK 218
+#define DM_MEM_TAG_FS 219
 
 /* ---- 300~399 预留;400~499 给用 DM 的应用各模块(怎么分由应用自己定) ---- */
 
@@ -304,18 +325,19 @@ DM_API void dm_set_listen_port(in uint16 u16Port);
 
 /* 带业务标签的分配接口(按模块统计泄漏)。注意:tag 分配的块必须用
  * dm_free_tag 释放(计数一致);dm_realloc_tag 保留原块标签。 */
-DM_API void *dm_malloc_tag(in size_t uSize, in int iTag);
-DM_API void *dm_calloc_tag(in size_t uCount, in size_t uSize, in int iTag);
-DM_API void *dm_realloc_tag(io void *pvPtr, in size_t uSize);
-DM_API void dm_free_tag(io void *pvPtr);
+DM_API void *dm_malloc_tag(dm_in size_t uSize, dm_in int iTag);
+DM_API void *dm_calloc_tag(dm_in size_t uCount, dm_in size_t uSize, dm_in int iTag);
+DM_API void *dm_realloc_tag(dm_io void *pvPtr, dm_in size_t uSize);
+DM_API void dm_free_tag(dm_io void *pvPtr);
 
 #ifdef DM_MEM_DEBUG
-DM_API void *dm_malloc_tag_dbg(in size_t uSize, in int iTag, in const char *pcFile, in int iLine);
-DM_API void *dm_calloc_tag_dbg(in size_t uCount, in size_t uSize, in int iTag,
-                               in const char *pcFile, in int iLine);
-DM_API void *dm_realloc_tag_dbg(io void *pvPtr, in size_t uSize, in const char *pcFile,
-                                in int iLine);
-DM_API void dm_free_tag_dbg(io void *pvPtr);
+DM_API void *dm_malloc_tag_dbg(dm_in size_t uSize, dm_in int iTag, dm_in const char *pcFile,
+                               dm_in int iLine);
+DM_API void *dm_calloc_tag_dbg(dm_in size_t uCount, dm_in size_t uSize, dm_in int iTag,
+                               dm_in const char *pcFile, dm_in int iLine);
+DM_API void *dm_realloc_tag_dbg(dm_io void *pvPtr, dm_in size_t uSize, dm_in const char *pcFile,
+                                dm_in int iLine);
+DM_API void dm_free_tag_dbg(dm_io void *pvPtr);
 
 #define dm_malloc_tag(size, tag) dm_malloc_tag_dbg((size), (tag), __FILE__, __LINE__)
 #define dm_calloc_tag(count, size, tag)                                                            \
@@ -325,7 +347,7 @@ DM_API void dm_free_tag_dbg(io void *pvPtr);
 #endif
 
 /* 给一个标签起名字，dmcmd、泄漏报告里显示名字而不是编号。模块 init 里调（详设 1.5） */
-DM_API void dm_mem_tag_name(in int iTag, in const char *pcName);
+DM_API void dm_mem_tag_name(dm_in int iTag, dm_in const char *pcName);
 
 #ifdef __cplusplus
 }
